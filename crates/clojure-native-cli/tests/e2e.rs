@@ -94,6 +94,23 @@ fn compiles_strings_and_lists() {
 }
 
 #[test]
+fn compiles_loop_recur() {
+    if !have_cc() {
+        return;
+    }
+    // `conta` faz 1_000_000 de iterações via recur-para-fn: se fosse recursão
+    // nativa estouraria a pilha; passar prova que recur é um backedge de loop.
+    let src = r#"(ns l.core)
+(defn soma [n] (loop [i 0 acc 0] (if (> i n) acc (recur (inc i) (+ acc i)))))
+(defn conta [n acc] (if (= n 0) acc (recur (dec n) (inc acc))))
+(defn -main []
+  (println (soma 100))
+  (println (conta 1000000 0)))
+(-main)"#;
+    assert_eq!(build_and_run("cljn_e2e_loop", src), "5050\n1000000\n");
+}
+
+#[test]
 fn native_binary_has_no_jvm_dep() {
     if !have_cc() || !cfg!(target_os = "linux") {
         return;

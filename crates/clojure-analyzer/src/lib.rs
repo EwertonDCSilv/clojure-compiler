@@ -29,6 +29,10 @@ pub enum Ast {
     Do(Vec<Ast>),
     /// `let*`: cada binding define o slot `first_slot + i` e é visível nos seguintes.
     Let { slots: Vec<(u32, Ast)>, body: Box<Ast> },
+    /// `loop*`: alvo de `recur`. `slots` são as variáveis de loop.
+    Loop { slots: Vec<(u32, Ast)>, body: Box<Ast> },
+    /// `recur`: religa o alvo mais próximo (loop ou fn) e salta.
+    Recur(Vec<Ast>),
     Call { callee: Callee, args: Vec<Ast> },
 }
 
@@ -109,7 +113,9 @@ pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
             for p in &params {
                 scope.push_local(p.clone());
             }
-            match scope.analyze_body(&body_forms, f.span) {
+            // A fn é um alvo de recur com a aridade dos seus parâmetros.
+            scope.recur_arity.push(params.len());
+            match scope.analyze_body(&body_forms, f.span, true) {
                 Ok(body) => functions.push(Function {
                     name,
                     params,
@@ -119,8 +125,8 @@ pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 Err(d) => diags.push(d),
             }
         } else {
-            // Forma de topo (ex.: `(-main)`).
-            match main_scope.analyze(f) {
+            // Forma de topo (ex.: `(-main)`) — não é posição de cauda de recur.
+            match main_scope.analyze(f, false) {
                 Ok(a) => main_body.push(a),
                 Err(d) => diags.push(d),
             }
@@ -181,11 +187,13 @@ struct Scope<'a> {
     locals: Vec<(String, u32)>,
     next_slot: u32,
     max_slots: u32,
+    /// Pilha de aridades de alvos de `recur` (fn/loop mais internos).
+    recur_arity: Vec<usize>,
 }
 
 impl<'a> Scope<'a> {
     fn new(sigs: &'a HashMap<String, usize>) -> Self {
-        Scope { sigs, locals: Vec::new(), next_slot: 0, max_slots: 0 }
+        Scope { sigs, locals: Vec::new(), next_slot: 0, max_slots: 0, recur_arity: Vec::new() }
     }
 
     fn push_local(&mut self, name: String) -> u32 {
@@ -200,23 +208,24 @@ impl<'a> Scope<'a> {
         self.locals.iter().rev().find(|(n, _)| n == name).map(|(_, s)| *s)
     }
 
-    fn analyze_body(&mut self, body: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+    /// Corpo (sequência implícita de `do`). `tail` propaga só para a última forma.
+    fn analyze_body(&mut self, body: &[SForm], _span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         if body.is_empty() {
             return Ok(Ast::Nil);
         }
+        let last = body.len() - 1;
         let mut stmts = Vec::new();
-        for f in body {
-            stmts.push(self.analyze(f)?);
+        for (i, f) in body.iter().enumerate() {
+            stmts.push(self.analyze(f, tail && i == last)?);
         }
         if stmts.len() == 1 {
             Ok(stmts.into_iter().next().unwrap())
         } else {
-            let _ = span;
             Ok(Ast::Do(stmts))
         }
     }
 
-    fn analyze(&mut self, f: &SForm) -> Result<Ast, Diagnostic> {
+    fn analyze(&mut self, f: &SForm, tail: bool) -> Result<Ast, Diagnostic> {
         match f.node.strip_meta() {
             Form::Nil => Ok(Ast::Nil),
             Form::Bool(b) => Ok(Ast::Bool(*b)),
@@ -242,12 +251,12 @@ impl<'a> Scope<'a> {
             Form::Vector(_) | Form::Map(_) | Form::Set(_) => {
                 Err(unsupported("literais de coleção ainda não são compiláveis (slice inteiro)", f.span))
             }
-            Form::List(items) => self.analyze_list(items, f.span),
+            Form::List(items) => self.analyze_list(items, f.span, tail),
             Form::Meta { .. } => unreachable!(),
         }
     }
 
-    fn analyze_list(&mut self, items: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+    fn analyze_list(&mut self, items: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         let Some((head, args)) = items.split_first() else {
             return Err(unsupported("lista vazia não é compilável", span));
         };
@@ -262,23 +271,22 @@ impl<'a> Scope<'a> {
                 if args.len() < 2 || args.len() > 3 {
                     return Err(Diagnostic::error("E0102", "if requer test, then e (opcional) else").with_span(span));
                 }
-                let test = self.analyze(&args[0])?;
-                let then = self.analyze(&args[1])?;
+                // test não é cauda; then/else herdam `tail`.
+                let test = self.analyze(&args[0], false)?;
+                let then = self.analyze(&args[1], tail)?;
                 let els = match args.get(2) {
-                    Some(e) => self.analyze(e)?,
+                    Some(e) => self.analyze(e, tail)?,
                     None => Ast::Nil,
                 };
                 Ok(Ast::If(Box::new(test), Box::new(then), Box::new(els)))
             }
-            "do" => Ok(Ast::Do(self.analyze_seq(args)?)),
-            "let" | "let*" => self.analyze_let(args, span),
+            "do" => self.analyze_body(args, span, tail),
+            "let" | "let*" => self.analyze_let(args, span, tail),
+            "loop" | "loop*" => self.analyze_loop(args, span, tail),
+            "recur" => self.analyze_recur(args, span, tail),
             "quote" => Err(unsupported("quote ainda não é compilável", span)),
             "fn" | "fn*" => Err(unsupported(
                 "funções anônimas/closures ainda não são compiláveis (slice); defina com defn no topo",
-                span,
-            )),
-            "loop" | "loop*" | "recur" => Err(unsupported(
-                "loop/recur ainda não são compiláveis (use recursão direta no slice)",
                 span,
             )),
             "def" | "defn" | "defn-" => Err(unsupported("def/defn só é permitido no nível de topo", span)),
@@ -312,11 +320,12 @@ impl<'a> Scope<'a> {
         }
     }
 
+    /// Argumentos de chamada: nunca em posição de cauda.
     fn analyze_seq(&mut self, forms: &[SForm]) -> Result<Vec<Ast>, Diagnostic> {
-        forms.iter().map(|f| self.analyze(f)).collect()
+        forms.iter().map(|f| self.analyze(f, false)).collect()
     }
 
-    fn analyze_let(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+    fn analyze_let(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         let bindings = match args.first().map(|f| f.node.strip_meta()) {
             Some(Form::Vector(b)) => b,
             _ => return Err(Diagnostic::error("E0104", "let requer vetor de bindings").with_span(span)),
@@ -332,15 +341,63 @@ impl<'a> Scope<'a> {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
                 _ => return Err(unsupported("let: binding deve ser símbolo simples (sem destructuring no slice)", pair[0].span)),
             };
-            let val = self.analyze(&pair[1])?;
+            let val = self.analyze(&pair[1], false)?;
             let slot = self.push_local(name);
             slots.push((slot, val));
         }
-        let body = self.analyze_body(&args[1..], span)?;
-        // Locais do let saem de escopo (mas os slots já contam em max_slots).
+        let body = self.analyze_body(&args[1..], span, tail)?;
         self.locals.truncate(saved_locals);
         self.next_slot = saved_next;
         Ok(Ast::Let { slots, body: Box::new(body) })
+    }
+
+    fn analyze_loop(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
+        let bindings = match args.first().map(|f| f.node.strip_meta()) {
+            Some(Form::Vector(b)) => b,
+            _ => return Err(Diagnostic::error("E0106", "loop requer vetor de bindings").with_span(span)),
+        };
+        if bindings.len() % 2 != 0 {
+            return Err(Diagnostic::error("E0106", "loop: bindings em pares").with_span(span));
+        }
+        let saved_locals = self.locals.len();
+        let saved_next = self.next_slot;
+        let mut slots = Vec::new();
+        for pair in bindings.chunks_exact(2) {
+            let name = match pair[0].node.strip_meta() {
+                Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
+                _ => return Err(unsupported("loop: binding deve ser símbolo simples (sem destructuring)", pair[0].span)),
+            };
+            let val = self.analyze(&pair[1], false)?;
+            let slot = self.push_local(name);
+            slots.push((slot, val));
+        }
+        // `loop` é o alvo de recur mais interno (mesmo dentro de uma fn).
+        self.recur_arity.push(slots.len());
+        let body = self.analyze_body(&args[1..], span, tail);
+        self.recur_arity.pop();
+        let body = body?;
+        self.locals.truncate(saved_locals);
+        self.next_slot = saved_next;
+        Ok(Ast::Loop { slots, body: Box::new(body) })
+    }
+
+    fn analyze_recur(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
+        let Some(&arity) = self.recur_arity.last() else {
+            return Err(Diagnostic::error("E0107", "recur fora de loop/fn").with_span(span));
+        };
+        if !tail {
+            return Err(Diagnostic::error("E0108", "recur não está em posição de cauda")
+                .with_span(span)
+                .with_help("recur só pode ser a última expressão de uma fn ou loop"));
+        }
+        if args.len() != arity {
+            return Err(Diagnostic::error(
+                "E0109",
+                format!("recur: esperava {arity} argumentos, recebeu {}", args.len()),
+            )
+            .with_span(span));
+        }
+        Ok(Ast::Recur(self.analyze_seq(args)?))
     }
 }
 

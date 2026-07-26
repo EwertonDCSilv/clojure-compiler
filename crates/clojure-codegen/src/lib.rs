@@ -14,7 +14,7 @@
 use clojure_analyzer::{Ast, Callee, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{types, AbiParam, InstBuilder, Value as CValue};
+use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, Value as CValue};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::{isa, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -238,6 +238,21 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
     }
 }
 
+/// Resultado de compilar uma expressão: produz um valor (fall-through) ou
+/// diverge (o bloco já foi terminado por `recur`/`return`).
+#[derive(Clone, Copy)]
+enum Flow {
+    Val(CValue),
+    Diverged,
+}
+
+/// Alvo de `recur`: bloco-cabeçalho de um loop/fn + variáveis a religar.
+#[derive(Clone)]
+struct RecurTarget {
+    header: Block,
+    vars: Vec<Variable>,
+}
+
 struct FnGen<'a> {
     module: &'a mut ObjectModule,
     builder: FunctionBuilder<'a>,
@@ -246,6 +261,7 @@ struct FnGen<'a> {
     fn_ids: &'a HashMap<String, (FuncId, usize)>,
     str_data: &'a HashMap<String, (DataId, usize)>,
     vars: HashMap<u32, Variable>,
+    recur_targets: Vec<RecurTarget>,
 }
 
 impl<'a> FnGen<'a> {
@@ -259,7 +275,16 @@ impl<'a> FnGen<'a> {
         fn_ids: &'a HashMap<String, (FuncId, usize)>,
         str_data: &'a HashMap<String, (DataId, usize)>,
     ) -> Self {
-        FnGen { module, builder: FunctionBuilder::new(func, fbctx), ptr, rt, fn_ids, str_data, vars: HashMap::new() }
+        FnGen {
+            module,
+            builder: FunctionBuilder::new(func, fbctx),
+            ptr,
+            rt,
+            fn_ids,
+            str_data,
+            vars: HashMap::new(),
+            recur_targets: Vec::new(),
+        }
     }
 
     fn new_var(&mut self, slot: u32) -> Variable {
@@ -274,13 +299,29 @@ impl<'a> FnGen<'a> {
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
         let param_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
+        let mut param_vars = Vec::with_capacity(param_vals.len());
         for (slot, val) in param_vals.iter().enumerate() {
             let v = self.new_var(slot as u32);
             self.builder.def_var(v, *val);
+            param_vars.push(v);
         }
         let _ = params;
-        let ret = self.expr(body)?;
-        self.builder.ins().return_(&[ret]);
+
+        // A fn é um alvo de recur: cabeçalho separado do entry.
+        let header = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        self.recur_targets.push(RecurTarget { header, vars: param_vars });
+
+        let flow = self.expr(body);
+        self.recur_targets.pop();
+        self.builder.seal_block(header);
+        match flow? {
+            Flow::Val(v) => {
+                self.builder.ins().return_(&[v]);
+            }
+            Flow::Diverged => {} // todos os blocos já foram terminados (recur/return)
+        }
         self.builder.finalize();
         Ok(())
     }
@@ -290,7 +331,7 @@ impl<'a> FnGen<'a> {
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
         for a in body {
-            self.expr(a)?;
+            self.expr_val(a)?;
         }
         let zero = self.builder.ins().iconst(types::I32, 0);
         self.builder.ins().return_(&[zero]);
@@ -322,72 +363,143 @@ impl<'a> FnGen<'a> {
         self.builder.ins().call(r, args);
     }
 
-    fn expr(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
-        match ast {
+    /// Avalia uma expressão em posição de operando (nunca diverge — o analyzer
+    /// garante que `recur` só ocorre em posição de cauda).
+    fn expr_val(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
+        match self.expr(ast)? {
+            Flow::Val(v) => Ok(v),
+            Flow::Diverged => {
+                Err(Diagnostic::error("E0112", "recur em posição não-cauda (bug do compilador)"))
+            }
+        }
+    }
+
+    fn expr(&mut self, ast: &Ast) -> Result<Flow, Diagnostic> {
+        Ok(match ast {
             Ast::Int(n) => {
                 let tagged = (*n as i128) << 1 | 1;
-                Ok(self.konst(tagged as i64))
+                Flow::Val(self.konst(tagged as i64))
             }
-            Ast::Bool(b) => Ok(self.konst(if *b { TRUEV } else { FALSEV })),
-            Ast::Nil => Ok(self.konst(NIL)),
+            Ast::Bool(b) => Flow::Val(self.konst(if *b { TRUEV } else { FALSEV })),
+            Ast::Nil => Flow::Val(self.konst(NIL)),
             Ast::Str(s) => {
                 let (data_id, len) = self.str_data[s];
                 let gv = self.module.declare_data_in_func(data_id, self.builder.func);
                 let p = self.builder.ins().symbol_value(self.ptr, gv);
                 let len_v = self.builder.ins().iconst(types::I64, len as i64);
-                Ok(self.call2(self.rt.str_from, p, len_v))
+                Flow::Val(self.call2(self.rt.str_from, p, len_v))
             }
             Ast::Local(slot) => {
                 let v = *self
                     .vars
                     .get(slot)
                     .ok_or_else(|| Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)")))?;
-                Ok(self.builder.use_var(v))
+                Flow::Val(self.builder.use_var(v))
             }
             Ast::Do(stmts) => {
-                let mut last = self.konst(NIL);
-                for s in stmts {
-                    last = self.expr(s)?;
+                if stmts.is_empty() {
+                    return Ok(Flow::Val(self.konst(NIL)));
                 }
-                Ok(last)
+                let last = stmts.len() - 1;
+                for s in &stmts[..last] {
+                    self.expr_val(s)?; // efeitos; descarta valor
+                }
+                self.expr(&stmts[last])?
             }
             Ast::Let { slots, body } => {
                 for (slot, init) in slots {
-                    let val = self.expr(init)?;
+                    let val = self.expr_val(init)?;
                     let v = self.new_var(*slot);
                     self.builder.def_var(v, val);
                 }
-                self.expr(body)
+                self.expr(body)?
             }
-            Ast::If(test, then, els) => self.gen_if(test, then, els),
-            Ast::Call { callee, args } => self.gen_call(callee, args),
-        }
+            Ast::If(test, then, els) => self.gen_if(test, then, els)?,
+            Ast::Loop { slots, body } => self.gen_loop(slots, body)?,
+            Ast::Recur(args) => self.gen_recur(args)?,
+            Ast::Call { callee, args } => Flow::Val(self.gen_call(callee, args)?),
+        })
     }
 
-    fn gen_if(&mut self, test: &Ast, then: &Ast, els: &Ast) -> Result<CValue, Diagnostic> {
-        let test_val = self.expr(test)?;
+    fn gen_if(&mut self, test: &Ast, then: &Ast, els: &Ast) -> Result<Flow, Diagnostic> {
+        let test_val = self.expr_val(test)?;
         let truth = self.call1(self.rt.truthy, test_val); // i32
         let cond = self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0);
 
         let then_b = self.builder.create_block();
         let else_b = self.builder.create_block();
-        let merge_b = self.builder.create_block();
-        self.builder.append_block_param(merge_b, types::I64);
         self.builder.ins().brif(cond, then_b, &[], else_b, &[]);
+
+        // Merge criado sob demanda (apenas se algum ramo alcança fall-through).
+        let mut merge: Option<Block> = None;
 
         self.builder.switch_to_block(then_b);
         self.builder.seal_block(then_b);
-        let tv = self.expr(then)?;
-        self.builder.ins().jump(merge_b, &[tv.into()]);
+        if let Flow::Val(tv) = self.expr(then)? {
+            let m = *merge.get_or_insert_with(|| {
+                let b = self.builder.create_block();
+                self.builder.append_block_param(b, types::I64);
+                b
+            });
+            self.builder.ins().jump(m, &[tv.into()]);
+        }
 
         self.builder.switch_to_block(else_b);
         self.builder.seal_block(else_b);
-        let ev = self.expr(els)?;
-        self.builder.ins().jump(merge_b, &[ev.into()]);
+        if let Flow::Val(ev) = self.expr(els)? {
+            let m = *merge.get_or_insert_with(|| {
+                let b = self.builder.create_block();
+                self.builder.append_block_param(b, types::I64);
+                b
+            });
+            self.builder.ins().jump(m, &[ev.into()]);
+        }
 
-        self.builder.switch_to_block(merge_b);
-        self.builder.seal_block(merge_b);
-        Ok(self.builder.block_params(merge_b)[0])
+        match merge {
+            Some(m) => {
+                self.builder.switch_to_block(m);
+                self.builder.seal_block(m);
+                Ok(Flow::Val(self.builder.block_params(m)[0]))
+            }
+            None => Ok(Flow::Diverged), // ambos os ramos divergiram
+        }
+    }
+
+    fn gen_loop(&mut self, slots: &[(u32, Ast)], body: &Ast) -> Result<Flow, Diagnostic> {
+        let mut vars = Vec::with_capacity(slots.len());
+        for (slot, init) in slots {
+            let v0 = self.expr_val(init)?;
+            let var = self.new_var(*slot);
+            self.builder.def_var(var, v0);
+            vars.push(var);
+        }
+        let header = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        self.recur_targets.push(RecurTarget { header, vars });
+
+        let flow = self.expr(body);
+        self.recur_targets.pop();
+        self.builder.seal_block(header);
+        flow
+    }
+
+    fn gen_recur(&mut self, args: &[Ast]) -> Result<Flow, Diagnostic> {
+        let target = self
+            .recur_targets
+            .last()
+            .cloned()
+            .ok_or_else(|| Diagnostic::error("E0113", "recur sem alvo (bug)"))?;
+        // Avalia todos os argumentos antes de religar (evita clobber).
+        let mut vals = Vec::with_capacity(args.len());
+        for a in args {
+            vals.push(self.expr_val(a)?);
+        }
+        for (var, val) in target.vars.iter().zip(vals) {
+            self.builder.def_var(*var, val);
+        }
+        self.builder.ins().jump(target.header, &[]);
+        Ok(Flow::Diverged)
     }
 
     fn gen_call(&mut self, callee: &Callee, args: &[Ast]) -> Result<CValue, Diagnostic> {
@@ -398,7 +510,7 @@ impl<'a> FnGen<'a> {
                 let fref = self.module.declare_func_in_func(id, self.builder.func);
                 let mut argv = Vec::with_capacity(args.len());
                 for a in args {
-                    argv.push(self.expr(a)?);
+                    argv.push(self.expr_val(a)?);
                 }
                 let call = self.builder.ins().call(fref, &argv);
                 Ok(self.builder.inst_results(call)[0])
@@ -417,7 +529,7 @@ impl<'a> FnGen<'a> {
             Prim::Sub => {
                 if args.len() == 1 {
                     let zero = self.konst(1); // MK_FIX(0) == 1
-                    let v = self.expr(&args[0])?;
+                    let v = self.expr_val(&args[0])?;
                     Ok(self.call2(self.rt.sub, zero, v))
                 } else {
                     self.fold_bin(self.rt.sub, args)
@@ -445,20 +557,20 @@ impl<'a> FnGen<'a> {
     }
 
     fn fold_bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let mut acc = self.expr(&args[0])?;
+        let mut acc = self.expr_val(&args[0])?;
         for a in &args[1..] {
-            let v = self.expr(a)?;
+            let v = self.expr_val(a)?;
             acc = self.call2(id, acc, v);
         }
         Ok(acc)
     }
     fn bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let a = self.expr(&args[0])?;
-        let b = self.expr(&args[1])?;
+        let a = self.expr_val(&args[0])?;
+        let b = self.expr_val(&args[1])?;
         Ok(self.call2(id, a, b))
     }
     fn una(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let a = self.expr(&args[0])?;
+        let a = self.expr_val(&args[0])?;
         Ok(self.call1(id, a))
     }
 
@@ -467,7 +579,7 @@ impl<'a> FnGen<'a> {
             if i > 0 {
                 self.call_void(self.rt.print_space, &[]);
             }
-            let v = self.expr(a)?;
+            let v = self.expr_val(a)?;
             self.call_void(self.rt.print, &[v]);
         }
         if matches!(prim, Prim::Println) {
@@ -481,10 +593,10 @@ impl<'a> FnGen<'a> {
             let nil = self.konst(NIL);
             return Ok(self.call1(self.rt.to_str, nil));
         }
-        let v0 = self.expr(&args[0])?;
+        let v0 = self.expr_val(&args[0])?;
         let mut acc = self.call1(self.rt.to_str, v0);
         for a in &args[1..] {
-            let v = self.expr(a)?;
+            let v = self.expr_val(a)?;
             let s = self.call1(self.rt.to_str, v);
             acc = self.call2(self.rt.str_concat, acc, s);
         }
@@ -494,7 +606,7 @@ impl<'a> FnGen<'a> {
     fn gen_list(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            vals.push(self.expr(a)?);
+            vals.push(self.expr_val(a)?);
         }
         let mut acc = self.call0(self.rt.empty);
         for v in vals.into_iter().rev() {
@@ -513,7 +625,8 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
             collect_strings(d, out);
         }
         Ast::Do(v) => v.iter().for_each(|a| collect_strings(a, out)),
-        Ast::Let { slots, body } => {
+        Ast::Recur(v) => v.iter().for_each(|a| collect_strings(a, out)),
+        Ast::Loop { slots, body } | Ast::Let { slots, body } => {
             slots.iter().for_each(|(_, a)| collect_strings(a, out));
             collect_strings(body, out);
         }
