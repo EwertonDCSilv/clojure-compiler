@@ -34,7 +34,8 @@ typedef intptr_t Value;
 #define FIXNUM_MIN (-((intptr_t)1 << 62))
 #define FIXNUM_MAX (((intptr_t)1 << 62) - 1)
 
-enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8, T_VNODE = 9 };
+enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
+       T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12 };
 
 typedef struct Obj {
     uint8_t type;
@@ -48,8 +49,17 @@ typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[];
 /* Coleções imutáveis (persistentes por valor; estrutura simples — o vector trie /
  * HAMT com structural sharing é otimização posterior, não muda a semântica). */
 typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* set (array simples) */
-typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] (mantém ordem) */
+typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] (mantém ordem, <=8) */
 typedef struct { Obj h; Value type_name; Value map; } Record; /* defrecord: nome + mapa */
+/* Mapa grande: HAMT (hash array mapped trie). HMap = wrapper (count + raiz);
+ * nós = MNode (bitmap-indexado) e MColl (colisão de hash). Chave==MNODEKEY marca
+ * que o slot guarda um sub-nó. Ver hibrido: array-map (<=8) promove a HMAP. */
+#define MAP_ARRAY_MAX 8
+typedef struct { Obj h; int64_t count; Value root; } HMap;
+typedef struct { Obj h; uint32_t bitmap; Value arr[]; } MNode; /* 2*popcount slots */
+typedef struct { Obj h; uint32_t hash; int64_t n; Value pairs[]; } MColl; /* 2n */
+#define MNODEKEY ((Value)26)  /* imediato reservado: "este slot guarda um sub-nó" */
+#define MNOTFOUND ((Value)42) /* sentinela interno de "não encontrado" */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
  * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
@@ -154,6 +164,18 @@ static void gc_mark(Value v) {
         } else if (o->type == T_MAP) {
             Map *m = (Map *)v;
             for (int64_t i = 0; i < m->n * 2; i++) gc_mark(m->kv[i]);
+            return;
+        } else if (o->type == T_HMAP) {
+            gc_mark(((HMap *)v)->root);
+            return;
+        } else if (o->type == T_MNODE) {
+            MNode *nd = (MNode *)v;
+            int slots = 2 * __builtin_popcount(nd->bitmap);
+            for (int i = 0; i < slots; i++) gc_mark(nd->arr[i]);
+            return;
+        } else if (o->type == T_MCOLL) {
+            MColl *c = (MColl *)v;
+            for (int64_t i = 0; i < c->n * 2; i++) gc_mark(c->pairs[i]);
             return;
         } else if (o->type == T_RECORD) {
             Record *r = (Record *)v;
@@ -280,6 +302,7 @@ Value cljn_spread_args(Value fixed_argc, Value coll) {
 
 static Value b2v(int b); /* fwd */
 int cljn_equal_raw(Value a, Value b); /* fwd */
+int cljn_truthy(Value v); /* fwd */
 
 /* ---------- keywords ---------- */
 Value cljn_kw(const char *p, long len) {
@@ -442,7 +465,136 @@ Value cljn_set_conj(Value set, Value x) {
 }
 Value cljn_set_contains(Value set, Value x) { return b2v(set_member((Vec *)set, x)); }
 
-/* ---------- mapas (array-map imutável) ---------- */
+/* ---------- hash (consistente com igualdade) ---------- */
+static uint32_t hash_bytes(const char *p, size_t n) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; i++) { h ^= (unsigned char)p[i]; h *= 16777619u; }
+    return h;
+}
+uint32_t cljn_hash(Value v) {
+    if (IS_FIX(v)) {
+        uint64_t x = (uint64_t)(intptr_t)FIX(v);
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
+        return (uint32_t)(x ^ (x >> 31));
+    }
+    if (v == NIL) return 0;
+    if (v == TRUEV) return 1;
+    if (v == FALSEV) return 2;
+    if (v == EMPTY) return 3;
+    switch (obj_type(v)) {
+        case T_STR: { Str *s = (Str *)v; return hash_bytes(s->data, s->len); }
+        case T_KW:  { Str *s = (Str *)v; return hash_bytes(s->data, s->len) ^ 0x9e3779b9u; }
+        default: return 7; /* chaves compostas: colisões raras; igualdade resolve */
+    }
+}
+
+/* ---------- HAMT (nós) ---------- */
+static MNode *mnode_alloc(int slots) { return (MNode *)obj_alloc(sizeof(MNode) + (size_t)slots * sizeof(Value), T_MNODE); }
+static Value node_get(Value node, uint32_t shift, uint32_t hash, Value key) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++) if (cljn_equal_raw(c->pairs[2 * i], key)) return c->pairs[2 * i + 1];
+        return MNOTFOUND;
+    }
+    MNode *nd = (MNode *)node;
+    uint32_t bit = 1u << ((hash >> shift) & 31);
+    if (!(nd->bitmap & bit)) return MNOTFOUND;
+    int idx = __builtin_popcount(nd->bitmap & (bit - 1));
+    Value k = nd->arr[2 * idx];
+    if (k == MNODEKEY) return node_get(nd->arr[2 * idx + 1], shift + 5, hash, key);
+    if (cljn_equal_raw(k, key)) return nd->arr[2 * idx + 1];
+    return MNOTFOUND;
+}
+static Value merge_two(uint32_t shift, uint32_t h1, Value k1, Value v1, uint32_t h2, Value k2, Value v2) {
+    if (shift >= 32) {
+        MColl *c = (MColl *)obj_alloc(sizeof(MColl) + 4 * sizeof(Value), T_MCOLL);
+        c->hash = h1; c->n = 2;
+        c->pairs[0] = k1; c->pairs[1] = v1; c->pairs[2] = k2; c->pairs[3] = v2;
+        return (Value)c;
+    }
+    int b1 = (h1 >> shift) & 31, b2 = (h2 >> shift) & 31;
+    if (b1 == b2) {
+        Value sub = merge_two(shift + 5, h1, k1, v1, h2, k2, v2);
+        MNode *nn = mnode_alloc(2);
+        nn->bitmap = 1u << b1; nn->arr[0] = MNODEKEY; nn->arr[1] = sub;
+        return (Value)nn;
+    }
+    MNode *nn = mnode_alloc(4);
+    nn->bitmap = (1u << b1) | (1u << b2);
+    if (b1 < b2) { nn->arr[0]=k1; nn->arr[1]=v1; nn->arr[2]=k2; nn->arr[3]=v2; }
+    else         { nn->arr[0]=k2; nn->arr[1]=v2; nn->arr[2]=k1; nn->arr[3]=v1; }
+    return (Value)nn;
+}
+static Value node_assoc(Value node, uint32_t shift, uint32_t hash, Value key, Value val, int *added) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++) if (cljn_equal_raw(c->pairs[2 * i], key)) {
+            *added = 0;
+            MColl *nc = (MColl *)obj_alloc(sizeof(MColl) + (size_t)(2 * c->n) * sizeof(Value), T_MCOLL);
+            nc->hash = c->hash; nc->n = c->n;
+            for (int64_t j = 0; j < 2 * c->n; j++) nc->pairs[j] = c->pairs[j];
+            nc->pairs[2 * i + 1] = val;
+            return (Value)nc;
+        }
+        *added = 1;
+        MColl *nc = (MColl *)obj_alloc(sizeof(MColl) + (size_t)(2 * (c->n + 1)) * sizeof(Value), T_MCOLL);
+        nc->hash = c->hash; nc->n = c->n + 1;
+        for (int64_t j = 0; j < 2 * c->n; j++) nc->pairs[j] = c->pairs[j];
+        nc->pairs[2 * c->n] = key; nc->pairs[2 * c->n + 1] = val;
+        return (Value)nc;
+    }
+    MNode *nd = (MNode *)node;
+    uint32_t bit = 1u << ((hash >> shift) & 31);
+    int idx = __builtin_popcount(nd->bitmap & (bit - 1));
+    int cnt = __builtin_popcount(nd->bitmap);
+    if (nd->bitmap & bit) {
+        Value k = nd->arr[2 * idx];
+        MNode *nn = mnode_alloc(2 * cnt);
+        nn->bitmap = nd->bitmap;
+        for (int i = 0; i < 2 * cnt; i++) nn->arr[i] = nd->arr[i];
+        if (k == MNODEKEY) {
+            nn->arr[2 * idx + 1] = node_assoc(nd->arr[2 * idx + 1], shift + 5, hash, key, val, added);
+        } else if (cljn_equal_raw(k, key)) {
+            *added = 0; nn->arr[2 * idx + 1] = val;
+        } else {
+            *added = 1;
+            Value sub = merge_two(shift + 5, cljn_hash(k), k, nd->arr[2 * idx + 1], hash, key, val);
+            nn->arr[2 * idx] = MNODEKEY; nn->arr[2 * idx + 1] = sub;
+        }
+        return (Value)nn;
+    }
+    *added = 1;
+    MNode *nn = mnode_alloc(2 * (cnt + 1));
+    nn->bitmap = nd->bitmap | bit;
+    for (int i = 0; i < 2 * idx; i++) nn->arr[i] = nd->arr[i];
+    nn->arr[2 * idx] = key; nn->arr[2 * idx + 1] = val;
+    for (int i = 2 * idx; i < 2 * cnt; i++) nn->arr[i + 2] = nd->arr[i];
+    return (Value)nn;
+}
+/* Cons cada (chave|valor) do HAMT em `gc_stack[gc_sp-1]` (acc rooteado). */
+static void hmap_cons_walk(Value node, int mode /*0=keys 1=vals*/) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++) {
+            Value acc = cljn_cons(c->pairs[2 * i + mode], gc_stack[gc_sp - 1]);
+            gc_stack[gc_sp - 1] = acc;
+        }
+        return;
+    }
+    MNode *nd = (MNode *)node;
+    int cnt = __builtin_popcount(nd->bitmap);
+    for (int idx = 0; idx < cnt; idx++) {
+        Value k = nd->arr[2 * idx];
+        if (k == MNODEKEY) hmap_cons_walk(nd->arr[2 * idx + 1], mode);
+        else {
+            Value acc = cljn_cons(mode == 0 ? k : nd->arr[2 * idx + 1], gc_stack[gc_sp - 1]);
+            gc_stack[gc_sp - 1] = acc;
+        }
+    }
+}
+
+/* ---------- mapas: array-map (<=8, ordenado) + HAMT (grande) ---------- */
 Value cljn_map_alloc(Value n) {
     int64_t k = (int64_t)n;
     Map *m = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * k) * sizeof(Value), T_MAP);
@@ -460,33 +612,92 @@ static int64_t map_index(Map *m, Value k) {
     for (int64_t i = 0; i < m->n; i++) if (cljn_equal_raw(m->kv[2 * i], k)) return i;
     return -1;
 }
+static Value hmap_from_arraymap(Map *o, Value k, Value v) {
+    /* promove: array-map + (k,v) → HAMT. o/k/v rooteados pelo chamador. */
+    MNode *root = mnode_alloc(0); root->bitmap = 0;
+    HMap *m = (HMap *)obj_alloc(sizeof(HMap), T_HMAP);
+    m->count = 0; m->root = (Value)root;
+    Value hm = (Value)m;
+    cljn_gc_push(hm);
+    int added;
+    for (int64_t i = 0; i < o->n; i++) {
+        HMap *cur = (HMap *)gc_stack[gc_sp - 1];
+        Value nr = node_assoc(cur->root, 0, cljn_hash(o->kv[2 * i]), o->kv[2 * i], o->kv[2 * i + 1], &added);
+        HMap *nm = (HMap *)obj_alloc(sizeof(HMap), T_HMAP);
+        nm->count = cur->count + added; nm->root = nr;
+        gc_stack[gc_sp - 1] = (Value)nm;
+    }
+    HMap *cur = (HMap *)gc_stack[gc_sp - 1];
+    Value nr = node_assoc(cur->root, 0, cljn_hash(k), k, v, &added);
+    HMap *nm = (HMap *)obj_alloc(sizeof(HMap), T_HMAP);
+    nm->count = cur->count + added; nm->root = nr;
+    gc_stack[gc_sp - 1] = (Value)nm;
+    Value r = gc_stack[gc_sp - 1];
+    cljn_gc_popn(1);
+    return r;
+}
 Value cljn_map_get(Value map, Value k) {
+    if (obj_type(map) == T_HMAP) {
+        Value r = node_get(((HMap *)map)->root, 0, cljn_hash(k), k);
+        return r == MNOTFOUND ? NIL : r;
+    }
     if (obj_type(map) != T_MAP) return NIL;
     Map *m = (Map *)map;
     int64_t i = map_index(m, k);
     return (i >= 0) ? m->kv[2 * i + 1] : NIL;
 }
 Value cljn_map_contains(Value map, Value k) {
+    if (obj_type(map) == T_HMAP) return b2v(node_get(((HMap *)map)->root, 0, cljn_hash(k), k) != MNOTFOUND);
     return b2v(obj_type(map) == T_MAP && map_index((Map *)map, k) >= 0);
 }
 Value cljn_map_assoc(Value map, Value k, Value v) {
-    Map *o = (Map *)map;
-    int64_t at = map_index(o, k);
-    int64_t n = o->n;
-    int64_t nn = (at >= 0) ? n : n + 1;
-    Map *nm = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * nn) * sizeof(Value), T_MAP);
-    o = (Map *)map;
-    nm->n = nn;
-    for (int64_t i = 0; i < n; i++) { nm->kv[2 * i] = o->kv[2 * i]; nm->kv[2 * i + 1] = o->kv[2 * i + 1]; }
-    if (at >= 0) {
-        nm->kv[2 * at + 1] = v;
+    maybe_gc();
+    gc_disabled++;
+    Value result;
+    if (obj_type(map) == T_HMAP) {
+        HMap *o = (HMap *)map;
+        int added;
+        Value nr = node_assoc(o->root, 0, cljn_hash(k), k, v, &added);
+        HMap *nm = (HMap *)obj_alloc(sizeof(HMap), T_HMAP);
+        nm->count = o->count + added; nm->root = nr;
+        result = (Value)nm;
     } else {
-        nm->kv[2 * n] = k;
-        nm->kv[2 * n + 1] = v;
+        Map *o = (Map *)map;
+        int64_t at = map_index(o, k);
+        int64_t n = o->n;
+        if (at < 0 && n + 1 > MAP_ARRAY_MAX) {
+            result = hmap_from_arraymap(o, k, v); /* promove */
+        } else {
+            int64_t nn = (at >= 0) ? n : n + 1;
+            Map *nm = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * nn) * sizeof(Value), T_MAP);
+            nm->n = nn;
+            for (int64_t i = 0; i < n; i++) { nm->kv[2 * i] = o->kv[2 * i]; nm->kv[2 * i + 1] = o->kv[2 * i + 1]; }
+            if (at >= 0) nm->kv[2 * at + 1] = v;
+            else { nm->kv[2 * n] = k; nm->kv[2 * n + 1] = v; }
+            result = (Value)nm;
+        }
     }
-    return (Value)nm;
+    gc_disabled--;
+    return result;
 }
 Value cljn_map_dissoc(Value map, Value k) {
+    if (obj_type(map) == T_HMAP) {
+        HMap *m = (HMap *)map;
+        if (node_get(m->root, 0, cljn_hash(k), k) == MNOTFOUND) return map;
+        /* rebuild: reassoc todas as entradas exceto k (auto-dimensiona/demote). */
+        maybe_gc();
+        Value acc = cljn_map_alloc(0);
+        cljn_gc_push(acc);
+        /* itera entradas via walk que reassocia em gc_stack[sp-1] */
+        /* usa uma segunda pilha lógica: acc no topo; reusa hmap_cons_walk? não — precisamos assoc */
+        /* walk manual */
+        /* pilha de nós simples via recursão inline: */
+        extern void hmap_dissoc_walk(Value node, Value skip);
+        hmap_dissoc_walk(m->root, k);
+        Value r = gc_stack[gc_sp - 1];
+        cljn_gc_popn(1);
+        return r;
+    }
     Map *o = (Map *)map;
     int64_t at = map_index(o, k);
     if (at < 0) return map;
@@ -503,31 +714,72 @@ Value cljn_map_dissoc(Value map, Value k) {
     }
     return (Value)nm;
 }
-/* Constrói uma lista em C rooteando o acumulador no shadow-stack (senão o GC
- * coletaria `acc` no meio da construção). `map`/coll já está rooteado por quem chama. */
+void hmap_dissoc_walk(Value node, Value skip) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++) if (!cljn_equal_raw(c->pairs[2 * i], skip)) {
+            Value a = cljn_map_assoc(gc_stack[gc_sp - 1], c->pairs[2 * i], c->pairs[2 * i + 1]);
+            gc_stack[gc_sp - 1] = a;
+        }
+        return;
+    }
+    MNode *nd = (MNode *)node;
+    int cnt = __builtin_popcount(nd->bitmap);
+    for (int idx = 0; idx < cnt; idx++) {
+        Value k = nd->arr[2 * idx];
+        if (k == MNODEKEY) hmap_dissoc_walk(nd->arr[2 * idx + 1], skip);
+        else if (!cljn_equal_raw(k, skip)) {
+            Value a = cljn_map_assoc(gc_stack[gc_sp - 1], k, nd->arr[2 * idx + 1]);
+            gc_stack[gc_sp - 1] = a;
+        }
+    }
+}
 Value cljn_map_keys(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
-    Map *m = (Map *)map;
     Value acc = EMPTY;
     cljn_gc_push(acc);
-    for (int64_t i = m->n - 1; i >= 0; i--) {
-        acc = cljn_cons(m->kv[2 * i], acc);
-        gc_stack[gc_sp - 1] = acc;
+    if (obj_type(map) == T_HMAP) {
+        hmap_cons_walk(((HMap *)map)->root, 0);
+    } else {
+        Map *m = (Map *)map;
+        for (int64_t i = m->n - 1; i >= 0; i--) { acc = cljn_cons(m->kv[2 * i], gc_stack[gc_sp - 1]); gc_stack[gc_sp - 1] = acc; }
     }
+    Value r = gc_stack[gc_sp - 1];
     cljn_gc_popn(1);
-    return acc;
+    return r;
+}
+/* Toda entrada do nó HAMT está presente e igual em `other` (mapa qualquer)? */
+static int hmap_node_subset(Value node, Value other) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++)
+            if (!cljn_truthy(cljn_map_contains(other, c->pairs[2 * i])) ||
+                !cljn_equal_raw(c->pairs[2 * i + 1], cljn_map_get(other, c->pairs[2 * i]))) return 0;
+        return 1;
+    }
+    MNode *nd = (MNode *)node;
+    int cnt = __builtin_popcount(nd->bitmap);
+    for (int idx = 0; idx < cnt; idx++) {
+        Value k = nd->arr[2 * idx];
+        if (k == MNODEKEY) { if (!hmap_node_subset(nd->arr[2 * idx + 1], other)) return 0; }
+        else if (!cljn_truthy(cljn_map_contains(other, k)) ||
+                 !cljn_equal_raw(nd->arr[2 * idx + 1], cljn_map_get(other, k))) return 0;
+    }
+    return 1;
 }
 Value cljn_map_vals(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
-    Map *m = (Map *)map;
     Value acc = EMPTY;
     cljn_gc_push(acc);
-    for (int64_t i = m->n - 1; i >= 0; i--) {
-        acc = cljn_cons(m->kv[2 * i + 1], acc);
-        gc_stack[gc_sp - 1] = acc;
+    if (obj_type(map) == T_HMAP) {
+        hmap_cons_walk(((HMap *)map)->root, 1);
+    } else {
+        Map *m = (Map *)map;
+        for (int64_t i = m->n - 1; i >= 0; i--) { acc = cljn_cons(m->kv[2 * i + 1], gc_stack[gc_sp - 1]); gc_stack[gc_sp - 1] = acc; }
     }
+    Value r = gc_stack[gc_sp - 1];
     cljn_gc_popn(1);
-    return acc;
+    return r;
 }
 
 /* ---------- records (defrecord) ---------- */
@@ -563,7 +815,7 @@ Value cljn_type_key(Value v) {
         case T_FN: return MK_FIX(1003);
         case T_KW: return MK_FIX(1004);
         case T_VEC: return MK_FIX(1005);
-        case T_MAP: return MK_FIX(1006);
+        case T_MAP: case T_HMAP: return MK_FIX(1006);
         case T_SET: return MK_FIX(1007);
         case T_RECORD: return ((Record *)v)->type_name;
     }
@@ -598,7 +850,7 @@ Value cljn_contains(Value coll, Value key);
 Value cljn_get(Value coll, Value key) {
     switch (obj_type(coll)) {
         case T_RECORD: return cljn_map_get(((Record *)coll)->map, key);
-        case T_MAP: return cljn_map_get(coll, key);
+        case T_MAP: case T_HMAP: return cljn_map_get(coll, key);
         case T_VEC: {
             PVec *v = (PVec *)coll;
             if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < v->count) return pv_nth(v, i); }
@@ -611,7 +863,7 @@ Value cljn_get(Value coll, Value key) {
 Value cljn_contains(Value coll, Value key) {
     switch (obj_type(coll)) {
         case T_RECORD: return cljn_map_contains(((Record *)coll)->map, key);
-        case T_MAP: return cljn_map_contains(coll, key);
+        case T_MAP: case T_HMAP: return cljn_map_contains(coll, key);
         case T_SET: return cljn_set_contains(coll, key);
         case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
         default: return FALSEV;
@@ -622,7 +874,7 @@ Value cljn_conj(Value coll, Value x) {
         case T_VEC: return cljn_vec_conj(coll, x);
         case T_SET: return cljn_set_conj(coll, x);
         case T_CONS: return cljn_cons(x, coll);
-        case T_MAP:
+        case T_MAP: case T_HMAP:
             if (obj_type(x) == T_VEC && ((PVec *)x)->count == 2)
                 return cljn_map_assoc(coll, pv_nth((PVec *)x, 0), pv_nth((PVec *)x, 1));
             die("conj em mapa requer [k v]");
@@ -643,10 +895,10 @@ Value cljn_assoc(Value coll, Value k, Value v) {
             cljn_gc_popn(1);
             return rec;
         }
-        case T_MAP: return cljn_map_assoc(coll, k, v);
+        case T_MAP: case T_HMAP: return cljn_map_assoc(coll, k, v);
         case T_VEC: return cljn_vec_assoc(coll, k, v);
         default:
-            if (coll == NIL) { Value m = cljn_map_alloc(MK_FIX(0)); return cljn_map_assoc(m, k, v); }
+            if (coll == NIL) { Value m = cljn_map_alloc(0); return cljn_map_assoc(m, k, v); }
             die("assoc: coleção não suportada");
             return coll;
     }
@@ -726,14 +978,22 @@ int cljn_equal_raw(Value a, Value b) {
         for (int64_t i = 0; i < x->len; i++) if (!set_member(y, x->items[i])) return 0;
         return 1;
     }
-    if (ta == T_MAP && tb == T_MAP) {
-        Map *x = (Map *)a, *y = (Map *)b;
-        if (x->n != y->n) return 0;
-        for (int64_t i = 0; i < x->n; i++) {
-            int64_t j = map_index(y, x->kv[2 * i]);
-            if (j < 0 || !cljn_equal_raw(x->kv[2 * i + 1], y->kv[2 * j + 1])) return 0;
+    {
+        int am = (ta == T_MAP || ta == T_HMAP), bm = (tb == T_MAP || tb == T_HMAP);
+        if (am && bm) {
+            int64_t ca = (ta == T_HMAP) ? ((HMap *)a)->count : ((Map *)a)->n;
+            int64_t cb = (tb == T_HMAP) ? ((HMap *)b)->count : ((Map *)b)->n;
+            if (ca != cb) return 0;
+            /* toda entrada de `a` presente e igual em `b` (dispatch cobre cross-repr) */
+            if (ta == T_HMAP) return hmap_node_subset(((HMap *)a)->root, b);
+            Map *x = (Map *)a;
+            for (int64_t i = 0; i < x->n; i++) {
+                Value k = x->kv[2 * i];
+                if (!cljn_truthy(cljn_map_contains(b, k)) || !cljn_equal_raw(x->kv[2 * i + 1], cljn_map_get(b, k)))
+                    return 0;
+            }
+            return 1;
         }
-        return 1;
     }
     if (ta == T_RECORD && tb == T_RECORD) {
         Record *x = (Record *)a, *y = (Record *)b;
@@ -753,6 +1013,7 @@ Value cljn_emptyp(Value v) {
         case T_SET: return b2v(((Vec *)v)->len == 0);
         case T_VEC: return b2v(((PVec *)v)->count == 0);
         case T_MAP: return b2v(((Map *)v)->n == 0);
+        case T_HMAP: return b2v(((HMap *)v)->count == 0);
     }
     return FALSEV;
 }
@@ -789,6 +1050,7 @@ Value cljn_count(Value v) {
         case T_SET: return MK_FIX(((Vec *)v)->len);
         case T_VEC: return MK_FIX(((PVec *)v)->count);
         case T_MAP: return MK_FIX(((Map *)v)->n);
+        case T_HMAP: return MK_FIX(((HMap *)v)->count);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
     long n = 0;
@@ -806,6 +1068,33 @@ static void sb_putc(SB *b, char c) {
 static void sb_write(SB *b, const char *s, size_t n) { for (size_t i=0;i<n;i++) sb_putc(b,s[i]); }
 static void sb_str(SB *b, const char *s) { sb_write(b, s, strlen(s)); }
 
+static void write_val(SB *b, Value v, int for_str);
+static void sb_write_hmap(SB *b, Value node, int for_str, int *first) {
+    if (obj_type(node) == T_MCOLL) {
+        MColl *c = (MColl *)node;
+        for (int64_t i = 0; i < c->n; i++) {
+            if (!*first) sb_str(b, ", ");
+            *first = 0;
+            write_val(b, c->pairs[2 * i], for_str);
+            sb_putc(b, ' ');
+            write_val(b, c->pairs[2 * i + 1], for_str);
+        }
+        return;
+    }
+    MNode *nd = (MNode *)node;
+    int cnt = __builtin_popcount(nd->bitmap);
+    for (int idx = 0; idx < cnt; idx++) {
+        Value k = nd->arr[2 * idx];
+        if (k == MNODEKEY) { sb_write_hmap(b, nd->arr[2 * idx + 1], for_str, first); }
+        else {
+            if (!*first) sb_str(b, ", ");
+            *first = 0;
+            write_val(b, k, for_str);
+            sb_putc(b, ' ');
+            write_val(b, nd->arr[2 * idx + 1], for_str);
+        }
+    }
+}
 static void write_val(SB *b, Value v, int for_str) {
     if (IS_FIX(v)) { char t[32]; int n=snprintf(t,sizeof t,"%ld",(long)FIX(v)); sb_write(b,t,(size_t)n); return; }
     if (v == NIL) { if (!for_str) sb_str(b,"nil"); return; }
@@ -838,6 +1127,9 @@ static void write_val(SB *b, Value v, int for_str) {
             Map *m=(Map*)v; sb_putc(b,'{');
             for (int64_t i=0;i<m->n;i++){ if(i) sb_str(b,", "); write_val(b,m->kv[2*i],for_str); sb_putc(b,' '); write_val(b,m->kv[2*i+1],for_str); }
             sb_putc(b,'}'); return;
+        }
+        case T_HMAP: {
+            sb_putc(b,'{'); int first=1; sb_write_hmap(b, ((HMap*)v)->root, for_str, &first); sb_putc(b,'}'); return;
         }
         case T_FN: sb_str(b, "#<fn>"); return;
         case T_RECORD: {

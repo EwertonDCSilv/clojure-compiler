@@ -208,6 +208,29 @@ fn compiles_protocols() {
 }
 
 #[test]
+fn compiles_large_hash_map() {
+    if !have_cc() {
+        return;
+    }
+    // Mapa pequeno preserva ordem (array-map); grande promove a HAMT (O(log n)).
+    let src = r#"(ns h.core)
+(defn build [n] (loop [i 0 m {}] (if (< i n) (recur (inc i) (assoc m i (* i i))) m)))
+(defn -main []
+  (println {:a 1 :b 2 :c 3})
+  (let [m (build 1000)]
+    (println (count m) (get m 0) (get m 999) (get m 5000) (contains? m 500))
+    (println (count (dissoc m 500)) (get (dissoc m 500) 500) (reduce + 0 (vals m))))
+  (println (= (build 20) (build 20))))
+(-main)"#;
+    let expected = "{:a 1, :b 2, :c 3}\n1000 0 998001 nil true\n999 nil 332833500\ntrue\n";
+    assert_eq!(build_and_run("cljn_e2e_hmap", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_hmap_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_records() {
     if !have_cc() {
         return;
