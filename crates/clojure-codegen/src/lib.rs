@@ -69,6 +69,12 @@ struct Runtime {
     gc_push: FuncId,     // (i64)->void empurra temporário
     gc_popn: FuncId,     // (i64)->void retira n temporários
     gc_set: FuncId,      // (i64,i64)->void escreve slot de local
+    // Funções de primeira classe
+    make_fn: FuncId,     // (code,arity,nfree)->fn
+    set_free: FuncId,    // (fn,i,v)->void
+    fn_free: FuncId,     // (fn,i)->v
+    fn_code: FuncId,     // (fn)->code
+    check_call: FuncId,  // (fn,nargs)->void
 }
 
 /// Compila o programa para bytes de um objeto nativo da plataforma host.
@@ -112,10 +118,12 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
     }
 
     // Declara funções do usuário (para recursão/forward-ref).
+    // Toda função tem assinatura (self, args...) -> valor. `self` = a closure
+    // (ou NIL em chamadas estáticas a fns de topo, que ignoram capturas).
     let mut fn_ids: HashMap<String, (FuncId, usize)> = HashMap::new();
     for f in &program.functions {
         let mut sig = module.make_signature();
-        for _ in 0..f.params.len() {
+        for _ in 0..(f.params.len() + 1) {
             sig.params.push(AbiParam::new(types::I64));
         }
         sig.returns.push(AbiParam::new(types::I64));
@@ -203,6 +211,21 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         s.params.push(AbiParam::new(types::I64));
         m.declare_function(name, Linkage::Import, &s).unwrap()
     };
+    let ternary = |m: &mut ObjectModule, name: &str| {
+        let mut s = m.make_signature();
+        for _ in 0..3 {
+            s.params.push(AbiParam::new(types::I64));
+        }
+        s.returns.push(AbiParam::new(types::I64));
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
+    let ternary_void = |m: &mut ObjectModule, name: &str| {
+        let mut s = m.make_signature();
+        for _ in 0..3 {
+            s.params.push(AbiParam::new(types::I64));
+        }
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
 
     let mut str_from_sig = m.make_signature();
     str_from_sig.params.push(AbiParam::new(ptr));
@@ -252,6 +275,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         gc_push: voidfn(m, "cljn_gc_push", true),
         gc_popn: voidfn(m, "cljn_gc_popn", true),
         gc_set: bin_void(m, "cljn_gc_set"),
+        make_fn: ternary(m, "cljn_make_fn"),
+        set_free: ternary_void(m, "cljn_fn_set_free"),
+        fn_free: bin(m, "cljn_fn_free"),
+        fn_code: una(m, "cljn_fn_code"),
+        check_call: bin_void(m, "cljn_check_call"),
     }
 }
 
@@ -282,6 +310,8 @@ struct FnGen<'a> {
     recur_targets: Vec<RecurTarget>,
     /// Base do frame no shadow-stack (i64), definida na entrada da função.
     frame_base: Option<Variable>,
+    /// `self` (a closure) da função atual — usado para ler capturas.
+    self_var: Option<Variable>,
 }
 
 impl<'a> FnGen<'a> {
@@ -305,6 +335,7 @@ impl<'a> FnGen<'a> {
             vars: HashMap::new(),
             recur_targets: Vec::new(),
             frame_base: None,
+            self_var: None,
         }
     }
 
@@ -360,7 +391,12 @@ impl<'a> FnGen<'a> {
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
-        let param_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
+        let block_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
+        // block_vals[0] = self (a closure); block_vals[1..] = parâmetros do usuário.
+        let self_v = self.builder.declare_var(types::I64);
+        self.builder.def_var(self_v, block_vals[0]);
+        self.self_var = Some(self_v);
+        let param_vals = &block_vals[1..];
 
         self.enter_frame(local_count);
 
@@ -426,6 +462,20 @@ impl<'a> FnGen<'a> {
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[]);
         self.builder.inst_results(c)[0]
+    }
+    fn call3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) -> CValue {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        let call = self.builder.ins().call(r, &[a, b, c]);
+        self.builder.inst_results(call)[0]
+    }
+    fn call_void3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        self.builder.ins().call(r, &[a, b, c]);
+    }
+    /// Endereço (ponteiro de código) de uma função declarada.
+    fn func_addr(&mut self, id: FuncId) -> CValue {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        self.builder.ins().func_addr(self.ptr, r)
     }
     fn call_void(&mut self, id: FuncId, args: &[CValue]) {
         let r = self.module.declare_func_in_func(id, self.builder.func);
@@ -511,7 +561,74 @@ impl<'a> FnGen<'a> {
                 self.gc_push_val(v);
                 Flow::Val(v)
             }
+            Ast::CallValue { f, args } => {
+                let v = self.gen_call_value(f, args)?; // net-0
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            Ast::Capture(i) => {
+                let self_v = self.builder.use_var(self.self_var.expect("self"));
+                let idx = self.builder.ins().iconst(types::I64, *i as i64);
+                let v = self.call2(self.rt.fn_free, self_v, idx);
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            Ast::FnRef(name) => {
+                let (id, arity) = self.fn_ids[name];
+                let code = self.func_addr(id);
+                let ar = self.builder.ins().iconst(types::I64, arity as i64);
+                let nfree = self.builder.ins().iconst(types::I64, 0);
+                let fnv = self.call3(self.rt.make_fn, code, ar, nfree);
+                self.gc_push_val(fnv);
+                Flow::Val(fnv)
+            }
+            Ast::MakeFn { lambda, arity, captures } => self.gen_make_fn(lambda, *arity, captures)?,
         })
+    }
+
+    /// Cria uma closure: avalia capturas, aloca o Fn e preenche `freev`.
+    fn gen_make_fn(&mut self, lambda: &str, arity: usize, captures: &[Ast]) -> Result<Flow, Diagnostic> {
+        let mut cap_vals = Vec::with_capacity(captures.len());
+        for c in captures {
+            cap_vals.push(self.expr_val(c)?); // +1 cada (rooteados durante o alloc)
+        }
+        let (id, _) = self.fn_ids[lambda];
+        let code = self.func_addr(id);
+        let ar = self.builder.ins().iconst(types::I64, arity as i64);
+        let nfree = self.builder.ins().iconst(types::I64, captures.len() as i64);
+        let fnv = self.call3(self.rt.make_fn, code, ar, nfree);
+        // Capturas já estão dentro do Fn a partir de agora (set_free não aloca):
+        self.gc_popn(captures.len()); // remove os temps de captura
+        self.gc_push_val(fnv); // rooteia o Fn
+        for (i, cv) in cap_vals.iter().enumerate() {
+            let idx = self.builder.ins().iconst(types::I64, i as i64);
+            self.call_void3(self.rt.set_free, fnv, idx, *cv);
+        }
+        Ok(Flow::Val(fnv))
+    }
+
+    /// Chamada indireta de um valor-função (net-0 no shadow-stack).
+    fn gen_call_value(&mut self, f: &Ast, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let f_val = self.expr_val(f)?; // +1
+        let mut argv = vec![f_val]; // self = a própria closure
+        for a in args {
+            argv.push(self.expr_val(a)?); // +1 cada
+        }
+        // Verificação de aridade em runtime.
+        let nargs = self.builder.ins().iconst(types::I64, args.len() as i64);
+        self.call_void(self.rt.check_call, &[f_val, nargs]);
+        let code = self.call1(self.rt.fn_code, f_val);
+        // Assinatura da entrada: (self, args...) -> i64.
+        let mut sig = self.module.make_signature();
+        for _ in 0..(args.len() + 1) {
+            sig.params.push(AbiParam::new(types::I64));
+        }
+        sig.returns.push(AbiParam::new(types::I64));
+        let sig_ref = self.builder.import_signature(sig);
+        let call = self.builder.ins().call_indirect(sig_ref, code, &argv);
+        let r = self.builder.inst_results(call)[0];
+        self.gc_popn(1 + args.len()); // f + args
+        Ok(r)
     }
 
     fn gen_if(&mut self, test: &Ast, then: &Ast, els: &Ast) -> Result<Flow, Diagnostic> {
@@ -607,7 +724,9 @@ impl<'a> FnGen<'a> {
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
-                let mut argv = Vec::with_capacity(args.len());
+                // Chamada estática: self = NIL (fn de topo ignora capturas).
+                let nil = self.konst(NIL);
+                let mut argv = vec![nil];
                 for a in args {
                     argv.push(self.expr_val(a)?); // +1 cada
                 }
@@ -752,6 +871,11 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
         }
         Ast::Do(v) => v.iter().for_each(|a| collect_strings(a, out)),
         Ast::Recur(v) => v.iter().for_each(|a| collect_strings(a, out)),
+        Ast::MakeFn { captures, .. } => captures.iter().for_each(|a| collect_strings(a, out)),
+        Ast::CallValue { f, args } => {
+            collect_strings(f, out);
+            args.iter().for_each(|a| collect_strings(a, out));
+        }
         Ast::Loop { slots, body } | Ast::Let { slots, body } => {
             slots.iter().for_each(|(_, a)| collect_strings(a, out));
             collect_strings(body, out);

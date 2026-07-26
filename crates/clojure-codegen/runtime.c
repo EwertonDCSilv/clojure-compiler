@@ -29,7 +29,7 @@ typedef intptr_t Value;
 #define FIX(v)     ((intptr_t)(v) >> 1)
 #define IS_PTR(v)  (((v) & 7) == 0)
 
-enum { T_STR = 1, T_CONS = 2 };
+enum { T_STR = 1, T_CONS = 2, T_FN = 3 };
 
 typedef struct Obj {
     uint8_t type;
@@ -38,6 +38,8 @@ typedef struct Obj {
 } Obj;
 typedef struct { Obj h; size_t len; char *data; } Str;
 typedef struct { Obj h; Value head; Value tail; } Cons;
+/* Função de primeira classe: ponteiro de código + aridade + variáveis capturadas. */
+typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[]; } Fn;
 
 /* ---------- shadow-stack de roots ---------- */
 #define GC_STACK_CAP (1u << 22) /* 4M slots */
@@ -107,6 +109,10 @@ static void gc_mark(Value v) {
         if (o->type == T_CONS) {
             gc_mark(((Cons *)v)->head);
             v = ((Cons *)v)->tail; /* itera a cauda (não recursa) */
+        } else if (o->type == T_FN) {
+            Fn *f = (Fn *)v;
+            for (int64_t i = 0; i < f->nfree; i++) gc_mark(f->freev[i]);
+            return;
         } else {
             return; /* string: folha */
         }
@@ -149,6 +155,29 @@ Value cljn_cons(Value h, Value t) {
     c->head = h;
     c->tail = t;
     return (Value)c;
+}
+
+/* ---------- funções de primeira classe ---------- */
+Value cljn_make_fn(Value code, Value arity, Value nfree) {
+    /* Capturas (se houver) estão no shadow-stack; obj_alloc pode coletar. */
+    Fn *f = (Fn *)obj_alloc(sizeof(Fn) + (size_t)nfree * sizeof(Value), T_FN);
+    f->code = (void *)code;
+    f->arity = (int64_t)arity;
+    f->nfree = (int64_t)nfree;
+    for (int64_t i = 0; i < f->nfree; i++) f->freev[i] = NIL; /* zera antes de qualquer GC */
+    return (Value)f;
+}
+void cljn_fn_set_free(Value fn, Value i, Value v) { ((Fn *)fn)->freev[(size_t)i] = v; }
+Value cljn_fn_free(Value fn, Value i) { return ((Fn *)fn)->freev[(size_t)i]; }
+Value cljn_fn_code(Value fn) { return (Value)((Fn *)fn)->code; }
+/* Verifica que `fn` é função com a aridade dada (erro de runtime senão). */
+void cljn_check_call(Value fn, Value nargs) {
+    if (obj_type(fn) != T_FN) die("valor chamado não é uma função");
+    if (((Fn *)fn)->arity != (int64_t)nargs) {
+        fprintf(stderr, "erro: aridade errada na chamada (esperava %ld, recebeu %ld)\n",
+                (long)((Fn *)fn)->arity, (long)nargs);
+        exit(1);
+    }
 }
 
 /* ---------- aritmética ---------- */
@@ -241,6 +270,7 @@ static void write_val(SB *b, Value v, int for_str) {
             }
             sb_putc(b,')'); return;
         }
+        case T_FN: sb_str(b, "#<fn>"); return;
         default: sb_str(b,"#<obj>");
     }
 }

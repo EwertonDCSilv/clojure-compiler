@@ -17,10 +17,11 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **`loop`/`recur` compilado** ✅ backedge nativo com validação de tail-position (rastreio de divergência `Flow` no codegen). `(conta 1000000 0)` roda sem estourar a pilha — prova que é loop, não recursão.
 > - **GC mark-sweep preciso** ✅ (fecha a Fase 4) coletor tracing não-móvel single-thread com **shadow-stack de roots** gerado pelo codegen (`enter/leave/push/popn/set`); sem escanear a pilha nativa. Validado sob `CLJN_GC_STRESS=1` (coleta a cada alocação, saída correta) e reclamação medida: loop de 10M cons → ~6 MB com GC vs. ~470 MB sem. Ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26).
 > - **Macros no caminho compilado** ✅ (ADR-0004) pré-passo de expansão no analyzer: `when when-not if-not cond and or -> ->>` funcionam em `build` (expandidos para as formas especiais antes da análise; `and`/`or` com gensym, sem duplo-eval).
-> - ~46 testes verdes, incluindo e2e que compilam/executam binários, GC e macros.
+> - **Closures / funções de 1ª classe** ✅ (protótipos #2/#3) `fn` com captura léxica (incl. **transitiva/aninhada**), HOF (`my-map`/`my-reduce` em Clojure compilado), fn de topo como valor (`FnRef`), **chamada indireta** (`call_indirect`) com checagem de aridade em runtime. Closures são objetos GC-traçados (`free[]` marcado); validado sob `CLJN_GC_STRESS=1`. Convenção: toda fn recebe `self` (a closure) como 1º arg.
+> - ~47 testes verdes, incluindo e2e de closures/HOF (normal + GC-stress).
 >
-> Próximo: closures/HOF no codegen (protótipos #2/#3); coleções persistentes reais
-> (vector trie/HAMT); `defprotocol`/`defrecord`; Windows 1ª classe (#11).
+> Próximo: coleções persistentes reais (vector trie/HAMT) substituindo a lista simples;
+> `defprotocol`/`defrecord`; mapas/sets no codegen; mais de `clojure.core` em Clojure.
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

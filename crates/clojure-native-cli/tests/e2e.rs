@@ -119,6 +119,30 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiles_closures_and_hof() {
+    if !have_cc() {
+        return;
+    }
+    let src = r#"(ns c.core)
+(defn my-map [f coll] (if (empty? coll) (list) (cons (f (first coll)) (my-map f (rest coll)))))
+(defn adder [n] (fn [x] (+ x n)))
+(defn dobro [x] (* x 2))
+(defn -main []
+  (println (my-map (fn [x] (* x x)) (list 1 2 3 4)))
+  (println (my-map dobro (list 1 2 3)))
+  (let [add5 (adder 5)] (println (add5 10)))
+  (println (((fn [a] (fn [b] (+ a b))) 3) 4)))
+(-main)"#;
+    let expected = "(1 4 9 16)\n(2 4 6)\n15\n7\n";
+    // roda em modo normal e sob GC-stress (valida tracing das capturas)
+    assert_eq!(build_and_run("cljn_e2e_clos", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_clos_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_core_macros() {
     if !have_cc() {
         return;

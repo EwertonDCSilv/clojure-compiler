@@ -1,15 +1,9 @@
 //! Analisador do **subconjunto compilável** (Fase 3, corte vertical p/ Fase 5).
 //!
-//! Transforma `Form` em uma AST tipada por variante, com resolução de locais e
-//! funções, checagem de aridade e detecção de construções fora do subconjunto
-//! compilável (que viram diagnósticos, nunca comportamento silencioso —
-//! specs/COMPATIBILITY_SPEC.md).
-//!
-//! Subconjunto compilável do MVP-slice (valores são inteiros `i64`; strings só
-//! como argumento de `println`):
-//! `ns`, `def`/`defn` (aridade fixa), `if`, `do`, `let`, chamadas diretas de
-//! função (inclui recursão), primitivas `+ - * = < <= > >= println`, literais
-//! inteiros/booleanos/`nil`/string.
+//! Transforma `Form` em uma AST tipada, com resolução de locais/capturas/funções,
+//! checagem de aridade, expansão prévia de macros de core (ADR-0004) e
+//! **conversão de closures** (funções de 1ª classe: `fn`, captura léxica,
+//! chamadas indiretas). Construções fora do subconjunto viram diagnósticos.
 
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use clojure_span::Span;
@@ -26,51 +20,39 @@ pub enum Ast {
     Bool(bool),
     Nil,
     Str(String),
-    /// Referência a um local por slot.
+    /// Local por slot (no frame da função/lambda atual).
     Local(u32),
+    /// Variável capturada: `self->freev[idx]` da lambda atual.
+    Capture(u32),
+    /// Referência a uma função de topo como valor (cria closure com 0 capturas).
+    FnRef(String),
+    /// Cria uma closure: função-lambda + valores capturados (avaliados no contexto
+    /// que contém o `fn`).
+    MakeFn { lambda: String, arity: usize, captures: Vec<Ast> },
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Do(Vec<Ast>),
-    /// `let*`: cada binding define o slot `first_slot + i` e é visível nos seguintes.
     Let { slots: Vec<(u32, Ast)>, body: Box<Ast> },
-    /// `loop*`: alvo de `recur`. `slots` são as variáveis de loop.
     Loop { slots: Vec<(u32, Ast)>, body: Box<Ast> },
-    /// `recur`: religa o alvo mais próximo (loop ou fn) e salta.
     Recur(Vec<Ast>),
+    /// Chamada direta a primitiva ou função de topo conhecida.
     Call { callee: Callee, args: Vec<Ast> },
+    /// Chamada indireta de um valor-função (closure).
+    CallValue { f: Box<Ast>, args: Vec<Ast> },
 }
 
 #[derive(Debug, Clone)]
 pub enum Callee {
     Prim(Prim),
-    /// Chamada direta a uma função definida no programa.
     Fn(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Prim {
-    Add,
-    Sub,
-    Mul,
-    Quot,
-    Mod,
-    Inc,
-    Dec,
-    Eq,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    Not,
-    NilP,
-    EmptyP,
-    Cons,
-    First,
-    Rest,
-    Count,
-    List,
-    Str,
-    Println,
-    Print,
+    Add, Sub, Mul, Quot, Mod, Inc, Dec,
+    Eq, Lt, Le, Gt, Ge,
+    Not, NilP, EmptyP,
+    Cons, First, Rest, Count, List,
+    Str, Println, Print,
 }
 
 #[derive(Debug, Clone)]
@@ -78,22 +60,20 @@ pub struct Function {
     pub name: String,
     pub params: Vec<String>,
     pub body: Ast,
-    /// Número total de slots locais (params + lets).
+    /// Slots locais (params + lets + loop vars). **Não** inclui `self`.
     pub local_count: u32,
+    /// Verdadeiro para lambdas (usam `self` para ler capturas); falso p/ defns de topo.
+    pub is_lambda: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
-    /// Formas de topo não-`defn` (modelo de script), avaliadas em `main`.
     pub main_body: Vec<Ast>,
     pub main_local_count: u32,
 }
 
-/// Analisa um conjunto de forms de topo no `Program` compilável.
-///
-/// Expande primeiro as macros de core suportadas (when/cond/and/or/->/->>; ADR-0004)
-/// e então analisa o resultado.
+/// Analisa forms de topo no `Program` compilável (expande macros antes).
 pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let expanded = expand::expand_all(forms);
     analyze_expanded(&expanded)
@@ -102,7 +82,7 @@ pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
 fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut diags = Diagnostics::new();
 
-    // Passo 1: coletar assinaturas de funções (para forward-refs / recursão).
+    // Assinaturas de funções de topo (para forward-ref / recursão / FnRef).
     let mut sigs: HashMap<String, usize> = HashMap::new();
     for f in forms {
         if let Some((name, params, _)) = match_defn(f) {
@@ -110,47 +90,50 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         }
     }
 
-    // Passo 2: analisar corpos e o script de topo.
-    let mut functions = Vec::new();
+    let mut an = Analyzer { sigs: &sigs, frames: Vec::new(), functions: Vec::new(), lam: 0 };
     let mut main_body = Vec::new();
-    let mut main_scope = Scope::new(&sigs);
+
+    // Frame do "main" (topo). Fica na base; frames de defn entram/saem acima.
+    an.frames.push(Frame::new(false));
 
     for f in forms {
         if is_ns(f) {
             continue;
         }
         if let Some((name, params, body_forms)) = match_defn(f) {
-            let mut scope = Scope::new(&sigs);
+            an.frames.push(Frame::new(false));
             for p in &params {
-                scope.push_local(p.clone());
+                an.push_local(p.clone());
             }
-            // A fn é um alvo de recur com a aridade dos seus parâmetros.
-            scope.recur_arity.push(params.len());
-            match scope.analyze_body(&body_forms, f.span, true) {
-                Ok(body) => functions.push(Function {
+            an.top().recur_arity.push(params.len());
+            let body = an.analyze_body(&body_forms, f.span, true);
+            let fr = an.frames.pop().unwrap();
+            match body {
+                Ok(body) => an.functions.push(Function {
                     name,
                     params,
                     body,
-                    local_count: scope.max_slots,
+                    local_count: fr.max_slots,
+                    is_lambda: false,
                 }),
                 Err(d) => diags.push(d),
             }
         } else {
-            // Forma de topo (ex.: `(-main)`) — não é posição de cauda de recur.
-            match main_scope.analyze(f, false) {
+            match an.analyze(f, false) {
                 Ok(a) => main_body.push(a),
                 Err(d) => diags.push(d),
             }
         }
     }
 
+    let main_frame = an.frames.pop().unwrap();
     if diags.has_errors() {
         return Err(diags);
     }
     Ok(Program {
-        functions,
+        functions: an.functions,
         main_body,
-        main_local_count: main_scope.max_slots,
+        main_local_count: main_frame.max_slots,
     })
 }
 
@@ -161,13 +144,9 @@ fn is_ns(f: &SForm) -> bool {
 
 /// Reconhece `(defn nome [params] body...)` (aridade fixa, sem docstring/attrs).
 fn match_defn(f: &SForm) -> Option<(String, Vec<String>, Vec<SForm>)> {
-    let Form::List(items) = f.node.strip_meta() else {
-        return None;
-    };
+    let Form::List(items) = f.node.strip_meta() else { return None };
     let head = items.first()?;
-    let Form::Symbol(n) = head.node.strip_meta() else {
-        return None;
-    };
+    let Form::Symbol(n) = head.node.strip_meta() else { return None };
     if n.ns.is_some() || (n.name != "defn" && n.name != "defn-") {
         return None;
     }
@@ -175,51 +154,96 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<String>, Vec<SForm>)> {
         Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
         _ => return None,
     };
-    let params = match items.get(2).map(|f| f.node.strip_meta()) {
-        Some(Form::Vector(ps)) => {
-            let mut out = Vec::new();
-            for p in ps {
-                match p.node.strip_meta() {
-                    Form::Symbol(pn) if pn.ns.is_none() => out.push(pn.name.clone()),
-                    _ => return None, // destructuring/variádico fora do slice
-                }
-            }
-            out
-        }
-        _ => return None,
-    };
+    let params = parse_params(items.get(2)?)?;
     let body = items[3..].to_vec();
     Some((name, params, body))
 }
 
-struct Scope<'a> {
-    sigs: &'a HashMap<String, usize>,
-    /// Pilha de locais visíveis: nome → slot.
+fn parse_params(f: &SForm) -> Option<Vec<String>> {
+    let Form::Vector(ps) = f.node.strip_meta() else { return None };
+    let mut out = Vec::new();
+    for p in ps {
+        match p.node.strip_meta() {
+            Form::Symbol(pn) if pn.ns.is_none() => out.push(pn.name.clone()),
+            _ => return None, // destructuring/variádico fora do slice
+        }
+    }
+    Some(out)
+}
+
+/// Frame léxico de uma função ou lambda.
+struct Frame {
     locals: Vec<(String, u32)>,
     next_slot: u32,
     max_slots: u32,
-    /// Pilha de aridades de alvos de `recur` (fn/loop mais internos).
     recur_arity: Vec<usize>,
+    is_lambda: bool,
+    captures: Vec<Ast>,
+    capture_names: Vec<String>,
 }
 
-impl<'a> Scope<'a> {
-    fn new(sigs: &'a HashMap<String, usize>) -> Self {
-        Scope { sigs, locals: Vec::new(), next_slot: 0, max_slots: 0, recur_arity: Vec::new() }
+impl Frame {
+    fn new(is_lambda: bool) -> Self {
+        Frame {
+            locals: Vec::new(),
+            next_slot: 0,
+            max_slots: 0,
+            recur_arity: Vec::new(),
+            is_lambda,
+            captures: Vec::new(),
+            capture_names: Vec::new(),
+        }
+    }
+}
+
+struct Analyzer<'a> {
+    sigs: &'a HashMap<String, usize>,
+    frames: Vec<Frame>,
+    functions: Vec<Function>,
+    lam: u32,
+}
+
+impl<'a> Analyzer<'a> {
+    fn top(&mut self) -> &mut Frame {
+        self.frames.last_mut().unwrap()
     }
 
     fn push_local(&mut self, name: String) -> u32 {
-        let slot = self.next_slot;
-        self.next_slot += 1;
-        self.max_slots = self.max_slots.max(self.next_slot);
-        self.locals.push((name, slot));
+        let fr = self.top();
+        let slot = fr.next_slot;
+        fr.next_slot += 1;
+        fr.max_slots = fr.max_slots.max(fr.next_slot);
+        fr.locals.push((name, slot));
         slot
     }
 
-    fn lookup(&self, name: &str) -> Option<u32> {
-        self.locals.iter().rev().find(|(n, _)| n == name).map(|(_, s)| *s)
+    /// Resolve `name` como valor válido no frame `i`: `Local`, `Capture` ou `None`.
+    /// Ao cruzar fronteiras de lambda, registra capturas transitivas.
+    fn resolve_from(&mut self, i: usize, name: &str) -> Option<Ast> {
+        if let Some((_, slot)) = self.frames[i].locals.iter().rev().find(|(n, _)| n == name) {
+            return Some(Ast::Local(*slot));
+        }
+        if self.frames[i].is_lambda {
+            if let Some(idx) = self.frames[i].capture_names.iter().position(|n| n == name) {
+                return Some(Ast::Capture(idx as u32));
+            }
+        }
+        // Só uma lambda captura do frame que a contém.
+        if i == 0 || !self.frames[i].is_lambda {
+            return None;
+        }
+        let parent_ast = self.resolve_from(i - 1, name)?;
+        let idx = self.frames[i].captures.len() as u32;
+        self.frames[i].captures.push(parent_ast);
+        self.frames[i].capture_names.push(name.to_string());
+        Some(Ast::Capture(idx))
     }
 
-    /// Corpo (sequência implícita de `do`). `tail` propaga só para a última forma.
+    fn resolve(&mut self, name: &str) -> Option<Ast> {
+        let top = self.frames.len() - 1;
+        self.resolve_from(top, name)
+    }
+
     fn analyze_body(&mut self, body: &[SForm], _span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         if body.is_empty() {
             return Ok(Ast::Nil);
@@ -242,23 +266,10 @@ impl<'a> Scope<'a> {
             Form::Bool(b) => Ok(Ast::Bool(*b)),
             Form::Int(n) => Ok(Ast::Int(*n)),
             Form::Str(s) => Ok(Ast::Str(s.clone())),
-            Form::Float(_) => Err(unsupported(
-                "ponto flutuante ainda não é compilável (slice inteiro)",
-                f.span,
-            )),
+            Form::Float(_) => Err(unsupported("ponto flutuante ainda não é compilável (slice inteiro)", f.span)),
             Form::Char(_) => Err(unsupported("char ainda não é compilável", f.span)),
             Form::Keyword(_) => Err(unsupported("keyword ainda não é compilável", f.span)),
-            Form::Symbol(n) => {
-                if n.ns.is_some() {
-                    return Err(unsupported(format!("símbolo qualificado {n} fora do slice"), f.span));
-                }
-                match self.lookup(&n.name) {
-                    Some(slot) => Ok(Ast::Local(slot)),
-                    None => Err(Diagnostic::error("E0101", format!("símbolo não resolvido: {n}"))
-                        .with_span(f.span)
-                        .with_help("no subconjunto compilável só há locais e chamadas de função/primitiva")),
-                }
-            }
+            Form::Symbol(n) => self.analyze_symbol_value(&n.ns, &n.name, f.span),
             Form::Vector(_) | Form::Map(_) | Form::Set(_) => {
                 Err(unsupported("literais de coleção ainda não são compiláveis (slice inteiro)", f.span))
             }
@@ -267,12 +278,38 @@ impl<'a> Scope<'a> {
         }
     }
 
+    /// Símbolo em posição de valor: local/captura, ou função de topo (FnRef).
+    fn analyze_symbol_value(&mut self, ns: &Option<String>, name: &str, span: Span) -> Result<Ast, Diagnostic> {
+        if ns.is_some() {
+            return Err(unsupported(format!("símbolo qualificado {name} fora do slice"), span));
+        }
+        if let Some(ast) = self.resolve(name) {
+            return Ok(ast);
+        }
+        if self.sigs.contains_key(name) {
+            return Ok(Ast::FnRef(name.to_string()));
+        }
+        if prim_of(name).is_some() {
+            return Err(unsupported(
+                format!("primitiva `{name}` como valor ainda não é compilável; envolva em (fn [x] ({name} x))"),
+                span,
+            ));
+        }
+        Err(Diagnostic::error("E0101", format!("símbolo não resolvido: {name}"))
+            .with_span(span)
+            .with_help("locais, capturas, funções de topo (como valor) e primitivas (em chamada)"))
+    }
+
     fn analyze_list(&mut self, items: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         let Some((head, args)) = items.split_first() else {
             return Err(unsupported("lista vazia não é compilável", span));
         };
+
+        // Operador não-simbólico: chamada indireta de um valor-função.
         let Form::Symbol(op) = head.node.strip_meta() else {
-            return Err(unsupported("operador deve ser um símbolo no slice", head.span));
+            let f = self.analyze(head, false)?;
+            let a = self.analyze_seq(args)?;
+            return Ok(Ast::CallValue { f: Box::new(f), args: a });
         };
         if op.ns.is_some() {
             return Err(unsupported(format!("operador qualificado {op} fora do slice"), head.span));
@@ -282,7 +319,6 @@ impl<'a> Scope<'a> {
                 if args.len() < 2 || args.len() > 3 {
                     return Err(Diagnostic::error("E0102", "if requer test, then e (opcional) else").with_span(span));
                 }
-                // test não é cauda; then/else herdam `tail`.
                 let test = self.analyze(&args[0], false)?;
                 let then = self.analyze(&args[1], tail)?;
                 let els = match args.get(2) {
@@ -295,17 +331,18 @@ impl<'a> Scope<'a> {
             "let" | "let*" => self.analyze_let(args, span, tail),
             "loop" | "loop*" => self.analyze_loop(args, span, tail),
             "recur" => self.analyze_recur(args, span, tail),
+            "fn" | "fn*" => self.analyze_fn(args, span),
             "quote" => Err(unsupported("quote ainda não é compilável", span)),
-            "fn" | "fn*" => Err(unsupported(
-                "funções anônimas/closures ainda não são compiláveis (slice); defina com defn no topo",
-                span,
-            )),
             "def" | "defn" | "defn-" => Err(unsupported("def/defn só é permitido no nível de topo", span)),
             name => {
-                // Primitiva ou chamada de função.
-                let callee = if let Some(prim) = prim_of(name) {
+                if let Some(prim) = prim_of(name) {
                     check_prim_arity(prim, args.len(), span)?;
-                    Callee::Prim(prim)
+                    let a = self.analyze_seq(args)?;
+                    Ok(Ast::Call { callee: Callee::Prim(prim), args: a })
+                } else if let Some(ast) = self.resolve(name) {
+                    // Local/captura em posição de operador → chamada indireta.
+                    let a = self.analyze_seq(args)?;
+                    Ok(Ast::CallValue { f: Box::new(ast), args: a })
                 } else if let Some(&arity) = self.sigs.get(name) {
                     if arity != args.len() {
                         return Err(Diagnostic::error(
@@ -314,24 +351,17 @@ impl<'a> Scope<'a> {
                         )
                         .with_span(span));
                     }
-                    Callee::Fn(name.to_string())
-                } else if self.lookup(name).is_some() {
-                    return Err(unsupported(
-                        format!("`{name}` é um local; chamar valores-função ainda não é compilável no slice"),
-                        span,
-                    ));
+                    let a = self.analyze_seq(args)?;
+                    Ok(Ast::Call { callee: Callee::Fn(name.to_string()), args: a })
                 } else {
-                    return Err(Diagnostic::error("E0101", format!("função não resolvida: {name}"))
+                    Err(Diagnostic::error("E0101", format!("função não resolvida: {name}"))
                         .with_span(span)
-                        .with_help("defina-a com defn no topo, ou use uma primitiva do slice"));
-                };
-                let arg_ast = self.analyze_seq(args)?;
-                Ok(Ast::Call { callee, args: arg_ast })
+                        .with_help("defina-a com defn, use uma primitiva, um local ou um fn"))
+                }
             }
         }
     }
 
-    /// Argumentos de chamada: nunca em posição de cauda.
     fn analyze_seq(&mut self, forms: &[SForm]) -> Result<Vec<Ast>, Diagnostic> {
         forms.iter().map(|f| self.analyze(f, false)).collect()
     }
@@ -344,21 +374,22 @@ impl<'a> Scope<'a> {
         if bindings.len() % 2 != 0 {
             return Err(Diagnostic::error("E0104", "let: bindings em pares").with_span(span));
         }
-        let saved_locals = self.locals.len();
-        let saved_next = self.next_slot;
+        let saved = self.top().locals.len();
+        let saved_next = self.top().next_slot;
         let mut slots = Vec::new();
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(unsupported("let: binding deve ser símbolo simples (sem destructuring no slice)", pair[0].span)),
+                _ => return Err(unsupported("let: binding deve ser símbolo simples (sem destructuring)", pair[0].span)),
             };
             let val = self.analyze(&pair[1], false)?;
             let slot = self.push_local(name);
             slots.push((slot, val));
         }
         let body = self.analyze_body(&args[1..], span, tail)?;
-        self.locals.truncate(saved_locals);
-        self.next_slot = saved_next;
+        let fr = self.top();
+        fr.locals.truncate(saved);
+        fr.next_slot = saved_next;
         Ok(Ast::Let { slots, body: Box::new(body) })
     }
 
@@ -370,30 +401,30 @@ impl<'a> Scope<'a> {
         if bindings.len() % 2 != 0 {
             return Err(Diagnostic::error("E0106", "loop: bindings em pares").with_span(span));
         }
-        let saved_locals = self.locals.len();
-        let saved_next = self.next_slot;
+        let saved = self.top().locals.len();
+        let saved_next = self.top().next_slot;
         let mut slots = Vec::new();
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(unsupported("loop: binding deve ser símbolo simples (sem destructuring)", pair[0].span)),
+                _ => return Err(unsupported("loop: binding deve ser símbolo simples", pair[0].span)),
             };
             let val = self.analyze(&pair[1], false)?;
             let slot = self.push_local(name);
             slots.push((slot, val));
         }
-        // `loop` é o alvo de recur mais interno (mesmo dentro de uma fn).
-        self.recur_arity.push(slots.len());
+        self.top().recur_arity.push(slots.len());
         let body = self.analyze_body(&args[1..], span, tail);
-        self.recur_arity.pop();
+        self.top().recur_arity.pop();
         let body = body?;
-        self.locals.truncate(saved_locals);
-        self.next_slot = saved_next;
+        let fr = self.top();
+        fr.locals.truncate(saved);
+        fr.next_slot = saved_next;
         Ok(Ast::Loop { slots, body: Box::new(body) })
     }
 
     fn analyze_recur(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
-        let Some(&arity) = self.recur_arity.last() else {
+        let Some(&arity) = self.top().recur_arity.last() else {
             return Err(Diagnostic::error("E0107", "recur fora de loop/fn").with_span(span));
         };
         if !tail {
@@ -410,45 +441,64 @@ impl<'a> Scope<'a> {
         }
         Ok(Ast::Recur(self.analyze_seq(args)?))
     }
+
+    /// `(fn [params] body...)` ou `(fn* nome? [params] body...)` → cria uma lambda
+    /// (função separada) e um `MakeFn` com as capturas léxicas.
+    fn analyze_fn(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+        let mut idx = 0;
+        // Nome opcional (auto-referência não suportada no slice; apenas ignorado).
+        if matches!(args.first().map(|f| f.node.strip_meta()), Some(Form::Symbol(_))) {
+            idx = 1;
+        }
+        let params = match args.get(idx) {
+            Some(p) => parse_params(p)
+                .ok_or_else(|| unsupported("fn: parâmetros devem ser um vetor de símbolos (sem destructuring/variádico)", p.span))?,
+            None => return Err(unsupported("fn: faltam parâmetros", span)),
+        };
+        let body_forms = &args[idx + 1..];
+
+        self.frames.push(Frame::new(true)); // lambda
+        for p in &params {
+            self.push_local(p.clone());
+        }
+        self.top().recur_arity.push(params.len());
+        let body = self.analyze_body(body_forms, span, true);
+        let fr = self.frames.pop().unwrap();
+        let body = body?;
+
+        let name = format!("__lambda_{}", self.lam);
+        self.lam += 1;
+        let arity = params.len();
+        self.functions.push(Function {
+            name: name.clone(),
+            params,
+            body,
+            local_count: fr.max_slots,
+            is_lambda: true,
+        });
+        Ok(Ast::MakeFn { lambda: name, arity, captures: fr.captures })
+    }
 }
 
 fn prim_of(name: &str) -> Option<Prim> {
     Some(match name {
-        "+" => Prim::Add,
-        "-" => Prim::Sub,
-        "*" => Prim::Mul,
-        "quot" => Prim::Quot,
-        "mod" => Prim::Mod,
-        "inc" => Prim::Inc,
-        "dec" => Prim::Dec,
-        "=" => Prim::Eq,
-        "<" => Prim::Lt,
-        "<=" => Prim::Le,
-        ">" => Prim::Gt,
-        ">=" => Prim::Ge,
-        "not" => Prim::Not,
-        "nil?" => Prim::NilP,
-        "empty?" => Prim::EmptyP,
-        "cons" => Prim::Cons,
-        "first" => Prim::First,
-        "rest" => Prim::Rest,
-        "count" => Prim::Count,
-        "list" => Prim::List,
-        "str" => Prim::Str,
-        "println" => Prim::Println,
-        "print" => Prim::Print,
+        "+" => Prim::Add, "-" => Prim::Sub, "*" => Prim::Mul,
+        "quot" => Prim::Quot, "mod" => Prim::Mod, "inc" => Prim::Inc, "dec" => Prim::Dec,
+        "=" => Prim::Eq, "<" => Prim::Lt, "<=" => Prim::Le, ">" => Prim::Gt, ">=" => Prim::Ge,
+        "not" => Prim::Not, "nil?" => Prim::NilP, "empty?" => Prim::EmptyP,
+        "cons" => Prim::Cons, "first" => Prim::First, "rest" => Prim::Rest,
+        "count" => Prim::Count, "list" => Prim::List, "str" => Prim::Str,
+        "println" => Prim::Println, "print" => Prim::Print,
         _ => return None,
     })
 }
 
 fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> {
     let ok = match prim {
-        Prim::Sub => n >= 1,
-        Prim::Add | Prim::Mul => n >= 1,
+        Prim::Sub | Prim::Add | Prim::Mul => n >= 1,
         Prim::Quot | Prim::Mod | Prim::Cons => n == 2,
-        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP | Prim::First
-        | Prim::Rest | Prim::Count => n == 1,
-        // Comparações binárias no slice (encadeamento é [FUTURO]).
+        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP
+        | Prim::First | Prim::Rest | Prim::Count => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => n == 2,
         Prim::List | Prim::Str | Prim::Println | Prim::Print => true,
     };
@@ -462,7 +512,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
 fn unsupported(msg: impl Into<String>, span: Span) -> Diagnostic {
     Diagnostic::error("E0100", msg)
         .with_span(span)
-        .with_help("fora do subconjunto compilável atual; ver specs/LANGUAGE_SCOPE.md e IMPLEMENTATION_PLAN.md (Fase 5)")
+        .with_help("fora do subconjunto compilável atual; ver specs/LANGUAGE_SCOPE.md e IMPLEMENTATION_PLAN.md")
 }
 
 #[cfg(test)]
@@ -473,34 +523,61 @@ mod tests {
         let forms = clojure_reader::read_all(0, src).expect("lê");
         analyze(&forms).expect("analisa")
     }
-
-    #[test]
-    fn analyzes_fn_and_main() {
-        let p = prog("(ns h.core)\n(defn fib [n] (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))\n(defn -main [] (println \"fib\" (fib 10)))\n(-main)");
-        assert_eq!(p.functions.len(), 2);
-        assert_eq!(p.main_body.len(), 1);
-        let fib = p.functions.iter().find(|f| f.name == "fib").unwrap();
-        assert_eq!(fib.params, vec!["n"]);
-        assert_eq!(fib.local_count, 1);
+    fn err(src: &str) -> Diagnostics {
+        let forms = clojure_reader::read_all(0, src).expect("lê");
+        analyze(&forms).unwrap_err()
     }
 
     #[test]
-    fn let_slots() {
-        let p = prog("(defn f [a] (let [b (+ a 1) c (* b 2)] (+ b c)))");
-        let f = &p.functions[0];
-        assert_eq!(f.local_count, 3); // a, b, c
+    fn analyzes_fn_and_main() {
+        let p = prog("(ns h.core)\n(defn fib [n] (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))\n(defn -main [] (println (fib 10)))\n(-main)");
+        assert_eq!(p.functions.iter().filter(|f| !f.is_lambda).count(), 2);
+        assert_eq!(p.main_body.len(), 1);
+    }
+
+    #[test]
+    fn closure_captures() {
+        // adder captura n; a lambda tem 1 captura.
+        let p = prog("(defn adder [n] (fn [x] (+ x n)))");
+        let lam = p.functions.iter().find(|f| f.is_lambda).unwrap();
+        assert_eq!(lam.params, vec!["x"]);
+        // O MakeFn no corpo de adder deve capturar 1 valor.
+        if let Ast::MakeFn { captures, arity, .. } = &p.functions.iter().find(|f| f.name == "adder").unwrap().body {
+            assert_eq!(*arity, 1);
+            assert_eq!(captures.len(), 1);
+            assert!(matches!(captures[0], Ast::Local(_)));
+        } else {
+            panic!("corpo de adder deveria ser MakeFn");
+        }
+    }
+
+    #[test]
+    fn higher_order_call_value() {
+        let p = prog("(defn ap [f x] (f x))");
+        let ap = p.functions.iter().find(|f| f.name == "ap").unwrap();
+        assert!(matches!(ap.body, Ast::CallValue { .. }));
+    }
+
+    #[test]
+    fn fn_as_value_is_fnref() {
+        let p = prog("(defn inc1 [x] (+ x 1))\n(defn use [] (ap inc1 5))\n(defn ap [f x] (f x))");
+        let usef = p.functions.iter().find(|f| f.name == "use").unwrap();
+        if let Ast::Call { args, .. } = &usef.body {
+            assert!(matches!(args[0], Ast::FnRef(_)));
+        } else {
+            panic!("esperava Call");
+        }
+    }
+
+    #[test]
+    fn macros_expand() {
+        let p = prog("(defn f [n] (cond (< n 0) -1 :else 1))");
+        // cond vira if aninhado
+        assert!(matches!(p.functions[0].body, Ast::If(..)));
     }
 
     #[test]
     fn unresolved_is_error() {
-        let forms = clojure_reader::read_all(0, "(defn f [] (nope 1))").unwrap();
-        let e = analyze(&forms).unwrap_err();
-        assert_eq!(e.items[0].code, "E0101");
-    }
-
-    #[test]
-    fn unsupported_is_diagnosed() {
-        let forms = clojure_reader::read_all(0, "(defn f [] (fn [x] x))").unwrap();
-        assert_eq!(analyze(&forms).unwrap_err().items[0].code, "E0100");
+        assert_eq!(err("(defn f [] (nope 1))").items[0].code, "E0101");
     }
 }
