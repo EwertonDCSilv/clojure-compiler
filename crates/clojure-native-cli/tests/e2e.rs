@@ -119,6 +119,29 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiled_stdlib_available() {
+    if !have_cc() {
+        return;
+    }
+    // map/filter/reduce/range/into/mapv vêm do core.clj compilável, sem o usuário
+    // defini-los; `inc`/`+`/`even?` passados como valores (wrappers de primitiva).
+    let src = r#"(ns s.core)
+(defn -main []
+  (println (map inc (range 5)))
+  (println (filter even? (range 10)))
+  (println (reduce + 0 (map (fn [x] (* x x)) (range 6))))
+  (println (into [] (map inc (range 4))))
+  (println ((comp inc inc) 10)))
+(-main)"#;
+    let expected = "(1 2 3 4 5)\n(0 2 4 6 8)\n55\n[1 2 3 4]\n12\n";
+    assert_eq!(build_and_run("cljn_e2e_std", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_std_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_collections() {
     if !have_cc() {
         return;

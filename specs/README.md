@@ -18,11 +18,12 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **GC mark-sweep preciso** ✅ (fecha a Fase 4) coletor tracing não-móvel single-thread com **shadow-stack de roots** gerado pelo codegen (`enter/leave/push/popn/set`); sem escanear a pilha nativa. Validado sob `CLJN_GC_STRESS=1` (coleta a cada alocação, saída correta) e reclamação medida: loop de 10M cons → ~6 MB com GC vs. ~470 MB sem. Ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26).
 > - **Macros no caminho compilado** ✅ (ADR-0004) pré-passo de expansão no analyzer: `when when-not if-not cond and or -> ->>` funcionam em `build` (expandidos para as formas especiais antes da análise; `and`/`or` com gensym, sem duplo-eval).
 > - **Closures / funções de 1ª classe** ✅ (protótipos #2/#3) `fn` com captura léxica (incl. **transitiva/aninhada**), HOF (`my-map`/`my-reduce` em Clojure compilado), fn de topo como valor (`FnRef`), **chamada indireta** (`call_indirect`) com checagem de aridade em runtime. Closures são objetos GC-traçados (`free[]` marcado). Convenção: toda fn recebe `self` (a closure) como 1º arg.
-> - **Coleções: vetores, mapas, sets, keywords** ✅ literais `[]`/`{}`/`#{}`, keywords (`:k`, `(:k m)`), imutáveis com semântica de valor correta (array-map/vetor imutável copy-on-write; a versão com structural sharing — vector trie/HAMT — é otimização posterior). Ops: `get nth assoc dissoc conj contains? keys vals count first rest empty? =`. GC rastreia todos; validado sob `CLJN_GC_STRESS=1` (que expôs e agora previne bugs de acumulador não-rooteado no runtime).
-> - ~48 testes verdes, incluindo e2e de closures/HOF e coleções (normal + GC-stress).
+> - **Coleções: vetores, mapas, sets, keywords** ✅ literais `[]`/`{}`/`#{}`, keywords (`:k`, `(:k m)`), imutáveis com semântica de valor correta (array-map/vetor imutável copy-on-write; a versão com structural sharing — vector trie/HAMT — é otimização posterior). Ops: `get nth assoc dissoc conj contains? keys vals count first rest empty? =`. GC rastreia todos; validado sob `CLJN_GC_STRESS=1`.
+> - **`clojure.core` compilável (bootstrap, ADR-0005)** ✅ um `core.clj` no subconjunto compilável é pré-carregado em todo `build`: `map filter reduce remove reverse take drop range into mapv every? some comp identity second last zero? pos? neg? even? odd? max min` — **sem** o usuário defini-los. **Primitivas como valor** (`(map inc ...)`, `(reduce + 0 ...)`) via wrapper sintetizado. Validado normal + GC-stress.
+> - ~50 testes verdes (e2e de closures/HOF, coleções e stdlib, normal + GC-stress).
 >
 > Próximo: structural sharing (vector trie/HAMT) p/ perf; `defprotocol`/`defrecord`;
-> mais de `clojure.core` escrito em Clojure compilado (agora que há HOF + coleções).
+> variádicos/multi-aridade; `eval`/REPL sobre o interpretador.
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

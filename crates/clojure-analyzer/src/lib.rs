@@ -311,9 +311,25 @@ impl<'a> Analyzer<'a> {
         if self.sigs.contains_key(name) {
             return Ok(Ast::FnRef(name.to_string()));
         }
-        if prim_of(name).is_some() {
+        if let Some(prim) = prim_of(name) {
+            // Primitiva como valor: sintetiza um wrapper `(fn [a b] (prim a b))`.
+            if let Some(arity) = prim_value_arity(prim) {
+                let params: Vec<String> = (0..arity).map(|i| format!("__p{i}")).collect();
+                let call_args = (0..arity).map(|i| Ast::Local(i as u32)).collect();
+                let body = Ast::Call { callee: Callee::Prim(prim), args: call_args };
+                let lname = format!("__prim_{}", self.lam);
+                self.lam += 1;
+                self.functions.push(Function {
+                    name: lname.clone(),
+                    params,
+                    body,
+                    local_count: arity as u32,
+                    is_lambda: true,
+                });
+                return Ok(Ast::MakeFn { lambda: lname, arity, captures: vec![] });
+            }
             return Err(unsupported(
-                format!("primitiva `{name}` como valor ainda não é compilável; envolva em (fn [x] ({name} x))"),
+                format!("primitiva variádica `{name}` como valor ainda não é compilável; envolva em (fn [& xs] ...)"),
                 span,
             ));
         }
@@ -528,6 +544,21 @@ fn prim_of(name: &str) -> Option<Prim> {
         "vector" => Prim::Vector, "hash-map" => Prim::HashMap,
         "hash-set" => Prim::HashSet, "set" => Prim::HashSet,
         _ => return None,
+    })
+}
+
+/// Aridade canônica de uma primitiva usada como *valor* (para HOF). `None` p/
+/// variádicas (str/list/vector/hash-map/hash-set/println/print).
+fn prim_value_arity(prim: Prim) -> Option<usize> {
+    Some(match prim {
+        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP | Prim::First
+        | Prim::Rest | Prim::Count | Prim::Keys | Prim::Vals => 1,
+        Prim::Add | Prim::Sub | Prim::Mul | Prim::Quot | Prim::Mod | Prim::Eq | Prim::Lt
+        | Prim::Le | Prim::Gt | Prim::Ge | Prim::Cons | Prim::Get | Prim::Nth
+        | Prim::Dissoc | Prim::Contains | Prim::Conj => 2,
+        Prim::Assoc => 3,
+        Prim::Str | Prim::List | Prim::Vector | Prim::HashMap | Prim::HashSet
+        | Prim::Println | Prim::Print => return None,
     })
 }
 

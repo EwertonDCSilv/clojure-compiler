@@ -7,6 +7,9 @@ use clojure_interp::Interp;
 use clojure_span::SourceMap;
 use std::process::ExitCode;
 
+/// `clojure.core` no subconjunto compilável, pré-carregado em todo `build`.
+const CORE_COMPILED: &str = include_str!("core_compiled.clj");
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -169,16 +172,26 @@ fn cmd_build(args: &[String]) -> ExitCode {
     });
 
     let mut sm = SourceMap::new();
+    // 0) core.clj compilável (bootstrap): map/filter/reduce/range/... disponíveis
+    //    sem o usuário defini-los (ADR-0005).
+    let core_id = sm.add("clojure/core.clj", CORE_COMPILED);
     let id = sm.add(path.clone(), text.clone());
 
-    // 1) Reader.
-    let forms = match clojure_reader::read_all(id, &text) {
+    // 1) Reader (core + usuário).
+    let mut forms = match clojure_reader::read_all(core_id, CORE_COMPILED) {
         Ok(f) => f,
+        Err(d) => {
+            eprintln!("erro interno no core.clj compilável:\n{}", d.render(&sm));
+            return ExitCode::FAILURE;
+        }
+    };
+    match clojure_reader::read_all(id, &text) {
+        Ok(f) => forms.extend(f),
         Err(d) => {
             eprintln!("{}", d.render(&sm));
             return ExitCode::FAILURE;
         }
-    };
+    }
     // 2) Analyzer.
     let program = match clojure_analyzer::analyze(&forms) {
         Ok(p) => p,
