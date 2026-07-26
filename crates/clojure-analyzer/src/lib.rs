@@ -20,6 +20,11 @@ pub enum Ast {
     Bool(bool),
     Nil,
     Str(String),
+    Keyword(String),
+    /// Literais de coleção.
+    VecLit(Vec<Ast>),
+    SetLit(Vec<Ast>),
+    MapLit(Vec<(Ast, Ast)>),
     /// Local por slot (no frame da função/lambda atual).
     Local(u32),
     /// Variável capturada: `self->freev[idx]` da lambda atual.
@@ -53,6 +58,8 @@ pub enum Prim {
     Not, NilP, EmptyP,
     Cons, First, Rest, Count, List,
     Str, Println, Print,
+    // coleções
+    Get, Nth, Assoc, Dissoc, Contains, Keys, Vals, Conj, Vector, HashMap, HashSet,
 }
 
 #[derive(Debug, Clone)]
@@ -268,10 +275,25 @@ impl<'a> Analyzer<'a> {
             Form::Str(s) => Ok(Ast::Str(s.clone())),
             Form::Float(_) => Err(unsupported("ponto flutuante ainda não é compilável (slice inteiro)", f.span)),
             Form::Char(_) => Err(unsupported("char ainda não é compilável", f.span)),
-            Form::Keyword(_) => Err(unsupported("keyword ainda não é compilável", f.span)),
+            Form::Keyword(n) => {
+                if n.ns.is_some() {
+                    return Err(unsupported("keyword qualificada ainda não é compilável", f.span));
+                }
+                Ok(Ast::Keyword(n.name.clone()))
+            }
             Form::Symbol(n) => self.analyze_symbol_value(&n.ns, &n.name, f.span),
-            Form::Vector(_) | Form::Map(_) | Form::Set(_) => {
-                Err(unsupported("literais de coleção ainda não são compiláveis (slice inteiro)", f.span))
+            Form::Vector(items) => {
+                Ok(Ast::VecLit(items.iter().map(|it| self.analyze(it, false)).collect::<Result<_, _>>()?))
+            }
+            Form::Set(items) => {
+                Ok(Ast::SetLit(items.iter().map(|it| self.analyze(it, false)).collect::<Result<_, _>>()?))
+            }
+            Form::Map(pairs) => {
+                let mut out = Vec::with_capacity(pairs.len());
+                for (k, v) in pairs {
+                    out.push((self.analyze(k, false)?, self.analyze(v, false)?));
+                }
+                Ok(Ast::MapLit(out))
             }
             Form::List(items) => self.analyze_list(items, f.span, tail),
             Form::Meta { .. } => unreachable!(),
@@ -304,6 +326,17 @@ impl<'a> Analyzer<'a> {
         let Some((head, args)) = items.split_first() else {
             return Err(unsupported("lista vazia não é compilável", span));
         };
+
+        // `(:kw coll)` → (get coll :kw).
+        if let Form::Keyword(n) = head.node.strip_meta() {
+            if n.ns.is_none() && args.len() == 1 {
+                let coll = self.analyze(&args[0], false)?;
+                return Ok(Ast::Call {
+                    callee: Callee::Prim(Prim::Get),
+                    args: vec![coll, Ast::Keyword(n.name.clone())],
+                });
+            }
+        }
 
         // Operador não-simbólico: chamada indireta de um valor-função.
         let Form::Symbol(op) = head.node.strip_meta() else {
@@ -489,6 +522,11 @@ fn prim_of(name: &str) -> Option<Prim> {
         "cons" => Prim::Cons, "first" => Prim::First, "rest" => Prim::Rest,
         "count" => Prim::Count, "list" => Prim::List, "str" => Prim::Str,
         "println" => Prim::Println, "print" => Prim::Print,
+        "get" => Prim::Get, "nth" => Prim::Nth, "assoc" => Prim::Assoc,
+        "dissoc" => Prim::Dissoc, "contains?" => Prim::Contains,
+        "keys" => Prim::Keys, "vals" => Prim::Vals, "conj" => Prim::Conj,
+        "vector" => Prim::Vector, "hash-map" => Prim::HashMap,
+        "hash-set" => Prim::HashSet, "set" => Prim::HashSet,
         _ => return None,
     })
 }
@@ -496,11 +534,14 @@ fn prim_of(name: &str) -> Option<Prim> {
 fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> {
     let ok = match prim {
         Prim::Sub | Prim::Add | Prim::Mul => n >= 1,
-        Prim::Quot | Prim::Mod | Prim::Cons => n == 2,
+        Prim::Quot | Prim::Mod | Prim::Cons | Prim::Get | Prim::Nth
+        | Prim::Dissoc | Prim::Contains | Prim::Conj => n == 2,
+        Prim::Assoc => n == 3,
         Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP
-        | Prim::First | Prim::Rest | Prim::Count => n == 1,
+        | Prim::First | Prim::Rest | Prim::Count | Prim::Keys | Prim::Vals => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => n == 2,
-        Prim::List | Prim::Str | Prim::Println | Prim::Print => true,
+        Prim::HashMap => n % 2 == 0,
+        Prim::List | Prim::Str | Prim::Println | Prim::Print | Prim::Vector | Prim::HashSet => true,
     };
     if ok {
         Ok(())

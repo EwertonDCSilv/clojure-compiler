@@ -29,17 +29,21 @@ typedef intptr_t Value;
 #define FIX(v)     ((intptr_t)(v) >> 1)
 #define IS_PTR(v)  (((v) & 7) == 0)
 
-enum { T_STR = 1, T_CONS = 2, T_FN = 3 };
+enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7 };
 
 typedef struct Obj {
     uint8_t type;
     uint8_t mark;
     struct Obj *next_all; /* lista global de objetos, para o sweep */
 } Obj;
-typedef struct { Obj h; size_t len; char *data; } Str;
+typedef struct { Obj h; size_t len; char *data; } Str; /* também usado p/ T_KW */
 typedef struct { Obj h; Value head; Value tail; } Cons;
 /* Função de primeira classe: ponteiro de código + aridade + variáveis capturadas. */
 typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[]; } Fn;
+/* Coleções imutáveis (persistentes por valor; estrutura simples — o vector trie /
+ * HAMT com structural sharing é otimização posterior, não muda a semântica). */
+typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* vetor e set */
+typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] */
 
 /* ---------- shadow-stack de roots ---------- */
 #define GC_STACK_CAP (1u << 22) /* 4M slots */
@@ -113,8 +117,16 @@ static void gc_mark(Value v) {
             Fn *f = (Fn *)v;
             for (int64_t i = 0; i < f->nfree; i++) gc_mark(f->freev[i]);
             return;
+        } else if (o->type == T_VEC || o->type == T_SET) {
+            Vec *vec = (Vec *)v;
+            for (int64_t i = 0; i < vec->len; i++) gc_mark(vec->items[i]);
+            return;
+        } else if (o->type == T_MAP) {
+            Map *m = (Map *)v;
+            for (int64_t i = 0; i < m->n * 2; i++) gc_mark(m->kv[i]);
+            return;
         } else {
-            return; /* string: folha */
+            return; /* string/keyword: folha */
         }
     }
 }
@@ -180,6 +192,225 @@ void cljn_check_call(Value fn, Value nargs) {
     }
 }
 
+static Value b2v(int b); /* fwd */
+int cljn_equal_raw(Value a, Value b); /* fwd */
+
+/* ---------- keywords ---------- */
+Value cljn_kw(const char *p, long len) {
+    Str *s = (Str *)obj_alloc(sizeof(Str), T_KW);
+    s->len = (size_t)len;
+    s->data = (len > 0) ? xalloc((size_t)len) : NULL;
+    if (len > 0) memcpy(s->data, p, (size_t)len);
+    return (Value)s;
+}
+
+/* ---------- vetores (imutáveis) ---------- */
+Value cljn_vec_alloc(Value n) {
+    int64_t k = (int64_t)n;
+    Vec *v = (Vec *)obj_alloc(sizeof(Vec) + (size_t)k * sizeof(Value), T_VEC);
+    v->len = k;
+    for (int64_t i = 0; i < k; i++) v->items[i] = NIL; /* zera antes de qualquer GC */
+    return (Value)v;
+}
+void cljn_vec_set(Value vec, Value i, Value x) { ((Vec *)vec)->items[(int64_t)i] = x; }
+Value cljn_vec_conj(Value vec, Value x) {
+    Vec *o = (Vec *)vec;
+    int64_t n = o->len;
+    Vec *nv = (Vec *)obj_alloc(sizeof(Vec) + (size_t)(n + 1) * sizeof(Value), T_VEC);
+    o = (Vec *)vec; /* revalida (não-móvel: igual) */
+    nv->len = n + 1;
+    for (int64_t i = 0; i < n; i++) nv->items[i] = o->items[i];
+    nv->items[n] = x;
+    return (Value)nv;
+}
+Value cljn_vec_assoc(Value vec, Value idx, Value x) {
+    Vec *o = (Vec *)vec;
+    int64_t i = IS_FIX(idx) ? FIX(idx) : -1; /* índice vem tagged */
+    if (i < 0 || i > o->len) die("assoc: índice fora dos limites do vetor");
+    if (i == o->len) return cljn_vec_conj(vec, x);
+    int64_t n = o->len;
+    Vec *nv = (Vec *)obj_alloc(sizeof(Vec) + (size_t)n * sizeof(Value), T_VEC);
+    o = (Vec *)vec;
+    nv->len = n;
+    for (int64_t j = 0; j < n; j++) nv->items[j] = o->items[j];
+    nv->items[i] = x;
+    return (Value)nv;
+}
+
+/* ---------- sets (imutáveis) ---------- */
+Value cljn_set_alloc(Value n) {
+    int64_t k = (int64_t)n;
+    Vec *s = (Vec *)obj_alloc(sizeof(Vec) + (size_t)k * sizeof(Value), T_SET);
+    s->len = 0; /* cresce durante a construção; capacidade k */
+    for (int64_t i = 0; i < k; i++) s->items[i] = NIL;
+    return (Value)s;
+}
+static int set_member(Vec *s, Value x) {
+    for (int64_t i = 0; i < s->len; i++) if (cljn_equal_raw(s->items[i], x)) return 1;
+    return 0;
+}
+void cljn_set_add(Value set, Value x) { /* construção */
+    Vec *s = (Vec *)set;
+    if (!set_member(s, x)) s->items[s->len++] = x;
+}
+Value cljn_set_conj(Value set, Value x) {
+    Vec *o = (Vec *)set;
+    if (set_member(o, x)) return set;
+    int64_t n = o->len;
+    Vec *ns = (Vec *)obj_alloc(sizeof(Vec) + (size_t)(n + 1) * sizeof(Value), T_SET);
+    o = (Vec *)set;
+    ns->len = n + 1;
+    for (int64_t i = 0; i < n; i++) ns->items[i] = o->items[i];
+    ns->items[n] = x;
+    return (Value)ns;
+}
+Value cljn_set_contains(Value set, Value x) { return b2v(set_member((Vec *)set, x)); }
+
+/* ---------- mapas (array-map imutável) ---------- */
+Value cljn_map_alloc(Value n) {
+    int64_t k = (int64_t)n;
+    Map *m = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * k) * sizeof(Value), T_MAP);
+    m->n = k;
+    for (int64_t i = 0; i < 2 * k; i++) m->kv[i] = NIL;
+    return (Value)m;
+}
+void cljn_map_set(Value map, Value i, Value k, Value v) {
+    Map *m = (Map *)map;
+    int64_t idx = (int64_t)i;
+    m->kv[2 * idx] = k;
+    m->kv[2 * idx + 1] = v;
+}
+static int64_t map_index(Map *m, Value k) {
+    for (int64_t i = 0; i < m->n; i++) if (cljn_equal_raw(m->kv[2 * i], k)) return i;
+    return -1;
+}
+Value cljn_map_get(Value map, Value k) {
+    if (obj_type(map) != T_MAP) return NIL;
+    Map *m = (Map *)map;
+    int64_t i = map_index(m, k);
+    return (i >= 0) ? m->kv[2 * i + 1] : NIL;
+}
+Value cljn_map_contains(Value map, Value k) {
+    return b2v(obj_type(map) == T_MAP && map_index((Map *)map, k) >= 0);
+}
+Value cljn_map_assoc(Value map, Value k, Value v) {
+    Map *o = (Map *)map;
+    int64_t at = map_index(o, k);
+    int64_t n = o->n;
+    int64_t nn = (at >= 0) ? n : n + 1;
+    Map *nm = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * nn) * sizeof(Value), T_MAP);
+    o = (Map *)map;
+    nm->n = nn;
+    for (int64_t i = 0; i < n; i++) { nm->kv[2 * i] = o->kv[2 * i]; nm->kv[2 * i + 1] = o->kv[2 * i + 1]; }
+    if (at >= 0) {
+        nm->kv[2 * at + 1] = v;
+    } else {
+        nm->kv[2 * n] = k;
+        nm->kv[2 * n + 1] = v;
+    }
+    return (Value)nm;
+}
+Value cljn_map_dissoc(Value map, Value k) {
+    Map *o = (Map *)map;
+    int64_t at = map_index(o, k);
+    if (at < 0) return map;
+    int64_t n = o->n;
+    Map *nm = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * (n - 1)) * sizeof(Value), T_MAP);
+    o = (Map *)map;
+    nm->n = n - 1;
+    int64_t j = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i == at) continue;
+        nm->kv[2 * j] = o->kv[2 * i];
+        nm->kv[2 * j + 1] = o->kv[2 * i + 1];
+        j++;
+    }
+    return (Value)nm;
+}
+/* Constrói uma lista em C rooteando o acumulador no shadow-stack (senão o GC
+ * coletaria `acc` no meio da construção). `map`/coll já está rooteado por quem chama. */
+Value cljn_map_keys(Value map) {
+    Map *m = (Map *)map;
+    Value acc = EMPTY;
+    cljn_gc_push(acc);
+    for (int64_t i = m->n - 1; i >= 0; i--) {
+        acc = cljn_cons(m->kv[2 * i], acc);
+        gc_stack[gc_sp - 1] = acc;
+    }
+    cljn_gc_popn(1);
+    return acc;
+}
+Value cljn_map_vals(Value map) {
+    Map *m = (Map *)map;
+    Value acc = EMPTY;
+    cljn_gc_push(acc);
+    for (int64_t i = m->n - 1; i >= 0; i--) {
+        acc = cljn_cons(m->kv[2 * i + 1], acc);
+        gc_stack[gc_sp - 1] = acc;
+    }
+    cljn_gc_popn(1);
+    return acc;
+}
+
+/* ---------- genéricos (dispatch por tipo) ---------- */
+Value cljn_contains(Value coll, Value key);
+Value cljn_get(Value coll, Value key) {
+    switch (obj_type(coll)) {
+        case T_MAP: return cljn_map_get(coll, key);
+        case T_VEC: {
+            Vec *v = (Vec *)coll;
+            if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < v->len) return v->items[i]; }
+            return NIL;
+        }
+        case T_SET: return set_member((Vec *)coll, key) ? key : NIL;
+        default: return NIL;
+    }
+}
+Value cljn_contains(Value coll, Value key) {
+    switch (obj_type(coll)) {
+        case T_MAP: return cljn_map_contains(coll, key);
+        case T_SET: return cljn_set_contains(coll, key);
+        case T_VEC: { Vec *v = (Vec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->len); }
+        default: return FALSEV;
+    }
+}
+Value cljn_conj(Value coll, Value x) {
+    switch (obj_type(coll)) {
+        case T_VEC: return cljn_vec_conj(coll, x);
+        case T_SET: return cljn_set_conj(coll, x);
+        case T_CONS: return cljn_cons(x, coll);
+        case T_MAP:
+            if (obj_type(x) == T_VEC && ((Vec *)x)->len == 2)
+                return cljn_map_assoc(coll, ((Vec *)x)->items[0], ((Vec *)x)->items[1]);
+            die("conj em mapa requer [k v]");
+            return coll;
+        default:
+            if (coll == EMPTY || coll == NIL) return cljn_cons(x, EMPTY);
+            die("conj: coleção não suportada");
+            return coll;
+    }
+}
+Value cljn_assoc(Value coll, Value k, Value v) {
+    switch (obj_type(coll)) {
+        case T_MAP: return cljn_map_assoc(coll, k, v);
+        case T_VEC: return cljn_vec_assoc(coll, k, v);
+        default:
+            if (coll == NIL) { Value m = cljn_map_alloc(MK_FIX(0)); return cljn_map_assoc(m, k, v); }
+            die("assoc: coleção não suportada");
+            return coll;
+    }
+}
+Value cljn_nth(Value coll, Value idx) {
+    int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
+    if (i < 0) die("nth: índice inválido");
+    switch (obj_type(coll)) {
+        case T_VEC: { Vec *v = (Vec *)coll; if (i < v->len) return v->items[i]; break; }
+        case T_CONS: { Value c = coll; while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail; if (obj_type(c) == T_CONS) return ((Cons *)c)->head; break; }
+    }
+    die("nth: índice fora dos limites");
+    return NIL;
+}
+
 /* ---------- aritmética ---------- */
 static intptr_t need_fix(Value v, const char *op) {
     if (!IS_FIX(v)) { fprintf(stderr, "erro: argumento não-numérico em %s\n", op); exit(1); }
@@ -204,16 +435,50 @@ Value cljn_le(Value a, Value b) { return b2v(need_fix(a,"<=")<=need_fix(b,"<="))
 Value cljn_gt(Value a, Value b) { return b2v(need_fix(a,">")>need_fix(b,">")); }
 Value cljn_ge(Value a, Value b) { return b2v(need_fix(a,">=")>=need_fix(b,">=")); }
 
+static int is_seq(int t) { return t == T_CONS || t == T_VEC; }
+static Value seq_nth(Value coll, int t, int64_t i) {
+    if (t == T_VEC) return ((Vec *)coll)->items[i];
+    Value c = coll;
+    while (i-- > 0) c = ((Cons *)c)->tail;
+    return ((Cons *)c)->head;
+}
+static int64_t seq_len(Value coll, int t) {
+    if (t == T_VEC) return ((Vec *)coll)->len;
+    int64_t n = 0;
+    Value c = coll;
+    while (obj_type(c) == T_CONS) { n++; c = ((Cons *)c)->tail; }
+    return n;
+}
 int cljn_equal_raw(Value a, Value b) {
     if (a == b) return 1;
     int ta = obj_type(a), tb = obj_type(b);
-    if (ta == T_STR && tb == T_STR) {
-        Str *x=(Str*)a,*y=(Str*)b;
-        return x->len==y->len && memcmp(x->data,y->data,x->len)==0;
+    if ((ta == T_STR && tb == T_STR) || (ta == T_KW && tb == T_KW)) {
+        Str *x = (Str *)a, *y = (Str *)b;
+        return ta == tb && x->len == y->len && memcmp(x->data, y->data, x->len) == 0;
     }
-    if (ta == T_CONS && tb == T_CONS)
-        return cljn_equal_raw(((Cons*)a)->head,((Cons*)b)->head) &&
-               cljn_equal_raw(((Cons*)a)->tail,((Cons*)b)->tail);
+    /* sequências (list/vector) comparam elemento a elemento */
+    if (is_seq(ta) && is_seq(tb)) {
+        int64_t la = seq_len(a, ta), lb = seq_len(b, tb);
+        if (la != lb) return 0;
+        for (int64_t i = 0; i < la; i++)
+            if (!cljn_equal_raw(seq_nth(a, ta, i), seq_nth(b, tb, i))) return 0;
+        return 1;
+    }
+    if (ta == T_SET && tb == T_SET) {
+        Vec *x = (Vec *)a, *y = (Vec *)b;
+        if (x->len != y->len) return 0;
+        for (int64_t i = 0; i < x->len; i++) if (!set_member(y, x->items[i])) return 0;
+        return 1;
+    }
+    if (ta == T_MAP && tb == T_MAP) {
+        Map *x = (Map *)a, *y = (Map *)b;
+        if (x->n != y->n) return 0;
+        for (int64_t i = 0; i < x->n; i++) {
+            int64_t j = map_index(y, x->kv[2 * i]);
+            if (j < 0 || !cljn_equal_raw(x->kv[2 * i + 1], y->kv[2 * j + 1])) return 0;
+        }
+        return 1;
+    }
     return 0;
 }
 Value cljn_eq(Value a, Value b) { return b2v(cljn_equal_raw(a,b)); }
@@ -223,22 +488,44 @@ Value cljn_not(Value v) { return b2v(!cljn_truthy(v)); }
 Value cljn_nilp(Value v) { return b2v(v == NIL); }
 Value cljn_emptyp(Value v) {
     if (v == EMPTY || v == NIL) return TRUEV;
-    if (obj_type(v) == T_STR) return b2v(((Str *)v)->len == 0);
+    switch (obj_type(v)) {
+        case T_STR: return b2v(((Str *)v)->len == 0);
+        case T_VEC: case T_SET: return b2v(((Vec *)v)->len == 0);
+        case T_MAP: return b2v(((Map *)v)->n == 0);
+    }
     return FALSEV;
 }
 Value cljn_first(Value v) {
     if (v == EMPTY || v == NIL) return NIL;
-    if (obj_type(v) == T_CONS) return ((Cons *)v)->head;
+    switch (obj_type(v)) {
+        case T_CONS: return ((Cons *)v)->head;
+        case T_VEC: case T_SET: { Vec *x = (Vec *)v; return x->len > 0 ? x->items[0] : NIL; }
+    }
     die("first: não é uma sequência"); return NIL;
 }
 Value cljn_rest(Value v) {
     if (v == EMPTY || v == NIL) return EMPTY;
     if (obj_type(v) == T_CONS) return ((Cons *)v)->tail;
+    if (obj_type(v) == T_VEC || obj_type(v) == T_SET) {
+        Vec *x = (Vec *)v;
+        Value acc = EMPTY;
+        cljn_gc_push(acc); /* rooteia o acumulador durante a construção */
+        for (int64_t i = x->len - 1; i >= 1; i--) {
+            acc = cljn_cons(x->items[i], acc);
+            gc_stack[gc_sp - 1] = acc;
+        }
+        cljn_gc_popn(1);
+        return acc;
+    }
     die("rest: não é uma sequência"); return EMPTY;
 }
 Value cljn_count(Value v) {
+    switch (obj_type(v)) {
+        case T_STR: return MK_FIX((long)((Str *)v)->len);
+        case T_VEC: case T_SET: return MK_FIX(((Vec *)v)->len);
+        case T_MAP: return MK_FIX(((Map *)v)->n);
+    }
     long n = 0;
-    if (obj_type(v) == T_STR) return MK_FIX((long)((Str *)v)->len);
     while (v != EMPTY && v != NIL && obj_type(v) == T_CONS) { n++; v = ((Cons *)v)->tail; }
     return MK_FIX(n);
 }
@@ -261,6 +548,7 @@ static void write_val(SB *b, Value v, int for_str) {
     if (v == EMPTY) { sb_str(b,"()"); return; }
     switch (obj_type(v)) {
         case T_STR: { Str *s=(Str*)v; sb_write(b,s->data,s->len); return; }
+        case T_KW: { Str *s=(Str*)v; sb_putc(b,':'); sb_write(b,s->data,s->len); return; }
         case T_CONS: {
             sb_putc(b,'('); int first=1;
             while (v != EMPTY && obj_type(v)==T_CONS) {
@@ -269,6 +557,21 @@ static void write_val(SB *b, Value v, int for_str) {
                 v=((Cons*)v)->tail;
             }
             sb_putc(b,')'); return;
+        }
+        case T_VEC: {
+            Vec *x=(Vec*)v; sb_putc(b,'[');
+            for (int64_t i=0;i<x->len;i++){ if(i) sb_putc(b,' '); write_val(b,x->items[i],for_str); }
+            sb_putc(b,']'); return;
+        }
+        case T_SET: {
+            Vec *x=(Vec*)v; sb_str(b,"#{");
+            for (int64_t i=0;i<x->len;i++){ if(i) sb_putc(b,' '); write_val(b,x->items[i],for_str); }
+            sb_putc(b,'}'); return;
+        }
+        case T_MAP: {
+            Map *m=(Map*)v; sb_putc(b,'{');
+            for (int64_t i=0;i<m->n;i++){ if(i) sb_str(b,", "); write_val(b,m->kv[2*i],for_str); sb_putc(b,' '); write_val(b,m->kv[2*i+1],for_str); }
+            sb_putc(b,'}'); return;
         }
         case T_FN: sb_str(b, "#<fn>"); return;
         default: sb_str(b,"#<obj>");

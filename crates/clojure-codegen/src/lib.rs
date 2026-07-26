@@ -75,6 +75,22 @@ struct Runtime {
     fn_free: FuncId,     // (fn,i)->v
     fn_code: FuncId,     // (fn)->code
     check_call: FuncId,  // (fn,nargs)->void
+    // coleções
+    kw: FuncId,          // (ptr,len)->kw
+    vec_alloc: FuncId,   // (n)->vec
+    vec_set: FuncId,     // (vec,i,x)->void
+    set_alloc: FuncId,   // (n)->set
+    set_add: FuncId,     // (set,x)->void
+    map_alloc: FuncId,   // (n)->map
+    map_set: FuncId,     // (map,i,k,v)->void
+    p_get: FuncId,       // (coll,key)->v
+    p_nth: FuncId,       // (coll,i)->v
+    p_assoc: FuncId,     // (coll,k,v)->coll
+    p_dissoc: FuncId,    // (map,k)->map
+    p_contains: FuncId,  // (coll,key)->bool
+    p_keys: FuncId,      // (map)->list
+    p_vals: FuncId,      // (map)->list
+    p_conj: FuncId,      // (coll,x)->coll
 }
 
 /// Compila o programa para bytes de um objeto nativo da plataforma host.
@@ -226,6 +242,13 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         }
         m.declare_function(name, Linkage::Import, &s).unwrap()
     };
+    let quaternary_void = |m: &mut ObjectModule, name: &str| {
+        let mut s = m.make_signature();
+        for _ in 0..4 {
+            s.params.push(AbiParam::new(types::I64));
+        }
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
 
     let mut str_from_sig = m.make_signature();
     str_from_sig.params.push(AbiParam::new(ptr));
@@ -280,6 +303,27 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         fn_free: bin(m, "cljn_fn_free"),
         fn_code: una(m, "cljn_fn_code"),
         check_call: bin_void(m, "cljn_check_call"),
+        kw: {
+            let mut s = m.make_signature();
+            s.params.push(AbiParam::new(ptr));
+            s.params.push(AbiParam::new(types::I64));
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_kw", Linkage::Import, &s).unwrap()
+        },
+        vec_alloc: una(m, "cljn_vec_alloc"),
+        vec_set: ternary_void(m, "cljn_vec_set"),
+        set_alloc: una(m, "cljn_set_alloc"),
+        set_add: bin_void(m, "cljn_set_add"),
+        map_alloc: una(m, "cljn_map_alloc"),
+        map_set: quaternary_void(m, "cljn_map_set"),
+        p_get: bin(m, "cljn_get"),
+        p_nth: bin(m, "cljn_nth"),
+        p_assoc: ternary(m, "cljn_assoc"),
+        p_dissoc: bin(m, "cljn_map_dissoc"),
+        p_contains: bin(m, "cljn_contains"),
+        p_keys: una(m, "cljn_map_keys"),
+        p_vals: una(m, "cljn_map_vals"),
+        p_conj: bin(m, "cljn_conj"),
     }
 }
 
@@ -472,6 +516,10 @@ impl<'a> FnGen<'a> {
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c]);
     }
+    fn call_void4(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue, d: CValue) {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        self.builder.ins().call(r, &[a, b, c, d]);
+    }
     /// Endereço (ponteiro de código) de uma função declarada.
     fn func_addr(&mut self, id: FuncId) -> CValue {
         let r = self.module.declare_func_in_func(id, self.builder.func);
@@ -583,7 +631,79 @@ impl<'a> FnGen<'a> {
                 Flow::Val(fnv)
             }
             Ast::MakeFn { lambda, arity, captures } => self.gen_make_fn(lambda, *arity, captures)?,
+            Ast::Keyword(name) => {
+                let (data_id, len) = self.str_data[name];
+                let gv = self.module.declare_data_in_func(data_id, self.builder.func);
+                let p = self.builder.ins().symbol_value(self.ptr, gv);
+                let len_v = self.builder.ins().iconst(types::I64, len as i64);
+                let v = self.call2(self.rt.kw, p, len_v);
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            Ast::VecLit(items) => {
+                let v = self.gen_vec(items)?;
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            Ast::SetLit(items) => {
+                let v = self.gen_set(items)?;
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            Ast::MapLit(pairs) => {
+                let v = self.gen_map(pairs)?;
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
         })
+    }
+
+    /// Constrói um vetor imutável (net-0). `vec_set` não aloca, então após o
+    /// `vec_alloc` (que rooteia os itens) o vetor pode ser preenchido com segurança.
+    fn gen_vec(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(items.len());
+        for it in items {
+            vals.push(self.expr_val(it)?); // n temps
+        }
+        let n = self.builder.ins().iconst(types::I64, items.len() as i64);
+        let v = self.call1(self.rt.vec_alloc, n); // zera slots; itens rooteados
+        self.gc_popn(items.len());
+        for (i, iv) in vals.iter().enumerate() {
+            let idx = self.builder.ins().iconst(types::I64, i as i64);
+            self.call_void3(self.rt.vec_set, v, idx, *iv);
+        }
+        Ok(v)
+    }
+
+    fn gen_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(items.len());
+        for it in items {
+            vals.push(self.expr_val(it)?);
+        }
+        let n = self.builder.ins().iconst(types::I64, items.len() as i64);
+        let s = self.call1(self.rt.set_alloc, n);
+        self.gc_popn(items.len());
+        for iv in &vals {
+            self.call_void(self.rt.set_add, &[s, *iv]); // dedup na construção
+        }
+        Ok(s)
+    }
+
+    fn gen_map(&mut self, pairs: &[(Ast, Ast)]) -> Result<CValue, Diagnostic> {
+        let mut kvs = Vec::with_capacity(pairs.len() * 2);
+        for (k, v) in pairs {
+            let kv = self.expr_val(k)?;
+            let vv = self.expr_val(v)?;
+            kvs.push((kv, vv)); // 2 temps por par
+        }
+        let n = self.builder.ins().iconst(types::I64, pairs.len() as i64);
+        let m = self.call1(self.rt.map_alloc, n);
+        self.gc_popn(pairs.len() * 2);
+        for (i, (kv, vv)) in kvs.iter().enumerate() {
+            let idx = self.builder.ins().iconst(types::I64, i as i64);
+            self.call_void4(self.rt.map_set, m, idx, *kv, *vv);
+        }
+        Ok(m)
     }
 
     /// Cria uma closure: avalia capturas, aloca o Fn e preenche `freev`.
@@ -776,7 +896,34 @@ impl<'a> FnGen<'a> {
             Prim::First => self.una(self.rt.first, args),
             Prim::Rest => self.una(self.rt.rest, args),
             Prim::Count => self.una(self.rt.count, args),
+            // coleções
+            Prim::Get => self.bin(self.rt.p_get, args),
+            Prim::Nth => self.bin(self.rt.p_nth, args),
+            Prim::Assoc => self.tern(self.rt.p_assoc, args),
+            Prim::Dissoc => self.bin(self.rt.p_dissoc, args),
+            Prim::Contains => self.bin(self.rt.p_contains, args),
+            Prim::Keys => self.una(self.rt.p_keys, args),
+            Prim::Vals => self.una(self.rt.p_vals, args),
+            Prim::Conj => self.bin(self.rt.p_conj, args),
+            Prim::Vector => self.gen_vec(args),
+            Prim::HashSet => self.gen_set(args),
+            Prim::HashMap => {
+                // (hash-map k v k v ...) → pares
+                let pairs: Vec<(Ast, Ast)> =
+                    args.chunks_exact(2).map(|c| (c[0].clone(), c[1].clone())).collect();
+                self.gen_map(&pairs)
+            }
         }
+    }
+
+    /// Primitiva ternária (net-0).
+    fn tern(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let a = self.expr_val(&args[0])?;
+        let b = self.expr_val(&args[1])?;
+        let c = self.expr_val(&args[2])?;
+        let r = self.call3(id, a, b, c);
+        self.gc_popn(3);
+        Ok(r)
     }
 
     /// Fold de binária **sem alocação** (aritmética): args viram temps, calcula,
@@ -864,6 +1011,12 @@ impl<'a> FnGen<'a> {
 fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
     match ast {
         Ast::Str(s) => out.push(s.clone()),
+        Ast::Keyword(s) => out.push(s.clone()),
+        Ast::VecLit(items) | Ast::SetLit(items) => items.iter().for_each(|a| collect_strings(a, out)),
+        Ast::MapLit(pairs) => pairs.iter().for_each(|(k, v)| {
+            collect_strings(k, out);
+            collect_strings(v, out);
+        }),
         Ast::If(a, c, d) => {
             collect_strings(a, out);
             collect_strings(c, out);

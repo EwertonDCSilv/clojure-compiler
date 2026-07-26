@@ -119,6 +119,31 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiles_collections() {
+    if !have_cc() {
+        return;
+    }
+    // Vetores, mapas (array-map), sets, keywords. Rodado também sob GC-stress:
+    // valida o rooting de acumuladores intermediários (keys/vals/rest).
+    let src = r#"(ns c.core)
+(defn -main []
+  (println [1 2 3 (+ 2 2)])
+  (println (assoc [1 2 3] 1 99) (nth [10 20 30] 2) (conj [1 2] 3))
+  (let [m {:a 1 :b 2}]
+    (println (get m :a) (:b m) (assoc m :c 3) (dissoc m :a) (keys m) (vals m) (contains? m :b)))
+  (let [s #{1 2 3 2 1}]
+    (println s (count s) (conj s 4) (contains? s 2)))
+  (println (= [1 2 3] [1 2 3]) (= {:a 1} {:a 1}) (= #{1 2} #{2 1})))
+(-main)"#;
+    let expected = "[1 2 3 4]\n[1 99 3] 30 [1 2 3]\n1 2 {:a 1, :b 2, :c 3} {:b 2} (:a :b) (1 2) true\n#{1 2 3} 3 #{1 2 3 4} true\ntrue true true\n";
+    assert_eq!(build_and_run("cljn_e2e_coll", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_coll_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_closures_and_hof() {
     if !have_cc() {
         return;
