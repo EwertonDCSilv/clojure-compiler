@@ -18,6 +18,11 @@ fn have_cc() -> bool {
 
 /// Compila `src` e devolve o stdout do binário nativo resultante.
 fn build_and_run(name: &str, src: &str) -> String {
+    build_and_run_env(name, src, &[])
+}
+
+/// Igual, mas com variáveis de ambiente na execução (ex.: CLJN_GC_STRESS).
+fn build_and_run_env(name: &str, src: &str, env: &[(&str, &str)]) -> String {
     let dir = std::env::temp_dir();
     let clj = dir.join(format!("{name}.clj"));
     let exe = dir.join(format!("{name}.bin"));
@@ -36,9 +41,12 @@ fn build_and_run(name: &str, src: &str) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    let run = Command::new(&exe).output().expect("executa binário nativo");
+    let mut cmd = Command::new(&exe);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let run = cmd.output().expect("executa binário nativo");
     assert!(run.status.success(), "binário retornou erro");
-    // limpeza
     let _ = std::fs::remove_file(&clj);
     let _ = std::fs::remove_file(&exe);
     String::from_utf8(run.stdout).unwrap()
@@ -108,6 +116,39 @@ fn compiles_loop_recur() {
   (println (conta 1000000 0)))
 (-main)"#;
     assert_eq!(build_and_run("cljn_e2e_loop", src), "5050\n1000000\n");
+}
+
+#[test]
+fn gc_correctness_under_stress() {
+    if !have_cc() {
+        return;
+    }
+    // CLJN_GC_STRESS=1 coleta a CADA alocação: se algum valor vivo não estiver
+    // rooteado no shadow-stack, seria liberado → saída errada/crash. Passar prova
+    // que o rooting preciso está correto.
+    let src = r#"(ns g.core)
+(defn upto [n acc] (if (< n 0) acc (upto (dec n) (cons n acc))))
+(defn -main []
+  (println (upto 20 (list)))
+  (println (count (upto 20 (list))))
+  (println (str "x=" (first (upto 20 (list))) " len=" (count (upto 20 (list))))))
+(-main)"#;
+    let expected = "(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)\n21\nx=0 len=21\n";
+    assert_eq!(build_and_run_env("cljn_e2e_gc_stress", src, &[("CLJN_GC_STRESS", "1")]), expected);
+}
+
+#[test]
+fn gc_reclaims_loop_garbage() {
+    if !have_cc() {
+        return;
+    }
+    // Aloca ~2M cons descartáveis em loop. Sem coletor cresceria sem limite;
+    // com o mark-sweep completa com memória limitada (aqui só exigimos correção).
+    let src = r#"(ns b.core)
+(defn burn [n] (loop [i 0] (if (< i n) (do (count (cons i (list))) (recur (inc i))) i)))
+(defn -main [] (println (burn 2000000)))
+(-main)"#;
+    assert_eq!(build_and_run("cljn_e2e_gc_burn", src), "2000000\n");
 }
 
 #[test]

@@ -3,7 +3,7 @@
 (defn fatorial-acc [n acc]
   (if (<= n 1)
     acc
-    (fatorial-acc (- n 1) (* acc n)))))
+    (fatorial-acc (- n 1) (* acc n))))
 
 (defn -main []
   (println "fatorial 20 =" (fatorial-acc 20 1))

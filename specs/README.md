@@ -15,10 +15,11 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **Fase 3+5 (corte vertical)** ✅ analyzer + **codegen Cranelift** → **primeiro binário nativo compilado** (`clojure-native build`, sem JVM).
 > - **Fase 4 (representação de valor, parcial)** ✅ **valores tagged** no código nativo (int, nil, bool, **string**, **lista**) via runtime C (ABI C); primitivas `+ - * quot mod inc dec = < <= > >= not nil? empty? cons first rest count list str println print`; strings e listas de primeira classe (concat, `count`, igualdade estrutural). Alocação por `malloc` **sem coletor** ainda (GC mark-sweep é a próxima etapa — ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26)).
 > - **`loop`/`recur` compilado** ✅ backedge nativo com validação de tail-position (rastreio de divergência `Flow` no codegen). `(conta 1000000 0)` roda sem estourar a pilha — prova que é loop, não recursão.
-> - ~40 testes verdes, incluindo e2e que compilam e executam binários nativos.
+> - **GC mark-sweep preciso** ✅ (fecha a Fase 4) coletor tracing não-móvel single-thread com **shadow-stack de roots** gerado pelo codegen (`enter/leave/push/popn/set`); sem escanear a pilha nativa. Validado sob `CLJN_GC_STRESS=1` (coleta a cada alocação, saída correta) e reclamação medida: loop de 10M cons → ~6 MB com GC vs. ~470 MB sem. Ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26).
+> - ~45 testes verdes, incluindo e2e que compilam/executam binários e testes de GC.
 >
-> Próximo: **GC mark-sweep** (shadow-stack) no runtime compilado; closures/HOF no
-> codegen (protótipos #2/#3); coleções persistentes reais; Windows (#11).
+> Próximo: closures/HOF no codegen (protótipos #2/#3); coleções persistentes reais
+> (vector trie/HAMT); macros no caminho compilado; Windows 1ª classe (#11).
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

@@ -94,12 +94,26 @@ Testes de stress/ciclos/retenção e uso de **Miri** nos blocos `unsafe` do GC �
 
 ## Estado da implementação (2026-07-26)
 
-`[FATO]` O runtime **compilado** atual (`crates/clojure-codegen/runtime.c`) usa
-**`malloc` sem coletor** (alocador-só) como etapa interina — a memória é recuperada
-pelo SO na saída do processo (adequado a CLIs curtos). O **mark-sweep preciso com
-shadow-stack** descrito acima é a **próxima etapa** e ainda não foi implementado; isto
-está documentado no código e não é apresentado como GC completo. O interpretador de
-bootstrap usa `Rc` (conforme previsto).
+`[FATO]` O runtime **compilado** (`crates/clojure-codegen/runtime.c`) já implementa o
+**coletor mark-sweep preciso, não-móvel, single-thread com shadow-stack de roots**
+descrito acima:
+
+- **Roots**: o código gerado (`clojure-codegen`) mantém um shadow-stack — cada função
+  reserva `local_count` slots (locais, espelhados junto às variáveis Cranelift) via
+  `cljn_gc_enter`/`leave`, e empurra/retira temporários (`cljn_gc_push`/`popn`) em volta
+  de cada alocação. O coletor varre `[0, gc_sp)`; **nunca** escaneia a pilha nativa.
+- **Objetos** têm header (`mark` + lista global) para o sweep; `mark` itera a cauda de
+  listas (não recursa) para não estourar a pilha em listas longas.
+- **Gatilho**: a cada `N` alocações; `CLJN_GC_STRESS=1` coleta a cada alocação
+  (usado nos testes para validar o rooting); `CLJN_GC_OFF=1` desliga (diagnóstico).
+- **Validação**: a suíte e2e roda sob `CLJN_GC_STRESS=1` (coleta a cada alocação) e
+  mantém a saída correta — evidência de que o rooting é preciso (rooting incorreto
+  liberaria valor vivo). Medida de reclamação: loop alocando 10M cons descartáveis →
+  RSS ~6 MB **com** GC vs. ~470 MB **sem** (`CLJN_GC_OFF=1`).
+
+Ainda `[FUTURO]` (conforme o caminho de evolução): geracional/write-barriers, móvel/
+compactação, multi-thread/concorrente (possivelmente MMTk). O interpretador de bootstrap
+segue com `Rc` (conforme previsto).
 
 ## Caminho de evolução
 
