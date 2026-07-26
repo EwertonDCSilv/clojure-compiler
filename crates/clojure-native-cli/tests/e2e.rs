@@ -119,6 +119,28 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiles_records() {
+    if !have_cc() {
+        return;
+    }
+    let src = r#"(ns r.core)
+(defrecord Point [x y])
+(defn -main []
+  (let [p (->Point 3 4)]
+    (println p)
+    (println (:x p) (:y p) (count p))
+    (println (assoc p :x 10))
+    (println (= p (->Point 3 4)) (= p (->Point 9 9)))))
+(-main)"#;
+    let expected = "#Point{:x 3, :y 4}\n3 4 2\n#Point{:x 10, :y 4}\ntrue false\n";
+    assert_eq!(build_and_run("cljn_e2e_rec", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_rec_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_variadic_multiarity_apply() {
     if !have_cc() {
         return;

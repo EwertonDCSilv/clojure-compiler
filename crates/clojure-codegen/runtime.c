@@ -29,7 +29,7 @@ typedef intptr_t Value;
 #define FIX(v)     ((intptr_t)(v) >> 1)
 #define IS_PTR(v)  (((v) & 7) == 0)
 
-enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7 };
+enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8 };
 
 typedef struct Obj {
     uint8_t type;
@@ -44,6 +44,7 @@ typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[];
  * HAMT com structural sharing é otimização posterior, não muda a semântica). */
 typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* vetor e set */
 typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] */
+typedef struct { Obj h; Value type_name; Value map; } Record; /* defrecord: nome + mapa */
 
 /* ---------- shadow-stack de roots ---------- */
 #define GC_STACK_CAP (1u << 22) /* 4M slots */
@@ -124,6 +125,11 @@ static void gc_mark(Value v) {
         } else if (o->type == T_MAP) {
             Map *m = (Map *)v;
             for (int64_t i = 0; i < m->n * 2; i++) gc_mark(m->kv[i]);
+            return;
+        } else if (o->type == T_RECORD) {
+            Record *r = (Record *)v;
+            gc_mark(r->type_name);
+            gc_mark(r->map);
             return;
         } else {
             return; /* string/keyword: folha */
@@ -376,6 +382,7 @@ Value cljn_map_dissoc(Value map, Value k) {
 /* Constrói uma lista em C rooteando o acumulador no shadow-stack (senão o GC
  * coletaria `acc` no meio da construção). `map`/coll já está rooteado por quem chama. */
 Value cljn_map_keys(Value map) {
+    if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
     Map *m = (Map *)map;
     Value acc = EMPTY;
     cljn_gc_push(acc);
@@ -387,6 +394,7 @@ Value cljn_map_keys(Value map) {
     return acc;
 }
 Value cljn_map_vals(Value map) {
+    if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
     Map *m = (Map *)map;
     Value acc = EMPTY;
     cljn_gc_push(acc);
@@ -398,10 +406,21 @@ Value cljn_map_vals(Value map) {
     return acc;
 }
 
+/* ---------- records (defrecord) ---------- */
+Value cljn_make_record(Value type_name, Value map) {
+    Record *r = (Record *)obj_alloc(sizeof(Record), T_RECORD);
+    r->type_name = type_name;
+    r->map = map;
+    return (Value)r;
+}
+Value cljn_record_type(Value r) { return ((Record *)r)->type_name; }
+Value cljn_record_map(Value r) { return ((Record *)r)->map; }
+
 /* ---------- genéricos (dispatch por tipo) ---------- */
 Value cljn_contains(Value coll, Value key);
 Value cljn_get(Value coll, Value key) {
     switch (obj_type(coll)) {
+        case T_RECORD: return cljn_map_get(((Record *)coll)->map, key);
         case T_MAP: return cljn_map_get(coll, key);
         case T_VEC: {
             Vec *v = (Vec *)coll;
@@ -414,6 +433,7 @@ Value cljn_get(Value coll, Value key) {
 }
 Value cljn_contains(Value coll, Value key) {
     switch (obj_type(coll)) {
+        case T_RECORD: return cljn_map_contains(((Record *)coll)->map, key);
         case T_MAP: return cljn_map_contains(coll, key);
         case T_SET: return cljn_set_contains(coll, key);
         case T_VEC: { Vec *v = (Vec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->len); }
@@ -438,6 +458,14 @@ Value cljn_conj(Value coll, Value x) {
 }
 Value cljn_assoc(Value coll, Value k, Value v) {
     switch (obj_type(coll)) {
+        case T_RECORD: {
+            Record *r = (Record *)coll;
+            Value nm = cljn_map_assoc(r->map, k, v); /* r rooteado via coll */
+            cljn_gc_push(nm);                        /* rooteia nm p/ o make_record */
+            Value rec = cljn_make_record(((Record *)coll)->type_name, nm);
+            cljn_gc_popn(1);
+            return rec;
+        }
         case T_MAP: return cljn_map_assoc(coll, k, v);
         case T_VEC: return cljn_vec_assoc(coll, k, v);
         default:
@@ -525,6 +553,10 @@ int cljn_equal_raw(Value a, Value b) {
         }
         return 1;
     }
+    if (ta == T_RECORD && tb == T_RECORD) {
+        Record *x = (Record *)a, *y = (Record *)b;
+        return cljn_equal_raw(x->type_name, y->type_name) && cljn_equal_raw(x->map, y->map);
+    }
     return 0;
 }
 Value cljn_eq(Value a, Value b) { return b2v(cljn_equal_raw(a,b)); }
@@ -570,6 +602,7 @@ Value cljn_count(Value v) {
         case T_STR: return MK_FIX((long)((Str *)v)->len);
         case T_VEC: case T_SET: return MK_FIX(((Vec *)v)->len);
         case T_MAP: return MK_FIX(((Map *)v)->n);
+        case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
     long n = 0;
     while (v != EMPTY && v != NIL && obj_type(v) == T_CONS) { n++; v = ((Cons *)v)->tail; }
@@ -620,6 +653,13 @@ static void write_val(SB *b, Value v, int for_str) {
             sb_putc(b,'}'); return;
         }
         case T_FN: sb_str(b, "#<fn>"); return;
+        case T_RECORD: {
+            Record *r = (Record *)v;
+            sb_putc(b, '#');
+            if (obj_type(r->type_name) == T_KW) { Str *n = (Str *)r->type_name; sb_write(b, n->data, n->len); }
+            write_val(b, r->map, for_str);
+            return;
+        }
         default: sb_str(b,"#<obj>");
     }
 }

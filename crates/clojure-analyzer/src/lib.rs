@@ -45,6 +45,8 @@ pub enum Ast {
     CallValue { f: Box<Ast>, args: Vec<Ast> },
     /// `(apply f a b ... coll)`: chama `f` com os args fixos + elementos de `coll`.
     Apply { f: Box<Ast>, fixed: Vec<Ast>, coll: Box<Ast> },
+    /// Constrói um record: nome do tipo + campos (nome → valor).
+    MakeRecord { type_name: String, fields: Vec<(String, Ast)> },
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +113,9 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     for f in forms {
         if let Some((name, decls)) = match_defn(f) {
             sigs.insert(name, decls.iter().map(|(p, r, _)| (p.len(), r.is_some())).collect());
+        } else if let Some((name, fields)) = match_defrecord(f) {
+            // defrecord Name [f...] gera o construtor ->Name de aridade |fields|.
+            sigs.insert(format!("->{name}"), vec![(fields.len(), false)]);
         }
     }
 
@@ -134,6 +139,18 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 }),
                 Err(d) => diags.push(d),
             }
+        } else if let Some((rname, fields)) = match_defrecord(f) {
+            // Gera o construtor ->Name que monta o record.
+            let make = Ast::MakeRecord {
+                type_name: rname.clone(),
+                fields: fields.iter().enumerate().map(|(i, fld)| (fld.clone(), Ast::Local(i as u32))).collect(),
+            };
+            an.functions.push(Function {
+                name: format!("->{rname}"),
+                methods: vec![FnMethod { params: fields.clone(), rest: None, body: make }],
+                local_count: fields.len() as u32,
+                is_lambda: false,
+            });
         } else {
             match an.analyze(f, false) {
                 Ok(a) => main_body.push(a),
@@ -180,6 +197,26 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     }
     let methods = parse_methods(rest)?;
     Some((name, methods))
+}
+
+/// Reconhece `(defrecord Nome [campos...])`. Impls inline de protocolo ainda não
+/// são suportadas (viram erro no analyzer, não silêncio).
+fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
+    let Form::List(items) = f.node.strip_meta() else { return None };
+    let head = items.first()?;
+    let Form::Symbol(n) = head.node.strip_meta() else { return None };
+    if n.ns.is_some() || n.name != "defrecord" {
+        return None;
+    }
+    let name = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
+        _ => return None,
+    };
+    let (fields, rest) = parse_params(items.get(2)?)?;
+    if rest.is_some() {
+        return None;
+    }
+    Some((name, fields))
 }
 
 /// Aridade única `[params] body...` ou multi `([params] body...) ...`.

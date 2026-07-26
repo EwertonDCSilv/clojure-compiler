@@ -53,6 +53,7 @@ Decisões arquiteturais fundamentais (imutáveis sem novo ADR):
 - [adr/0003-value-representation.md](adr/0003-value-representation.md) — **enum `Value`** com imediatos + `Gc<T>`.
 - [adr/0004-macro-execution.md](adr/0004-macro-execution.md) — **interpretador tree-walking** em tempo de compilação.
 - [adr/0005-bootstrap-strategy.md](adr/0005-bootstrap-strategy.md) — primitivas em Rust + `clojure.core` progressivo em Clojure.
+- [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — fast paths de fixnum + rooting somente em safepoints.
 
 Testes de conformidade: [conformance/README.md](conformance/README.md).
 
@@ -76,6 +77,7 @@ Testes de conformidade: [conformance/README.md](conformance/README.md).
 | Representação de valor | `enum Value` (imediatos) + `Gc<T>` | tagged pointers / NaN-boxing | 0003 |
 | Memória | Mark-sweep precisa, não-móvel, shadow-stack roots, single-thread | Geracional/móvel (MMTk) | 0002 |
 | Bootstrap | Primitivas Rust + core em Clojure, staged | Self-hosting parcial | 0005 |
+| Otimização | Fast paths de fixnum + roots vivos em safepoints | Unboxing/stack maps se medidos | 0006 |
 | Coleções | array-map + HAMT + bitmapped vector trie | CHAMP + sorted + transients | RUNTIME_SPEC |
 | Plataforma inicial | Linux x86_64 (oficial) + Windows x86_64 (1ª classe) | + arm64, macOS | ARCHITECTURE |
 

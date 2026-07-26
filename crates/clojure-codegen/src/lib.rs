@@ -97,6 +97,7 @@ struct Runtime {
     p_keys: FuncId,      // (map)->list
     p_vals: FuncId,      // (map)->list
     p_conj: FuncId,      // (coll,x)->coll
+    make_record: FuncId, // (type_name,map)->record
 }
 
 /// Compila o programa para bytes de um objeto nativo da plataforma host.
@@ -342,6 +343,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         p_keys: una(m, "cljn_map_keys"),
         p_vals: una(m, "cljn_map_vals"),
         p_conj: bin(m, "cljn_conj"),
+        make_record: bin(m, "cljn_make_record"),
     }
 }
 
@@ -681,6 +683,11 @@ impl<'a> FnGen<'a> {
                 self.gc_push_val(v);
                 Flow::Val(v)
             }
+            Ast::MakeRecord { type_name, fields } => {
+                let v = self.gen_make_record(type_name, fields)?; // net-0
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
             Ast::Capture(i) => {
                 let self_v = self.builder.use_var(self.self_var.expect("self"));
                 let idx = self.builder.ins().iconst(types::I64, *i as i64);
@@ -771,6 +778,30 @@ impl<'a> FnGen<'a> {
             self.call_void4(self.rt.map_set, m, idx, *kv, *vv);
         }
         Ok(m)
+    }
+
+    /// Materializa uma keyword a partir do blob de string (sem empurrar).
+    fn make_kw_value(&mut self, name: &str) -> CValue {
+        let (data_id, len) = self.str_data[name];
+        let gv = self.module.declare_data_in_func(data_id, self.builder.func);
+        let p = self.builder.ins().symbol_value(self.ptr, gv);
+        let len_v = self.builder.ins().iconst(types::I64, len as i64);
+        self.call2(self.rt.kw, p, len_v)
+    }
+
+    /// Constrói um record (net-0): mapa dos campos + nome de tipo → cljn_make_record.
+    fn gen_make_record(&mut self, type_name: &str, fields: &[(String, Ast)]) -> Result<CValue, Diagnostic> {
+        let pairs: Vec<(Ast, Ast)> = fields
+            .iter()
+            .map(|(fname, val)| (Ast::Keyword(fname.clone()), val.clone()))
+            .collect();
+        let map_val = self.gen_map(&pairs)?; // net-0
+        self.gc_push_val(map_val); // rooteia o mapa durante o alloc do keyword/record
+        let tn = self.make_kw_value(type_name);
+        self.gc_push_val(tn);
+        let rec = self.call2(self.rt.make_record, tn, map_val);
+        self.gc_popn(2);
+        Ok(rec)
     }
 
     /// Cria uma closure: avalia capturas, aloca o Fn e preenche `freev`.
@@ -1129,6 +1160,13 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
             collect_strings(f, out);
             fixed.iter().for_each(|a| collect_strings(a, out));
             collect_strings(coll, out);
+        }
+        Ast::MakeRecord { type_name, fields } => {
+            out.push(type_name.clone());
+            fields.iter().for_each(|(fname, v)| {
+                out.push(fname.clone());
+                collect_strings(v, out);
+            });
         }
         Ast::Loop { slots, body } | Ast::Let { slots, body } => {
             slots.iter().for_each(|(_, a)| collect_strings(a, out));

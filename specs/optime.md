@@ -1,7 +1,11 @@
 # Plano de otimização do codegen numérico e do rooting de GC
 
-Status: **proposto**  
-Escopo principal: `clojure-codegen`, ABI do runtime compilado e testes e2e.  
+Status: **proposto**
+
+Escopo principal: `clojure-codegen`, ABI do runtime compilado e testes e2e.
+
+Decisão arquitetural: [ADR-0006](adr/0006-codegen-optimization.md).
+
 Problemas-alvo:
 
 1. `+`, `-`, `*`, `<`, `<=`, `>`, `>=`, `inc` e `dec` sempre atravessam a ABI C
