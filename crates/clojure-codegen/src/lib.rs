@@ -1313,6 +1313,43 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
+    /// `*` inline: guard, unbox, imul + smulhi p/ detectar overflow de i64,
+    /// range-check de fixnum, retag; slow path = runtime.
+    fn gen_fix_mul(&mut self, a: CValue, b: CValue, slow: FuncId) -> CValue {
+        let both = self.fix_both_guard(a, b);
+        let fast_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+
+        self.builder.switch_to_block(fast_b);
+        self.builder.seal_block(fast_b);
+        let ar = self.builder.ins().sshr_imm(a, 1);
+        let br = self.builder.ins().sshr_imm(b, 1);
+        let lo = self.builder.ins().imul(ar, br);
+        let hi = self.builder.ins().smulhi(ar, br);
+        let exp = self.builder.ins().sshr_imm(lo, 63); // extensão de sinal de lo
+        let no_ovf = self.builder.ins().icmp(IntCC::Equal, hi, exp);
+        let inr = self.fix_in_range(lo);
+        let ok = self.builder.ins().band(no_ovf, inr);
+        let ok_b = self.builder.create_block();
+        self.builder.ins().brif(ok, ok_b, &[], slow_b, &[]);
+        self.builder.switch_to_block(ok_b);
+        self.builder.seal_block(ok_b);
+        let tagged = self.fix_retag(lo);
+        self.builder.ins().jump(merge, &[tagged.into()]);
+
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sr = self.call2(slow, a, b);
+        self.builder.ins().jump(merge, &[sr.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
     /// `inc`/`dec` inline (`delta` = +1/-1); slow path = runtime.
     fn gen_fix_unop(&mut self, a: CValue, delta: i64, slow: FuncId) -> CValue {
         let g = self.fix_guard(a);
@@ -1418,7 +1455,18 @@ impl<'a> FnGen<'a> {
                     self.fold_fix(args, false, self.rt.sub)
                 }
             }
-            Prim::Mul => self.fold_bin(self.rt.mul, args), // * ainda no runtime
+            Prim::Mul => {
+                let mut vals = Vec::with_capacity(args.len());
+                for a in args {
+                    vals.push(self.expr_val(a)?);
+                }
+                let mut acc = vals[0];
+                for v in &vals[1..] {
+                    acc = self.gen_fix_mul(acc, *v, self.rt.mul);
+                }
+                self.gc_popn(args.len());
+                Ok(acc)
+            }
             // comparações com fast path de fixnum
             Prim::Lt => self.fix_cmp2(args, IntCC::SignedLessThan, self.rt.lt),
             Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le),
@@ -1470,20 +1518,6 @@ impl<'a> FnGen<'a> {
         Ok(r)
     }
 
-    /// Fold de binária **sem alocação** (aritmética): args viram temps, calcula,
-    /// retira todos os temps. Net-0.
-    fn fold_bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let mut vals = Vec::with_capacity(args.len());
-        for a in args {
-            vals.push(self.expr_val(a)?); // +1 cada
-        }
-        let mut acc = vals[0];
-        for v in &vals[1..] {
-            acc = self.call2(id, acc, *v);
-        }
-        self.gc_popn(args.len());
-        Ok(acc)
-    }
     fn bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let a = self.expr_val(&args[0])?; // +1
         let b = self.expr_val(&args[1])?; // +1

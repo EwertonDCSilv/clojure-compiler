@@ -48,7 +48,7 @@ typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[];
 /* Coleções imutáveis (persistentes por valor; estrutura simples — o vector trie /
  * HAMT com structural sharing é otimização posterior, não muda a semântica). */
 typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* set (array simples) */
-typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] */
+typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] (mantém ordem) */
 typedef struct { Obj h; Value type_name; Value map; } Record; /* defrecord: nome + mapa */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
