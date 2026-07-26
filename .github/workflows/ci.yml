@@ -42,3 +42,15 @@ jobs:
       - run: cargo build --release -p clojure-native-cli
       - run: benchmarks/cracking/run.sh --chapter 01
       - run: benchmarks/cormen/run.sh
+
+  conformance:
+    name: Clojure A-E conformance
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build native compiler and conformance runner
+        run: cargo build --release --locked -p clojure-native-cli -p clojure-test-support
+      - name: Verify offline without a JVM
+        run: scripts/conformance.sh verify
