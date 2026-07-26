@@ -92,6 +92,15 @@ Antes de produção, protótipos descartáveis respondem:
 Testes de stress/ciclos/retenção e uso de **Miri** nos blocos `unsafe` do GC — ver
 [TESTING_STRATEGY.md](TESTING_STRATEGY.md).
 
+## Estado da implementação (2026-07-26)
+
+`[FATO]` O runtime **compilado** atual (`crates/clojure-codegen/runtime.c`) usa
+**`malloc` sem coletor** (alocador-só) como etapa interina — a memória é recuperada
+pelo SO na saída do processo (adequado a CLIs curtos). O **mark-sweep preciso com
+shadow-stack** descrito acima é a **próxima etapa** e ainda não foi implementado; isto
+está documentado no código e não é apresentado como GC completo. O interpretador de
+bootstrap usa `Rc` (conforme previsto).
+
 ## Caminho de evolução
 
 MVP (mark-sweep não-móvel, single-thread) → geracional + write barriers (garbage jovem de

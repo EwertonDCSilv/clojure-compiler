@@ -12,11 +12,12 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **Fase 0** ✅ workspace Cargo + git + toolchain; **protótipo #1 (Cranelift→exe)** validado (portão passou).
 > - **Fase 1 — Reader** ✅ tokenizer/parser, spans, desugar de reader-macros, diagnósticos `arquivo:linha:coluna`.
 > - **Fase 2 — Interpretador de bootstrap** ✅ formas especiais, closures, `recur`, macros base em Rust, primitivas + `core.clj` embutido; roda programas via `clojure-native run`.
-> - **Fase 3+5 (corte vertical)** ✅ analyzer + **codegen Cranelift** → **primeiro binário nativo compilado**: `clojure-native build native.clj -o prog` gera um ELF (sem JVM) que calcula `fib`/`fatorial` recursivos, aritmética, `let` e imprime. Subconjunto compilável documentado; fora dele = diagnóstico, nunca divergência silenciosa.
-> - ~35 testes verdes, incluindo e2e que compilam e executam binários nativos.
+> - **Fase 3+5 (corte vertical)** ✅ analyzer + **codegen Cranelift** → **primeiro binário nativo compilado** (`clojure-native build`, sem JVM).
+> - **Fase 4 (representação de valor, parcial)** ✅ **valores tagged** no código nativo (int, nil, bool, **string**, **lista**) via runtime C (ABI C); primitivas `+ - * quot mod inc dec = < <= > >= not nil? empty? cons first rest count list str println print`; strings e listas de primeira classe (concat, `count`, igualdade estrutural). Alocação por `malloc` **sem coletor** ainda (GC mark-sweep é a próxima etapa — ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26)).
+> - ~40 testes verdes, incluindo e2e que compilam e executam binários nativos.
 >
-> Próximo: expandir o subconjunto compilável (representação `Value` + GC — Fases 4/8),
-> `loop/recur` e coleções no codegen, e protótipos de backend #2/#3/#11 (Windows).
+> Próximo: **GC mark-sweep** (shadow-stack) no runtime compilado; `loop/recur` e
+> closures no codegen (protótipos #2/#3); coleções persistentes reais; Windows (#11).
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

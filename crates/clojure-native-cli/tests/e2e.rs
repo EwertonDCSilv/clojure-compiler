@@ -74,6 +74,26 @@ fn compiles_recursion_and_arithmetic() {
 }
 
 #[test]
+fn compiles_strings_and_lists() {
+    if !have_cc() {
+        return;
+    }
+    let src = r#"(ns s.core)
+(defn upto [n acc] (if (< n 0) acc (upto (dec n) (cons n acc))))
+(defn -main []
+  (println (str "soma=" (+ 1 2 3)))
+  (println (upto 4 (list)))
+  (println (count (upto 4 (list))))
+  (println (first (upto 4 (list))))
+  (println (= (list 1 2) (cons 1 (cons 2 (list))))))
+(-main)"#;
+    assert_eq!(
+        build_and_run("cljn_e2e_strlist", src),
+        "soma=6\n(0 1 2 3 4)\n5\n0\ntrue\n"
+    );
+}
+
+#[test]
 fn native_binary_has_no_jvm_dep() {
     if !have_cc() || !cfg!(target_os = "linux") {
         return;

@@ -44,12 +44,26 @@ pub enum Prim {
     Add,
     Sub,
     Mul,
+    Quot,
+    Mod,
+    Inc,
+    Dec,
     Eq,
     Lt,
     Le,
     Gt,
     Ge,
+    Not,
+    NilP,
+    EmptyP,
+    Cons,
+    First,
+    Rest,
+    Count,
+    List,
+    Str,
     Println,
+    Print,
 }
 
 #[derive(Debug, Clone)]
@@ -335,12 +349,26 @@ fn prim_of(name: &str) -> Option<Prim> {
         "+" => Prim::Add,
         "-" => Prim::Sub,
         "*" => Prim::Mul,
+        "quot" => Prim::Quot,
+        "mod" => Prim::Mod,
+        "inc" => Prim::Inc,
+        "dec" => Prim::Dec,
         "=" => Prim::Eq,
         "<" => Prim::Lt,
         "<=" => Prim::Le,
         ">" => Prim::Gt,
         ">=" => Prim::Ge,
+        "not" => Prim::Not,
+        "nil?" => Prim::NilP,
+        "empty?" => Prim::EmptyP,
+        "cons" => Prim::Cons,
+        "first" => Prim::First,
+        "rest" => Prim::Rest,
+        "count" => Prim::Count,
+        "list" => Prim::List,
+        "str" => Prim::Str,
         "println" => Prim::Println,
+        "print" => Prim::Print,
         _ => return None,
     })
 }
@@ -349,9 +377,12 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
     let ok = match prim {
         Prim::Sub => n >= 1,
         Prim::Add | Prim::Mul => n >= 1,
+        Prim::Quot | Prim::Mod | Prim::Cons => n == 2,
+        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP | Prim::First
+        | Prim::Rest | Prim::Count => n == 1,
         // Comparações binárias no slice (encadeamento é [FUTURO]).
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => n == 2,
-        Prim::Println => true,
+        Prim::List | Prim::Str | Prim::Println | Prim::Print => true,
     };
     if ok {
         Ok(())

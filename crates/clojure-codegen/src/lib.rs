@@ -1,12 +1,15 @@
-//! Codegen nativo (corte vertical da Fase 5): `Program` (AST do analyzer) →
-//! objeto nativo via Cranelift. Baseado no protótipo #1 (ADR-0001).
+//! Codegen nativo (Fase 4/5 slice): `Program` (AST) → objeto nativo via Cranelift.
 //!
-//! Modelo de valores do slice: tudo é `i64` (inteiros; `nil`/`false`=0, `true`=1).
-//! Strings existem apenas como literais argumento de `println` (emitidas como dados
-//! e impressas via runtime C). A representação completa (`Value`/GC) é das Fases 4+.
+//! Representação de valor **tagged** em `i64` (ADR-0003, variante compilada):
+//! fixnum `(n<<1)|1`; ponteiro (baixo3=000) para string/cons; imediatos
+//! `NIL/TRUE/FALSE/EMPTY`. Toda operação semântica (aritmética, comparação, seq,
+//! print, str) é uma **chamada ao runtime** (`runtime.c`, ABI C — ver
+//! specs/ARCHITECTURE.md §Runtime ABI). Isso centraliza a semântica e mantém o
+//! codegen simples.
 //!
-//! Chamadas ao runtime via ABI C: `cljn_print_str`, `cljn_print_i64`,
-//! `cljn_print_space`, `cljn_print_newline` (fornecidas por `runtime.c`).
+//! Suporta: `defn` (aridade fixa), `if`, `do`, `let`, recursão direta; literais
+//! int/bool/nil/string; primitivas `+ - * quot mod inc dec = < <= > >= not nil?
+//! empty? cons first rest count list str println print`.
 
 use clojure_analyzer::{Ast, Callee, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
@@ -20,21 +23,45 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use target_lexicon::Triple;
 
-/// Fonte C do runtime mínimo, escrita em disco e compilada junto ao objeto.
-pub const RUNTIME_C: &str = r#"/* runtime mínimo do slice compilável — gerado por clojure-codegen */
-#include <stdio.h>
-#include <stddef.h>
-void cljn_print_str(const char* p, long len) { fwrite(p, 1, (size_t)len, stdout); }
-void cljn_print_i64(long n) { printf("%ld", n); }
-void cljn_print_space(void) { fputc(' ', stdout); }
-void cljn_print_newline(void) { fputc('\n', stdout); }
-"#;
+/// Fonte C do runtime, compilada junto ao objeto no passo de link.
+pub const RUNTIME_C: &str = include_str!("../runtime.c");
 
-/// IDs das funções de runtime importadas.
+// Constantes de valor tagged (devem casar com runtime.c).
+const NIL: i64 = 2;
+const FALSEV: i64 = 6;
+const TRUEV: i64 = 10;
+
+/// FuncIds das funções de runtime importadas.
 struct Runtime {
-    print_str: FuncId,
-    print_i64: FuncId,
-    print_space: FuncId,
+    // binárias (i64,i64)->i64
+    add: FuncId,
+    sub: FuncId,
+    mul: FuncId,
+    quot: FuncId,
+    mod_: FuncId,
+    lt: FuncId,
+    le: FuncId,
+    gt: FuncId,
+    ge: FuncId,
+    eq: FuncId,
+    cons: FuncId,
+    str_concat: FuncId,
+    // unárias (i64)->i64
+    inc: FuncId,
+    dec: FuncId,
+    not_: FuncId,
+    nilp: FuncId,
+    emptyp: FuncId,
+    first: FuncId,
+    rest: FuncId,
+    count: FuncId,
+    to_str: FuncId,
+    // outras
+    empty: FuncId,       // ()->i64
+    str_from: FuncId,    // (ptr,i64)->i64
+    truthy: FuncId,      // (i64)->i32
+    print: FuncId,       // (i64)->void
+    print_space: FuncId, // ()->void
     print_newline: FuncId,
 }
 
@@ -52,11 +79,9 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         .map_err(|e| single(format!("falha no ObjectBuilder: {e}")))?;
     let mut module = ObjectModule::new(builder);
     let ptr = module.target_config().pointer_type();
-
-    // Runtime imports.
     let runtime = declare_runtime(&mut module, ptr);
 
-    // Dados: strings únicas usadas em println.
+    // Dados: strings únicas do programa.
     let mut strings: Vec<String> = Vec::new();
     for f in &program.functions {
         collect_strings(&f.body, &mut strings);
@@ -73,12 +98,14 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
             .declare_data(&format!("str{i}"), Linkage::Local, false, false)
             .map_err(|e| single(format!("declare_data: {e}")))?;
         let mut d = DataDescription::new();
-        d.define(s.clone().into_bytes().into_boxed_slice());
+        // Bytes crus (o comprimento é passado à parte; sem NUL).
+        let bytes = if s.is_empty() { vec![0u8] } else { s.clone().into_bytes() };
+        d.define(bytes.into_boxed_slice());
         module.define_data(id, &d).map_err(|e| single(format!("define_data: {e}")))?;
         str_data.insert(s.clone(), (id, s.len()));
     }
 
-    // Declara todas as funções do usuário (para recursão / forward-ref).
+    // Declara funções do usuário (para recursão/forward-ref).
     let mut fn_ids: HashMap<String, (FuncId, usize)> = HashMap::new();
     for f in &program.functions {
         let mut sig = module.make_signature();
@@ -94,7 +121,6 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
 
     let mut diags = Diagnostics::new();
 
-    // Define cada função do usuário.
     for f in &program.functions {
         let (id, _) = fn_ids[&f.name];
         let mut ctx = Context::new();
@@ -102,18 +128,18 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         let mut fbctx = FunctionBuilderContext::new();
         let res = {
             let mut fg = FnGen::new(&mut module, &mut ctx.func, &mut fbctx, ptr, &runtime, &fn_ids, &str_data);
-            fg.build_function(&f.params, &f.body, f.local_count)
+            fg.build_function(&f.params, &f.body)
         };
-        if let Err(d) = res {
-            diags.push(d);
-            continue;
-        }
-        if let Err(e) = module.define_function(id, &mut ctx) {
-            diags.push(single_d(format!("define_function {}: {e}", f.name)));
+        match res {
+            Ok(()) => {
+                if let Err(e) = module.define_function(id, &mut ctx) {
+                    diags.push(single_d(format!("define_function {}: {e}", f.name)));
+                }
+            }
+            Err(d) => diags.push(d),
         }
     }
 
-    // Define `main` (int main()) a partir do corpo de topo (modelo de script).
     {
         let mut sig = module.make_signature();
         sig.returns.push(AbiParam::new(types::I32));
@@ -125,45 +151,98 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         let mut fbctx = FunctionBuilderContext::new();
         let res = {
             let mut fg = FnGen::new(&mut module, &mut ctx.func, &mut fbctx, ptr, &runtime, &fn_ids, &str_data);
-            fg.build_main(&program.main_body, program.main_local_count)
+            fg.build_main(&program.main_body)
         };
-        if let Err(d) = res {
-            diags.push(d);
-        } else if let Err(e) = module.define_function(main_id, &mut ctx) {
-            diags.push(single_d(format!("define main: {e}")));
+        match res {
+            Ok(()) => {
+                if let Err(e) = module.define_function(main_id, &mut ctx) {
+                    diags.push(single_d(format!("define main: {e}")));
+                }
+            }
+            Err(d) => diags.push(d),
         }
     }
 
     if diags.has_errors() {
         return Err(diags);
     }
-
     let product = module.finish();
     product.emit().map_err(|e| single(format!("emit do objeto: {e}")))
 }
 
-fn declare_runtime(module: &mut ObjectModule, ptr: types::Type) -> Runtime {
-    let mut sig_str = module.make_signature();
-    sig_str.params.push(AbiParam::new(ptr));
-    sig_str.params.push(AbiParam::new(types::I64));
-    let print_str = module.declare_function("cljn_print_str", Linkage::Import, &sig_str).unwrap();
+fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
+    let bin = |m: &mut ObjectModule, name: &str| {
+        let mut s = m.make_signature();
+        s.params.push(AbiParam::new(types::I64));
+        s.params.push(AbiParam::new(types::I64));
+        s.returns.push(AbiParam::new(types::I64));
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
+    let una = |m: &mut ObjectModule, name: &str| {
+        let mut s = m.make_signature();
+        s.params.push(AbiParam::new(types::I64));
+        s.returns.push(AbiParam::new(types::I64));
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
+    let voidfn = |m: &mut ObjectModule, name: &str, has_arg: bool| {
+        let mut s = m.make_signature();
+        if has_arg {
+            s.params.push(AbiParam::new(types::I64));
+        }
+        m.declare_function(name, Linkage::Import, &s).unwrap()
+    };
 
-    let mut sig_i64 = module.make_signature();
-    sig_i64.params.push(AbiParam::new(types::I64));
-    let print_i64 = module.declare_function("cljn_print_i64", Linkage::Import, &sig_i64).unwrap();
+    let mut str_from_sig = m.make_signature();
+    str_from_sig.params.push(AbiParam::new(ptr));
+    str_from_sig.params.push(AbiParam::new(types::I64));
+    str_from_sig.returns.push(AbiParam::new(types::I64));
+    let str_from = m.declare_function("cljn_str_from", Linkage::Import, &str_from_sig).unwrap();
 
-    let sig_void = module.make_signature();
-    let print_space = module.declare_function("cljn_print_space", Linkage::Import, &sig_void).unwrap();
-    let print_newline = module.declare_function("cljn_print_newline", Linkage::Import, &sig_void).unwrap();
+    let mut empty_sig = m.make_signature();
+    empty_sig.returns.push(AbiParam::new(types::I64));
+    let empty = m.declare_function("cljn_empty", Linkage::Import, &empty_sig).unwrap();
 
-    Runtime { print_str, print_i64, print_space, print_newline }
+    let mut truthy_sig = m.make_signature();
+    truthy_sig.params.push(AbiParam::new(types::I64));
+    truthy_sig.returns.push(AbiParam::new(types::I32));
+    let truthy = m.declare_function("cljn_truthy", Linkage::Import, &truthy_sig).unwrap();
+
+    Runtime {
+        add: bin(m, "cljn_add"),
+        sub: bin(m, "cljn_sub"),
+        mul: bin(m, "cljn_mul"),
+        quot: bin(m, "cljn_quot"),
+        mod_: bin(m, "cljn_mod"),
+        lt: bin(m, "cljn_lt"),
+        le: bin(m, "cljn_le"),
+        gt: bin(m, "cljn_gt"),
+        ge: bin(m, "cljn_ge"),
+        eq: bin(m, "cljn_eq"),
+        cons: bin(m, "cljn_cons"),
+        str_concat: bin(m, "cljn_str_concat"),
+        inc: una(m, "cljn_inc"),
+        dec: una(m, "cljn_dec"),
+        not_: una(m, "cljn_not"),
+        nilp: una(m, "cljn_nilp"),
+        emptyp: una(m, "cljn_emptyp"),
+        first: una(m, "cljn_first"),
+        rest: una(m, "cljn_rest"),
+        count: una(m, "cljn_count"),
+        to_str: una(m, "cljn_to_str"),
+        empty,
+        str_from,
+        truthy,
+        print: voidfn(m, "cljn_print", true),
+        print_space: voidfn(m, "cljn_print_space", false),
+        print_newline: voidfn(m, "cljn_print_newline", false),
+    }
 }
 
 struct FnGen<'a> {
     module: &'a mut ObjectModule,
     builder: FunctionBuilder<'a>,
     ptr: types::Type,
-    runtime: &'a Runtime,
+    rt: &'a Runtime,
     fn_ids: &'a HashMap<String, (FuncId, usize)>,
     str_data: &'a HashMap<String, (DataId, usize)>,
     vars: HashMap<u32, Variable>,
@@ -176,19 +255,11 @@ impl<'a> FnGen<'a> {
         func: &'a mut cranelift_codegen::ir::Function,
         fbctx: &'a mut FunctionBuilderContext,
         ptr: types::Type,
-        runtime: &'a Runtime,
+        rt: &'a Runtime,
         fn_ids: &'a HashMap<String, (FuncId, usize)>,
         str_data: &'a HashMap<String, (DataId, usize)>,
     ) -> Self {
-        FnGen {
-            module,
-            builder: FunctionBuilder::new(func, fbctx),
-            ptr,
-            runtime,
-            fn_ids,
-            str_data,
-            vars: HashMap::new(),
-        }
+        FnGen { module, builder: FunctionBuilder::new(func, fbctx), ptr, rt, fn_ids, str_data, vars: HashMap::new() }
     }
 
     fn new_var(&mut self, slot: u32) -> Variable {
@@ -197,27 +268,24 @@ impl<'a> FnGen<'a> {
         v
     }
 
-    fn build_function(mut self, params: &[String], body: &Ast, _locals: u32) -> Result<(), Diagnostic> {
+    fn build_function(mut self, params: &[String], body: &Ast) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
-
-        // Vincula parâmetros aos slots 0..n.
         let param_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
         for (slot, val) in param_vals.iter().enumerate() {
             let v = self.new_var(slot as u32);
             self.builder.def_var(v, *val);
         }
         let _ = params;
-
         let ret = self.expr(body)?;
         self.builder.ins().return_(&[ret]);
         self.builder.finalize();
         Ok(())
     }
 
-    fn build_main(mut self, body: &[Ast], _locals: u32) -> Result<(), Diagnostic> {
+    fn build_main(mut self, body: &[Ast]) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
@@ -230,24 +298,54 @@ impl<'a> FnGen<'a> {
         Ok(())
     }
 
+    fn konst(&mut self, tagged: i64) -> CValue {
+        self.builder.ins().iconst(types::I64, tagged)
+    }
+
+    fn call1(&mut self, id: FuncId, a: CValue) -> CValue {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        let c = self.builder.ins().call(r, &[a]);
+        self.builder.inst_results(c)[0]
+    }
+    fn call2(&mut self, id: FuncId, a: CValue, b: CValue) -> CValue {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        let c = self.builder.ins().call(r, &[a, b]);
+        self.builder.inst_results(c)[0]
+    }
+    fn call0(&mut self, id: FuncId) -> CValue {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        let c = self.builder.ins().call(r, &[]);
+        self.builder.inst_results(c)[0]
+    }
+    fn call_void(&mut self, id: FuncId, args: &[CValue]) {
+        let r = self.module.declare_func_in_func(id, self.builder.func);
+        self.builder.ins().call(r, args);
+    }
+
     fn expr(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
         match ast {
-            Ast::Int(n) => Ok(self.builder.ins().iconst(types::I64, *n)),
-            Ast::Bool(b) => Ok(self.builder.ins().iconst(types::I64, *b as i64)),
-            Ast::Nil => Ok(self.builder.ins().iconst(types::I64, 0)),
-            Ast::Str(_) => Err(Diagnostic::error(
-                "E0110",
-                "string só é compilável como argumento direto de println (slice)",
-            )),
+            Ast::Int(n) => {
+                let tagged = (*n as i128) << 1 | 1;
+                Ok(self.konst(tagged as i64))
+            }
+            Ast::Bool(b) => Ok(self.konst(if *b { TRUEV } else { FALSEV })),
+            Ast::Nil => Ok(self.konst(NIL)),
+            Ast::Str(s) => {
+                let (data_id, len) = self.str_data[s];
+                let gv = self.module.declare_data_in_func(data_id, self.builder.func);
+                let p = self.builder.ins().symbol_value(self.ptr, gv);
+                let len_v = self.builder.ins().iconst(types::I64, len as i64);
+                Ok(self.call2(self.rt.str_from, p, len_v))
+            }
             Ast::Local(slot) => {
                 let v = *self
                     .vars
                     .get(slot)
-                    .ok_or_else(|| Diagnostic::error("E0111", format!("local {slot} não vinculado (bug do compilador)")))?;
+                    .ok_or_else(|| Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)")))?;
                 Ok(self.builder.use_var(v))
             }
             Ast::Do(stmts) => {
-                let mut last = self.builder.ins().iconst(types::I64, 0);
+                let mut last = self.konst(NIL);
                 for s in stmts {
                     last = self.expr(s)?;
                 }
@@ -268,13 +366,13 @@ impl<'a> FnGen<'a> {
 
     fn gen_if(&mut self, test: &Ast, then: &Ast, els: &Ast) -> Result<CValue, Diagnostic> {
         let test_val = self.expr(test)?;
-        let cond = self.builder.ins().icmp_imm(IntCC::NotEqual, test_val, 0);
+        let truth = self.call1(self.rt.truthy, test_val); // i32
+        let cond = self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0);
 
         let then_b = self.builder.create_block();
         let else_b = self.builder.create_block();
         let merge_b = self.builder.create_block();
         self.builder.append_block_param(merge_b, types::I64);
-
         self.builder.ins().brif(cond, then_b, &[], else_b, &[]);
 
         self.builder.switch_to_block(then_b);
@@ -294,7 +392,6 @@ impl<'a> FnGen<'a> {
 
     fn gen_call(&mut self, callee: &Callee, args: &[Ast]) -> Result<CValue, Diagnostic> {
         match callee {
-            Callee::Prim(Prim::Println) => self.gen_println(args),
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
@@ -310,77 +407,101 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        match prim {
+            Prim::Println | Prim::Print => self.gen_print(prim, args),
+            Prim::Str => self.gen_str(args),
+            Prim::List => self.gen_list(args),
+            // binárias associativas (fold)
+            Prim::Add => self.fold_bin(self.rt.add, args),
+            Prim::Mul => self.fold_bin(self.rt.mul, args),
+            Prim::Sub => {
+                if args.len() == 1 {
+                    let zero = self.konst(1); // MK_FIX(0) == 1
+                    let v = self.expr(&args[0])?;
+                    Ok(self.call2(self.rt.sub, zero, v))
+                } else {
+                    self.fold_bin(self.rt.sub, args)
+                }
+            }
+            // binárias estritas
+            Prim::Quot => self.bin(self.rt.quot, args),
+            Prim::Mod => self.bin(self.rt.mod_, args),
+            Prim::Eq => self.bin(self.rt.eq, args),
+            Prim::Lt => self.bin(self.rt.lt, args),
+            Prim::Le => self.bin(self.rt.le, args),
+            Prim::Gt => self.bin(self.rt.gt, args),
+            Prim::Ge => self.bin(self.rt.ge, args),
+            Prim::Cons => self.bin(self.rt.cons, args),
+            // unárias
+            Prim::Inc => self.una(self.rt.inc, args),
+            Prim::Dec => self.una(self.rt.dec, args),
+            Prim::Not => self.una(self.rt.not_, args),
+            Prim::NilP => self.una(self.rt.nilp, args),
+            Prim::EmptyP => self.una(self.rt.emptyp, args),
+            Prim::First => self.una(self.rt.first, args),
+            Prim::Rest => self.una(self.rt.rest, args),
+            Prim::Count => self.una(self.rt.count, args),
+        }
+    }
+
+    fn fold_bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut acc = self.expr(&args[0])?;
+        for a in &args[1..] {
+            let v = self.expr(a)?;
+            acc = self.call2(id, acc, v);
+        }
+        Ok(acc)
+    }
+    fn bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let a = self.expr(&args[0])?;
+        let b = self.expr(&args[1])?;
+        Ok(self.call2(id, a, b))
+    }
+    fn una(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let a = self.expr(&args[0])?;
+        Ok(self.call1(id, a))
+    }
+
+    fn gen_print(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        for (i, a) in args.iter().enumerate() {
+            if i > 0 {
+                self.call_void(self.rt.print_space, &[]);
+            }
+            let v = self.expr(a)?;
+            self.call_void(self.rt.print, &[v]);
+        }
+        if matches!(prim, Prim::Println) {
+            self.call_void(self.rt.print_newline, &[]);
+        }
+        Ok(self.konst(NIL))
+    }
+
+    fn gen_str(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        if args.is_empty() {
+            let nil = self.konst(NIL);
+            return Ok(self.call1(self.rt.to_str, nil));
+        }
+        let v0 = self.expr(&args[0])?;
+        let mut acc = self.call1(self.rt.to_str, v0);
+        for a in &args[1..] {
+            let v = self.expr(a)?;
+            let s = self.call1(self.rt.to_str, v);
+            acc = self.call2(self.rt.str_concat, acc, s);
+        }
+        Ok(acc)
+    }
+
+    fn gen_list(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
             vals.push(self.expr(a)?);
         }
-        let b = &mut self.builder;
-        Ok(match prim {
-            Prim::Add => {
-                let mut acc = vals[0];
-                for v in &vals[1..] {
-                    acc = b.ins().iadd(acc, *v);
-                }
-                acc
-            }
-            Prim::Mul => {
-                let mut acc = vals[0];
-                for v in &vals[1..] {
-                    acc = b.ins().imul(acc, *v);
-                }
-                acc
-            }
-            Prim::Sub => {
-                if vals.len() == 1 {
-                    b.ins().ineg(vals[0])
-                } else {
-                    let mut acc = vals[0];
-                    for v in &vals[1..] {
-                        acc = b.ins().isub(acc, *v);
-                    }
-                    acc
-                }
-            }
-            Prim::Eq => cmp(b, IntCC::Equal, vals[0], vals[1]),
-            Prim::Lt => cmp(b, IntCC::SignedLessThan, vals[0], vals[1]),
-            Prim::Le => cmp(b, IntCC::SignedLessThanOrEqual, vals[0], vals[1]),
-            Prim::Gt => cmp(b, IntCC::SignedGreaterThan, vals[0], vals[1]),
-            Prim::Ge => cmp(b, IntCC::SignedGreaterThanOrEqual, vals[0], vals[1]),
-            Prim::Println => unreachable!(),
-        })
-    }
-
-    fn gen_println(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        for (i, a) in args.iter().enumerate() {
-            if i > 0 {
-                let sp = self.module.declare_func_in_func(self.runtime.print_space, self.builder.func);
-                self.builder.ins().call(sp, &[]);
-            }
-            match a {
-                Ast::Str(s) => {
-                    let (data_id, len) = self.str_data[s];
-                    let gv = self.module.declare_data_in_func(data_id, self.builder.func);
-                    let p = self.builder.ins().symbol_value(self.ptr, gv);
-                    let len_v = self.builder.ins().iconst(types::I64, len as i64);
-                    let f = self.module.declare_func_in_func(self.runtime.print_str, self.builder.func);
-                    self.builder.ins().call(f, &[p, len_v]);
-                }
-                other => {
-                    let v = self.expr(other)?;
-                    let f = self.module.declare_func_in_func(self.runtime.print_i64, self.builder.func);
-                    self.builder.ins().call(f, &[v]);
-                }
-            }
+        let mut acc = self.call0(self.rt.empty);
+        for v in vals.into_iter().rev() {
+            acc = self.call2(self.rt.cons, v, acc);
         }
-        let nl = self.module.declare_func_in_func(self.runtime.print_newline, self.builder.func);
-        self.builder.ins().call(nl, &[]);
-        Ok(self.builder.ins().iconst(types::I64, 0))
+        Ok(acc)
     }
-}
-
-fn cmp(b: &mut FunctionBuilder, cc: IntCC, x: CValue, y: CValue) -> CValue {
-    let r = b.ins().icmp(cc, x, y);
-    b.ins().uextend(types::I64, r)
 }
 
 fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
