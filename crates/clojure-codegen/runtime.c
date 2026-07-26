@@ -34,7 +34,7 @@ typedef intptr_t Value;
 #define FIXNUM_MIN (-((intptr_t)1 << 62))
 #define FIXNUM_MAX (((intptr_t)1 << 62) - 1)
 
-enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8 };
+enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8, T_VNODE = 9 };
 
 typedef struct Obj {
     uint8_t type;
@@ -47,9 +47,18 @@ typedef struct { Obj h; Value head; Value tail; } Cons;
 typedef struct { Obj h; void *code; int64_t arity; int64_t nfree; Value freev[]; } Fn;
 /* Coleções imutáveis (persistentes por valor; estrutura simples — o vector trie /
  * HAMT com structural sharing é otimização posterior, não muda a semântica). */
-typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* vetor e set */
+typedef struct { Obj h; int64_t len; Value items[]; } Vec;    /* set (array simples) */
 typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2n] */
 typedef struct { Obj h; Value type_name; Value map; } Record; /* defrecord: nome + mapa */
+/* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
+ * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
+ * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
+#define VBITS 5
+#define VWIDTH 32
+#define VMASK 31
+typedef struct { Obj h; Value slots[VWIDTH]; } VNode;
+typedef struct { Obj h; int64_t count; int64_t shift; Value root; Value tail; int64_t tail_len; } PVec;
+static Value pv_nth(PVec *v, int64_t i); /* fwd */
 
 /* ---------- shadow-stack de roots ---------- */
 /* Exportados: o código gerado (ADR-0006 Fase 3) escreve/lê diretamente, sem call.
@@ -91,6 +100,10 @@ static void die(const char *m) { fprintf(stderr, "erro: %s\n", m); exit(1); }
 static int obj_type(Value v) { return (IS_PTR(v) && v != 0) ? ((Obj *)v)->type : 0; }
 
 static int gc_off = -1;
+/* Zona sem-GC: ops de runtime que alocam múltiplos objetos intermediários
+ * (ex.: vector trie) incrementam isto para não coletar no meio (alocação
+ * limitada; as entradas já estão rooteadas pelo chamador). */
+static int gc_disabled = 0;
 static void maybe_gc(void) {
     if (gc_stress < 0) {
         const char *e = getenv("CLJN_GC_STRESS");
@@ -98,7 +111,7 @@ static void maybe_gc(void) {
         const char *o = getenv("CLJN_GC_OFF");
         gc_off = (o && o[0] && o[0] != '0') ? 1 : 0;
     }
-    if (gc_off) return; /* diagnóstico: desliga o coletor (alocador puro) */
+    if (gc_off || gc_disabled) return;
     if (gc_stress || alloc_since_gc >= gc_threshold) gc_collect();
 }
 
@@ -125,9 +138,18 @@ static void gc_mark(Value v) {
             Fn *f = (Fn *)v;
             for (int64_t i = 0; i < f->nfree; i++) gc_mark(f->freev[i]);
             return;
-        } else if (o->type == T_VEC || o->type == T_SET) {
+        } else if (o->type == T_SET) {
             Vec *vec = (Vec *)v;
             for (int64_t i = 0; i < vec->len; i++) gc_mark(vec->items[i]);
+            return;
+        } else if (o->type == T_VNODE) {
+            VNode *nd = (VNode *)v;
+            for (int i = 0; i < VWIDTH; i++) gc_mark(nd->slots[i]);
+            return;
+        } else if (o->type == T_VEC) {
+            PVec *pv = (PVec *)v;
+            gc_mark(pv->root);
+            gc_mark(pv->tail);
             return;
         } else if (o->type == T_MAP) {
             Map *m = (Map *)v;
@@ -239,7 +261,10 @@ Value cljn_collect_rest(Value argc, Value argv, Value nfixed) {
 Value cljn_spread_args(Value fixed_argc, Value coll) {
     int64_t extra = 0;
     int t = obj_type(coll);
-    if (t == T_VEC || t == T_SET) {
+    if (t == T_VEC) {
+        PVec *v = (PVec *)coll;
+        for (int64_t i = 0; i < v->count; i++) { cljn_gc_push(pv_nth(v, i)); extra++; }
+    } else if (t == T_SET) {
         Vec *v = (Vec *)coll;
         for (int64_t i = 0; i < v->len; i++) { cljn_gc_push(v->items[i]); extra++; }
     } else {
@@ -265,38 +290,128 @@ Value cljn_kw(const char *p, long len) {
     return (Value)s;
 }
 
-/* ---------- vetores (imutáveis) ---------- */
-Value cljn_vec_alloc(Value n) {
-    int64_t k = (int64_t)n;
-    Vec *v = (Vec *)obj_alloc(sizeof(Vec) + (size_t)k * sizeof(Value), T_VEC);
-    v->len = k;
-    for (int64_t i = 0; i < k; i++) v->items[i] = NIL; /* zera antes de qualquer GC */
+/* ---------- vetor persistente (bitmapped trie 32-way) ---------- */
+static VNode *vnode_new(void) {
+    VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
+    for (int i = 0; i < VWIDTH; i++) n->slots[i] = NIL;
+    return n;
+}
+static VNode *vnode_copy(VNode *src) {
+    VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
+    for (int i = 0; i < VWIDTH; i++) n->slots[i] = src->slots[i];
+    return n;
+}
+Value cljn_vec_empty(void) {
+    maybe_gc();    /* ponto seguro antes de desabilitar (mantém o trigger de coleta) */
+    gc_disabled++; /* aloca 3 objetos; sem coleta no meio */
+    PVec *v = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
+    v->count = 0;
+    v->shift = VBITS;
+    v->root = (Value)vnode_new();
+    v->tail = (Value)vnode_new();
+    v->tail_len = 0;
+    gc_disabled--;
     return (Value)v;
 }
-void cljn_vec_set(Value vec, Value i, Value x) { ((Vec *)vec)->items[(int64_t)i] = x; }
+static int64_t pv_tailoff(PVec *v) { return v->count - v->tail_len; }
+static Value pv_nth(PVec *v, int64_t i) {
+    if (i >= pv_tailoff(v)) return ((VNode *)v->tail)->slots[i - pv_tailoff(v)];
+    VNode *node = (VNode *)v->root;
+    for (int64_t level = v->shift; level > 0; level -= VBITS)
+        node = (VNode *)node->slots[(i >> level) & VMASK];
+    return node->slots[i & VMASK];
+}
+static VNode *new_path(int64_t level, VNode *node) {
+    if (level == 0) return node;
+    VNode *ret = vnode_new();
+    ret->slots[0] = (Value)new_path(level - VBITS, node);
+    return ret;
+}
+static VNode *push_tail(int64_t level, VNode *parent, VNode *tailnode, int64_t cnt) {
+    int subidx = (int)(((cnt - 1) >> level) & VMASK);
+    VNode *ret = vnode_copy(parent);
+    VNode *insert;
+    if (level == VBITS) {
+        insert = tailnode;
+    } else {
+        Value child = parent->slots[subidx];
+        insert = (obj_type(child) == T_VNODE)
+                     ? push_tail(level - VBITS, (VNode *)child, tailnode, cnt)
+                     : new_path(level - VBITS, tailnode);
+    }
+    ret->slots[subidx] = (Value)insert;
+    return ret;
+}
+/* Zona sem-GC: conj aloca O(log32 n) nós; entradas rooteadas pelo chamador. */
 Value cljn_vec_conj(Value vec, Value x) {
-    Vec *o = (Vec *)vec;
-    int64_t n = o->len;
-    Vec *nv = (Vec *)obj_alloc(sizeof(Vec) + (size_t)(n + 1) * sizeof(Value), T_VEC);
-    o = (Vec *)vec; /* revalida (não-móvel: igual) */
-    nv->len = n + 1;
-    for (int64_t i = 0; i < n; i++) nv->items[i] = o->items[i];
-    nv->items[n] = x;
+    maybe_gc(); /* ponto seguro: vec/x rooteados pelo chamador */
+    gc_disabled++;
+    PVec *o = (PVec *)vec;
+    PVec *nv = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
+    nv->count = o->count + 1;
+    nv->shift = o->shift;
+    nv->root = o->root;
+    if (o->tail_len < VWIDTH) {
+        VNode *nt = vnode_copy((VNode *)o->tail);
+        nt->slots[o->tail_len] = x;
+        nv->tail = (Value)nt;
+        nv->tail_len = o->tail_len + 1;
+    } else {
+        VNode *tailnode = (VNode *)o->tail;
+        VNode *newroot;
+        int64_t newshift = o->shift;
+        if ((o->count >> VBITS) > (1LL << o->shift)) {
+            newroot = vnode_new();
+            newroot->slots[0] = o->root;
+            newroot->slots[1] = (Value)new_path(o->shift, tailnode);
+            newshift += VBITS;
+        } else {
+            newroot = push_tail(o->shift, (VNode *)o->root, tailnode, o->count);
+        }
+        VNode *nt = vnode_new();
+        nt->slots[0] = x;
+        nv->root = (Value)newroot;
+        nv->shift = newshift;
+        nv->tail = (Value)nt;
+        nv->tail_len = 1;
+    }
+    gc_disabled--;
     return (Value)nv;
+}
+static VNode *do_assoc(int64_t level, VNode *node, int64_t i, Value x) {
+    VNode *ret = vnode_copy(node);
+    if (level == 0) {
+        ret->slots[i & VMASK] = x;
+    } else {
+        int subidx = (int)((i >> level) & VMASK);
+        ret->slots[subidx] = (Value)do_assoc(level - VBITS, (VNode *)node->slots[subidx], i, x);
+    }
+    return ret;
 }
 Value cljn_vec_assoc(Value vec, Value idx, Value x) {
-    Vec *o = (Vec *)vec;
-    int64_t i = IS_FIX(idx) ? FIX(idx) : -1; /* índice vem tagged */
-    if (i < 0 || i > o->len) die("assoc: índice fora dos limites do vetor");
-    if (i == o->len) return cljn_vec_conj(vec, x);
-    int64_t n = o->len;
-    Vec *nv = (Vec *)obj_alloc(sizeof(Vec) + (size_t)n * sizeof(Value), T_VEC);
-    o = (Vec *)vec;
-    nv->len = n;
-    for (int64_t j = 0; j < n; j++) nv->items[j] = o->items[j];
-    nv->items[i] = x;
+    PVec *o = (PVec *)vec;
+    int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
+    if (i < 0 || i > o->count) die("assoc: índice fora dos limites do vetor");
+    if (i == o->count) return cljn_vec_conj(vec, x);
+    maybe_gc(); /* ponto seguro: vec/x rooteados pelo chamador */
+    gc_disabled++;
+    PVec *nv = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
+    nv->count = o->count;
+    nv->shift = o->shift;
+    nv->root = o->root;
+    nv->tail = o->tail;
+    nv->tail_len = o->tail_len;
+    if (i >= pv_tailoff(o)) {
+        VNode *nt = vnode_copy((VNode *)o->tail);
+        nt->slots[i - pv_tailoff(o)] = x;
+        nv->tail = (Value)nt;
+    } else {
+        nv->root = (Value)do_assoc(o->shift, (VNode *)o->root, i, x);
+    }
+    gc_disabled--;
     return (Value)nv;
 }
+int64_t cljn_vec_count_raw(Value v) { return ((PVec *)v)->count; }
 
 /* ---------- sets (imutáveis) ---------- */
 Value cljn_set_alloc(Value n) {
@@ -485,8 +600,8 @@ Value cljn_get(Value coll, Value key) {
         case T_RECORD: return cljn_map_get(((Record *)coll)->map, key);
         case T_MAP: return cljn_map_get(coll, key);
         case T_VEC: {
-            Vec *v = (Vec *)coll;
-            if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < v->len) return v->items[i]; }
+            PVec *v = (PVec *)coll;
+            if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < v->count) return pv_nth(v, i); }
             return NIL;
         }
         case T_SET: return set_member((Vec *)coll, key) ? key : NIL;
@@ -498,7 +613,7 @@ Value cljn_contains(Value coll, Value key) {
         case T_RECORD: return cljn_map_contains(((Record *)coll)->map, key);
         case T_MAP: return cljn_map_contains(coll, key);
         case T_SET: return cljn_set_contains(coll, key);
-        case T_VEC: { Vec *v = (Vec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->len); }
+        case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
         default: return FALSEV;
     }
 }
@@ -508,8 +623,8 @@ Value cljn_conj(Value coll, Value x) {
         case T_SET: return cljn_set_conj(coll, x);
         case T_CONS: return cljn_cons(x, coll);
         case T_MAP:
-            if (obj_type(x) == T_VEC && ((Vec *)x)->len == 2)
-                return cljn_map_assoc(coll, ((Vec *)x)->items[0], ((Vec *)x)->items[1]);
+            if (obj_type(x) == T_VEC && ((PVec *)x)->count == 2)
+                return cljn_map_assoc(coll, pv_nth((PVec *)x, 0), pv_nth((PVec *)x, 1));
             die("conj em mapa requer [k v]");
             return coll;
         default:
@@ -540,7 +655,7 @@ Value cljn_nth(Value coll, Value idx) {
     int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
     if (i < 0) die("nth: índice inválido");
     switch (obj_type(coll)) {
-        case T_VEC: { Vec *v = (Vec *)coll; if (i < v->len) return v->items[i]; break; }
+        case T_VEC: { PVec *v = (PVec *)coll; if (i < v->count) return pv_nth(v, i); break; }
         case T_CONS: { Value c = coll; while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail; if (obj_type(c) == T_CONS) return ((Cons *)c)->head; break; }
     }
     die("nth: índice fora dos limites");
@@ -578,13 +693,13 @@ Value cljn_ge(Value a, Value b) { return b2v(need_fix(a,">=")>=need_fix(b,">="))
 
 static int is_seq(int t) { return t == T_CONS || t == T_VEC; }
 static Value seq_nth(Value coll, int t, int64_t i) {
-    if (t == T_VEC) return ((Vec *)coll)->items[i];
+    if (t == T_VEC) return pv_nth((PVec *)coll, i);
     Value c = coll;
     while (i-- > 0) c = ((Cons *)c)->tail;
     return ((Cons *)c)->head;
 }
 static int64_t seq_len(Value coll, int t) {
-    if (t == T_VEC) return ((Vec *)coll)->len;
+    if (t == T_VEC) return ((PVec *)coll)->count;
     int64_t n = 0;
     Value c = coll;
     while (obj_type(c) == T_CONS) { n++; c = ((Cons *)c)->tail; }
@@ -635,7 +750,8 @@ Value cljn_emptyp(Value v) {
     if (v == EMPTY || v == NIL) return TRUEV;
     switch (obj_type(v)) {
         case T_STR: return b2v(((Str *)v)->len == 0);
-        case T_VEC: case T_SET: return b2v(((Vec *)v)->len == 0);
+        case T_SET: return b2v(((Vec *)v)->len == 0);
+        case T_VEC: return b2v(((PVec *)v)->count == 0);
         case T_MAP: return b2v(((Map *)v)->n == 0);
     }
     return FALSEV;
@@ -644,19 +760,22 @@ Value cljn_first(Value v) {
     if (v == EMPTY || v == NIL) return NIL;
     switch (obj_type(v)) {
         case T_CONS: return ((Cons *)v)->head;
-        case T_VEC: case T_SET: { Vec *x = (Vec *)v; return x->len > 0 ? x->items[0] : NIL; }
+        case T_SET: { Vec *x = (Vec *)v; return x->len > 0 ? x->items[0] : NIL; }
+        case T_VEC: { PVec *x = (PVec *)v; return x->count > 0 ? pv_nth(x, 0) : NIL; }
     }
     die("first: não é uma sequência"); return NIL;
 }
 Value cljn_rest(Value v) {
     if (v == EMPTY || v == NIL) return EMPTY;
     if (obj_type(v) == T_CONS) return ((Cons *)v)->tail;
-    if (obj_type(v) == T_VEC || obj_type(v) == T_SET) {
-        Vec *x = (Vec *)v;
+    if (obj_type(v) == T_SET || obj_type(v) == T_VEC) {
+        int is_vec = obj_type(v) == T_VEC;
+        int64_t len = is_vec ? ((PVec *)v)->count : ((Vec *)v)->len;
         Value acc = EMPTY;
         cljn_gc_push(acc); /* rooteia o acumulador durante a construção */
-        for (int64_t i = x->len - 1; i >= 1; i--) {
-            acc = cljn_cons(x->items[i], acc);
+        for (int64_t i = len - 1; i >= 1; i--) {
+            Value el = is_vec ? pv_nth((PVec *)v, i) : ((Vec *)v)->items[i];
+            acc = cljn_cons(el, acc);
             gc_stack[gc_sp - 1] = acc;
         }
         cljn_gc_popn(1);
@@ -667,7 +786,8 @@ Value cljn_rest(Value v) {
 Value cljn_count(Value v) {
     switch (obj_type(v)) {
         case T_STR: return MK_FIX((long)((Str *)v)->len);
-        case T_VEC: case T_SET: return MK_FIX(((Vec *)v)->len);
+        case T_SET: return MK_FIX(((Vec *)v)->len);
+        case T_VEC: return MK_FIX(((PVec *)v)->count);
         case T_MAP: return MK_FIX(((Map *)v)->n);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
@@ -705,8 +825,8 @@ static void write_val(SB *b, Value v, int for_str) {
             sb_putc(b,')'); return;
         }
         case T_VEC: {
-            Vec *x=(Vec*)v; sb_putc(b,'[');
-            for (int64_t i=0;i<x->len;i++){ if(i) sb_putc(b,' '); write_val(b,x->items[i],for_str); }
+            PVec *x=(PVec*)v; sb_putc(b,'[');
+            for (int64_t i=0;i<x->count;i++){ if(i) sb_putc(b,' '); write_val(b,pv_nth(x,i),for_str); }
             sb_putc(b,']'); return;
         }
         case T_SET: {

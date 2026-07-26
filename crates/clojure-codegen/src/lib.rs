@@ -86,8 +86,8 @@ struct Runtime {
     spread_args: FuncId,  // (fixed_argc,coll)->argc_total
     // coleções
     kw: FuncId,          // (ptr,len)->kw
-    vec_alloc: FuncId,   // (n)->vec
-    vec_set: FuncId,     // (vec,i,x)->void
+    vec_empty: FuncId,   // ()->vec
+    vec_conj: FuncId,    // (vec,x)->vec
     set_alloc: FuncId,   // (n)->set
     set_add: FuncId,     // (set,x)->void
     map_alloc: FuncId,   // (n)->map
@@ -337,8 +337,12 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
             s.returns.push(AbiParam::new(types::I64));
             m.declare_function("cljn_kw", Linkage::Import, &s).unwrap()
         },
-        vec_alloc: una(m, "cljn_vec_alloc"),
-        vec_set: ternary_void(m, "cljn_vec_set"),
+        vec_empty: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_vec_empty", Linkage::Import, &s).unwrap()
+        },
+        vec_conj: bin(m, "cljn_vec_conj"),
         set_alloc: una(m, "cljn_set_alloc"),
         set_add: bin_void(m, "cljn_set_add"),
         map_alloc: una(m, "cljn_map_alloc"),
@@ -818,21 +822,22 @@ impl<'a> FnGen<'a> {
         })
     }
 
-    /// Constrói um vetor imutável (net-0). `vec_set` não aloca, então após o
-    /// `vec_alloc` (que rooteia os itens) o vetor pode ser preenchido com segurança.
+    /// Constrói um vetor persistente por `conj` sucessivos (net-0), rooteando o
+    /// acumulador durante as alocações do trie.
     fn gen_vec(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(items.len());
         for it in items {
             vals.push(self.expr_val(it)?); // n temps
         }
-        let n = self.builder.ins().iconst(types::I64, items.len() as i64);
-        let v = self.call1(self.rt.vec_alloc, n); // zera slots; itens rooteados
-        self.gc_popn(items.len());
-        for (i, iv) in vals.iter().enumerate() {
-            let idx = self.builder.ins().iconst(types::I64, i as i64);
-            self.call_void3(self.rt.vec_set, v, idx, *iv);
+        let mut acc = self.call0(self.rt.vec_empty);
+        self.gc_push_val(acc); // acc temp
+        for iv in &vals {
+            acc = self.call2(self.rt.vec_conj, acc, *iv); // iv e acc rooteados
+            self.gc_popn(1);
+            self.gc_push_val(acc);
         }
-        Ok(v)
+        self.gc_popn(items.len() + 1); // itens + acc
+        Ok(acc)
     }
 
     fn gen_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
