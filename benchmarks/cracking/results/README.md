@@ -56,3 +56,24 @@ inicialização de cada processo, inclusive a JVM.
 Os valores são uma fotografia desta máquina; frequência dinâmica, carga do sistema,
 toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estatísticas,
 repita as medições no mesmo ambiente e compare distribuições, não apenas uma execução.
+
+## Validação do fast path de multiplicação
+
+Comparação do baseline `18f58cc` com o commit candidato
+`ADR-0006: fast path de fixnum para *`, ambos construídos em release e executados com
+`--scale 25 --opt-level none`:
+
+- [`mul-fastpath-before.csv`](mul-fastpath-before.csv)
+- [`mul-fastpath-after.csv`](mul-fastpath-after.csv)
+
+| Métrica | Antes | Depois | Variação |
+| --- | ---: | ---: | ---: |
+| Tempo de parede acumulado | 22,57 s | 22,50 s | -0,31% |
+| Tempo de CPU acumulado | 22,37 s | 22,22 s | -0,67% |
+| Compilação acumulada | 5.216 ms | 5.215 ms | -0,02% |
+
+O resultado global ficou essencialmente estável: 18 casos melhoraram, 17 pioraram e 25
+empataram na resolução de 0,01 s do runner. Nos 27 arquivos que contêm multiplicação
+direta, o tempo acumulado caiu de 7,53 s para 7,29 s (-3,19%). Os ganhos mais claros
+foram `least-common-multiple` (0,34 → 0,29 s), `factorial-trailing-zeros`
+(0,23 → 0,20 s) e `modular-power` (0,59 → 0,53 s).

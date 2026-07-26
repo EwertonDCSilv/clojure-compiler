@@ -106,3 +106,27 @@ A inspeção do KMP mostrou um efeito coerente com pressão de registradores: o 
 (aproximadamente 44%). O assembly contém spills adicionais. Por isso, o gate rejeita
 `speed` como padrão neste estágio; o nível continua disponível de forma explícita para
 investigar e corrigir o IR do frontend.
+
+## Validação do fast path de multiplicação
+
+Comparação do baseline `18f58cc` com o commit candidato
+`ADR-0006: fast path de fixnum para *`, ambos construídos em release e executados com
+`--scale 25 --opt-level none`:
+
+- [`mul-fastpath-before.csv`](mul-fastpath-before.csv)
+- [`mul-fastpath-after.csv`](mul-fastpath-after.csv)
+
+| Métrica | Antes | Depois | Variação |
+| --- | ---: | ---: | ---: |
+| Tempo de parede acumulado | 91,01 s | 91,93 s | +1,01% |
+| Tempo de CPU acumulado | 90,78 s | 91,64 s | +0,95% |
+| Compilação acumulada | 2.638 ms | 2.659 ms | +0,80% |
+
+O resultado global ficou ligeiramente mais lento: 13 casos melhoraram, 15 pioraram e 2
+empataram. A mediana por caso variou +0,37% em parede e 0,00% em CPU, portanto o delta
+agregado de 1% deve ser tratado como pequeno e sujeito a ruído. O caso diretamente
+favorável mais claro foi `binary-exponentiation`, de 0,20 s para 0,17 s (-15%).
+
+Somando as duas suítes, o tempo de parede passou de 113,58 s para 114,43 s (+0,75%) e o
+tempo de CPU de 113,15 s para 113,86 s (+0,63%). O fast path ajuda cargas concentradas
+em multiplicação, mas não produziu ganho global mensurável nesta rodada.

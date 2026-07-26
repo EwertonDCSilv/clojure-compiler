@@ -36,6 +36,12 @@ o corpo da função cresceu cerca de 44%, acompanhado de spills adicionais. Assi
 `speed` permanece opt-in até que a pressão de registradores do IR gerado seja corrigida
 e o gate deixe de apresentar regressão.
 
+O fast path de multiplicação foi validado separadamente contra `18f58cc`, mantendo
+`opt_level=none`. Em escala 25×, Cracking variou -0,31% em parede e Cormen +1,01%;
+somadas, as suítes variaram +0,75%. Casos concentrados em multiplicação apresentaram
+ganhos de até 15%, mas não houve ganho global mensurável. Os CSVs estão nos diretórios
+`benchmarks/cracking/results` e `benchmarks/cormen/results`.
+
 ## Forças de decisão
 
 - Preservar a semântica dinâmica: operandos podem não ser inteiros e operações podem
