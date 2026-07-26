@@ -10,8 +10,8 @@
 (defn neg? [n] (< n 0))
 (defn even? [n] (= (mod n 2) 0))
 (defn odd? [n] (not (even? n)))
-(defn max [a b] (if (> a b) a b))
-(defn min [a b] (if (< a b) a b))
+(defn max [x & more] (reduce (fn [a b] (if (> a b) a b)) x more))
+(defn min [x & more] (reduce (fn [a b] (if (< a b) a b)) x more))
 
 (defn reduce [f acc coll]
   (if (empty? coll)
@@ -81,4 +81,11 @@
     (first coll)
     (recur (rest coll))))
 
-(defn inc-all [coll] (map inc coll))
+(defn concat [a b]
+  (reduce (fn [acc x] (cons x acc)) b (reverse a)))
+
+(defn mapcat [f coll]
+  (reduce (fn [acc x] (concat acc (f x))) (list) coll))
+
+(defn count-if [pred coll]
+  (reduce (fn [acc x] (if (pred x) (inc acc) acc)) 0 coll))
