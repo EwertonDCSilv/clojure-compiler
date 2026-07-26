@@ -16,6 +16,9 @@ use clojure_span::Span;
 use clojure_syntax::{Form, SForm};
 use std::collections::HashMap;
 
+mod expand;
+pub use expand::expand_all;
+
 /// Nó de AST do subconjunto compilável.
 #[derive(Debug, Clone)]
 pub enum Ast {
@@ -88,7 +91,15 @@ pub struct Program {
 }
 
 /// Analisa um conjunto de forms de topo no `Program` compilável.
+///
+/// Expande primeiro as macros de core suportadas (when/cond/and/or/->/->>; ADR-0004)
+/// e então analisa o resultado.
 pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
+    let expanded = expand::expand_all(forms);
+    analyze_expanded(&expanded)
+}
+
+fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut diags = Diagnostics::new();
 
     // Passo 1: coletar assinaturas de funções (para forward-refs / recursão).

@@ -119,6 +119,26 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiles_core_macros() {
+    if !have_cc() {
+        return;
+    }
+    // when/cond/and/or/-> expandidos no caminho compilado (ADR-0004).
+    let src = r#"(ns m.core)
+(defn sinal [n] (cond (< n 0) "neg" (= n 0) "zero" :else "pos"))
+(defn -main []
+  (println (sinal -3) (sinal 0) (sinal 9))
+  (when (and (> 5 3) (< 2 4)) (println "ok"))
+  (println (or false nil 42))
+  (println (-> 10 inc inc)))
+(-main)"#;
+    assert_eq!(
+        build_and_run("cljn_e2e_macros", src),
+        "neg zero pos\nok\n42\n12\n"
+    );
+}
+
+#[test]
 fn gc_correctness_under_stress() {
     if !have_cc() {
         return;
