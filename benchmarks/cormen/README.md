@@ -40,6 +40,10 @@ benchmarks/cormen/run.sh --extreme \
 # Comparar nativo com Clojure/JVM AOT
 benchmarks/cormen/compare-clojure.sh \
   --csv benchmarks/cormen/results/extreme.csv
+
+# Repetir a comparação com um nível Cranelift explícito
+benchmarks/cormen/compare-clojure.sh --opt-level speed \
+  --csv benchmarks/cormen/results/cranelift-speed.csv
 ```
 
 As opções, colunas CSV e razões de comparação são as mesmas documentadas na

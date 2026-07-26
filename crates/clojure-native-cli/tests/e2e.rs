@@ -18,23 +18,29 @@ fn have_cc() -> bool {
 
 /// Compila `src` e devolve o stdout do binário nativo resultante.
 fn build_and_run(name: &str, src: &str) -> String {
-    build_and_run_env(name, src, &[])
+    build_and_run_with_options(name, src, &[], &[])
 }
 
 /// Igual, mas com variáveis de ambiente na execução (ex.: CLJN_GC_STRESS).
 fn build_and_run_env(name: &str, src: &str, env: &[(&str, &str)]) -> String {
+    build_and_run_with_options(name, src, &[], env)
+}
+
+fn build_and_run_with_options(
+    name: &str,
+    src: &str,
+    build_options: &[&str],
+    env: &[(&str, &str)],
+) -> String {
     let dir = std::env::temp_dir();
     let clj = dir.join(format!("{name}.clj"));
     let exe = dir.join(format!("{name}.bin"));
     std::fs::write(&clj, src).unwrap();
 
-    let out = Command::new(cli())
-        .arg("build")
-        .arg(&clj)
-        .arg("-o")
-        .arg(&exe)
-        .output()
-        .expect("executa build");
+    let mut build = Command::new(cli());
+    build.arg("build").arg(&clj).arg("-o").arg(&exe);
+    build.args(build_options);
+    let out = build.output().expect("executa build");
     assert!(
         out.status.success(),
         "build falhou: {}",
@@ -50,6 +56,39 @@ fn build_and_run_env(name: &str, src: &str, env: &[(&str, &str)]) -> String {
     let _ = std::fs::remove_file(&clj);
     let _ = std::fs::remove_file(&exe);
     String::from_utf8(run.stdout).unwrap()
+}
+
+#[test]
+fn supports_every_cranelift_optimization_level() {
+    if !have_cc() {
+        return;
+    }
+    let src = "(ns opt.core)\n(defn -main [] (println (+ 20 22)))\n(-main)";
+    for (name, level) in [
+        ("none", "none"),
+        ("speed", "speed"),
+        ("size", "speed-and-size"),
+    ] {
+        assert_eq!(
+            build_and_run_with_options(
+                &format!("cljn_e2e_opt_{name}"),
+                src,
+                &["--opt-level", level],
+                &[],
+            ),
+            "42\n"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_cranelift_optimization_level() {
+    let output = Command::new(cli())
+        .args(["build", "unused.clj", "--opt-level", "fast"])
+        .output()
+        .expect("executa build");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("nível de otimização inválido"));
 }
 
 #[test]

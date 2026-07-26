@@ -36,7 +36,12 @@ fn print_usage() {
          \x20 clojure-native read  <arquivo.clj>           Lê e imprime as forms (dump determinístico)\n\
          \x20 clojure-native eval  <expr>                  Avalia uma expressão (interpretador)\n\
          \x20 clojure-native run   <arquivo.clj> [--main]  Executa via interpretador (script)\n\
-         \x20 clojure-native build <arquivo.clj> [-o out]  Compila para binário nativo (subconjunto)\n",
+         \x20 clojure-native build <arquivo.clj> [-o out] [--opt-level nível]\n\
+         \x20                                              Compila para binário nativo\n\
+         \n\
+         NÍVEIS DE OTIMIZAÇÃO DO BUILD:\n\
+         \x20 none | speed | speed-and-size\n\
+         \x20 Padrão atual: none; speed permanece experimental devido ao gate Cormen\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -138,9 +143,11 @@ fn cmd_run(args: &[String]) -> ExitCode {
 }
 
 fn cmd_build(args: &[String]) -> ExitCode {
-    // Parse simples: primeiro não-flag é o arquivo; -o/--output define a saída.
+    // Parse simples: primeiro não-flag é o arquivo; as demais opções configuram
+    // a saída e o backend.
     let mut path = None;
     let mut output = None;
+    let mut optimization_level = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -148,9 +155,30 @@ fn cmd_build(args: &[String]) -> ExitCode {
                 output = args.get(i + 1).cloned();
                 i += 2;
             }
+            "--opt-level" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--opt-level requer um valor: none, speed ou speed-and-size");
+                    return ExitCode::FAILURE;
+                };
+                match value.parse::<clojure_codegen::OptimizationLevel>() {
+                    Ok(level) => optimization_level = Some(level),
+                    Err(message) => {
+                        eprintln!("nível de otimização inválido `{value}`; {message}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 2;
+            }
+            option if option.starts_with('-') => {
+                eprintln!("opção de build desconhecida: {option}");
+                return ExitCode::FAILURE;
+            }
             other => {
                 if path.is_none() {
                     path = Some(other.to_string());
+                } else {
+                    eprintln!("argumento inesperado no build: {other}");
+                    return ExitCode::FAILURE;
                 }
                 i += 1;
             }
@@ -201,7 +229,11 @@ fn cmd_build(args: &[String]) -> ExitCode {
         }
     };
     // 3) Codegen → objeto.
-    let obj = match clojure_codegen::compile_object(&program) {
+    let codegen_options = optimization_level.map_or_else(
+        clojure_codegen::CodegenOptions::default,
+        |optimization_level| clojure_codegen::CodegenOptions { optimization_level },
+    );
+    let obj = match clojure_codegen::compile_object_with_options(&program, codegen_options) {
         Ok(o) => o,
         Err(d) => {
             eprintln!("{}", d.render(&sm));

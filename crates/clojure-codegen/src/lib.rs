@@ -21,10 +21,70 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use std::str::FromStr;
 use target_lexicon::Triple;
 
 /// Fonte C do runtime, compilada junto ao objeto no passo de link.
 pub const RUNTIME_C: &str = include_str!("../runtime.c");
+
+/// Nível de otimização aplicado pelo Cranelift ao código gerado.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OptimizationLevel {
+    None,
+    Speed,
+    SpeedAndSize,
+}
+
+impl OptimizationLevel {
+    fn cranelift_value(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Speed => "speed",
+            Self::SpeedAndSize => "speed_and_size",
+        }
+    }
+}
+
+impl FromStr for OptimizationLevel {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "speed" => Ok(Self::Speed),
+            "speed-and-size" | "speed_and_size" => Ok(Self::SpeedAndSize),
+            _ => Err("esperado: none, speed ou speed-and-size"),
+        }
+    }
+}
+
+/// Opções do backend independentes do perfil usado para compilar o runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CodegenOptions {
+    pub optimization_level: OptimizationLevel,
+}
+
+impl CodegenOptions {
+    pub const fn unoptimized() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::None,
+        }
+    }
+
+    pub const fn optimized_for_speed() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::Speed,
+        }
+    }
+}
+
+impl Default for CodegenOptions {
+    fn default() -> Self {
+        // `speed` permanece opt-in: o baseline Cormen de 2026-07-26 mostrou
+        // regressão em 25/30 casos por aumento de spills e do tamanho dos frames.
+        Self::unoptimized()
+    }
+}
 
 // Constantes de valor tagged (devem casar com runtime.c).
 const NIL: i64 = 2;
@@ -109,9 +169,21 @@ struct Runtime {
 
 /// Compila o programa para bytes de um objeto nativo da plataforma host.
 pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
+    compile_object_with_options(program, CodegenOptions::default())
+}
+
+/// Compila o programa usando uma configuração explícita do backend.
+pub fn compile_object_with_options(
+    program: &Program,
+    options: CodegenOptions,
+) -> Result<Vec<u8>, Diagnostics> {
     let mut flags = settings::builder();
-    flags.set("is_pic", "true").unwrap();
-    flags.set("opt_level", "none").unwrap();
+    flags
+        .set("is_pic", "true")
+        .map_err(|e| single(format!("falha ao configurar is_pic: {e}")))?;
+    flags
+        .set("opt_level", options.optimization_level.cranelift_value())
+        .map_err(|e| single(format!("falha ao configurar opt_level: {e}")))?;
     let isa = isa::lookup(Triple::host())
         .map_err(|e| single(format!("ISA host não suportada: {e}")))?
         .finish(settings::Flags::new(flags))
@@ -1611,6 +1683,52 @@ mod tests {
         let object = compile_object(&program).expect("minimal program should compile");
         assert!(object.len() > 100);
         assert!(object.iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
+    fn compiles_with_every_supported_optimization_level() {
+        let program = Program {
+            functions: vec![],
+            main_body: vec![Ast::Int(42)],
+            main_local_count: 0,
+        };
+
+        for optimization_level in [
+            OptimizationLevel::None,
+            OptimizationLevel::Speed,
+            OptimizationLevel::SpeedAndSize,
+        ] {
+            let object =
+                compile_object_with_options(&program, CodegenOptions { optimization_level })
+                    .expect("all supported optimization levels should compile");
+            assert!(object.len() > 100);
+        }
+    }
+
+    #[test]
+    fn parses_public_optimization_level_names() {
+        assert_eq!(
+            "none".parse::<OptimizationLevel>(),
+            Ok(OptimizationLevel::None)
+        );
+        assert_eq!(
+            "speed".parse::<OptimizationLevel>(),
+            Ok(OptimizationLevel::Speed)
+        );
+        assert_eq!(
+            "speed-and-size".parse::<OptimizationLevel>(),
+            Ok(OptimizationLevel::SpeedAndSize)
+        );
+        assert!("fast".parse::<OptimizationLevel>().is_err());
+    }
+
+    #[test]
+    fn default_optimization_remains_unoptimized_until_the_speed_gate_passes() {
+        assert_eq!(CodegenOptions::default(), CodegenOptions::unoptimized());
+        assert_eq!(
+            CodegenOptions::optimized_for_speed().optimization_level,
+            OptimizationLevel::Speed
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ script_dir="${CLJN_BENCHMARK_SUITE_DIR:-$default_script_dir}"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 native_runner="$script_dir/run.sh"
 compiler=""
+opt_level=""
 chapter=""
 scale=25
 csv_path="$script_dir/results/extreme.csv"
@@ -20,6 +21,7 @@ usage() {
     "" \
     "  --chapter PREFIX         Executa um capítulo, por exemplo 04" \
     "  --compiler PATH          Usa um binário específico do compilador nativo" \
+    "  --opt-level LEVEL        Usa none, speed ou speed-and-size no Cranelift" \
     "  --scale N                Multiplica a carga interna (padrão: 25)" \
     "  --csv PATH               Grava o CSV neste caminho" \
     "  --clojure-classpath CP   Usa um runtime Clojure/JVM já instalado" \
@@ -34,6 +36,10 @@ while (($# > 0)); do
       ;;
     --compiler)
       compiler="${2:-}"
+      shift 2
+      ;;
+    --opt-level)
+      opt_level="${2:-}"
       shift 2
       ;;
     --scale)
@@ -64,6 +70,14 @@ if [[ ! "$scale" =~ ^[1-9][0-9]*$ ]]; then
   printf 'Escala inválida: %s\n' "$scale" >&2
   exit 2
 fi
+
+case "$opt_level" in
+  ""|none|speed|speed-and-size) ;;
+  *)
+    printf 'Nível de otimização inválido: %s\n' "$opt_level" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -x /usr/bin/time ]]; then
   printf 'GNU time não encontrado em /usr/bin/time\n' >&2
@@ -142,6 +156,9 @@ if [[ -n "$chapter" ]]; then
 fi
 if [[ -n "$compiler" ]]; then
   native_args+=(--compiler "$compiler")
+fi
+if [[ -n "$opt_level" ]]; then
+  native_args+=(--opt-level "$opt_level")
 fi
 
 if ! "$native_runner" "${native_args[@]}" >"$output_dir/native.log"; then

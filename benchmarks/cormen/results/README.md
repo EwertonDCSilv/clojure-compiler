@@ -73,3 +73,36 @@ serve como linha de base para medir as otimizações propostas na ADR 0006.
 Os valores são uma fotografia desta máquina; frequência dinâmica, carga do sistema,
 toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estatísticas,
 repita as medições no mesmo ambiente e compare distribuições, não apenas uma execução.
+
+## Experimento Cranelift `none` contra `speed`
+
+Arquivos:
+
+- [`cranelift-none-control.csv`](cranelift-none-control.csv)
+- [`cranelift-speed.csv`](cranelift-speed.csv)
+
+Os dois níveis foram executados pelo mesmo compilador release, na mesma máquina e com a
+mesma escala:
+
+```bash
+benchmarks/cormen/compare-clojure.sh --scale 25 --opt-level none \
+  --csv benchmarks/cormen/results/cranelift-none-control.csv
+
+benchmarks/cormen/compare-clojure.sh --scale 25 --opt-level speed \
+  --csv benchmarks/cormen/results/cranelift-speed.csv
+```
+
+| Métrica agregada | `none` | `speed` | Razão `none / speed` |
+| --- | ---: | ---: | ---: |
+| Tempo de parede | 93,08 s | 97,74 s | 0,952× |
+| Tempo de CPU | 92,84 s | 97,49 s | 0,952× |
+
+`speed` foi mais rápido em 5 casos e `none` em 25. A mediana da razão
+`none / speed` foi 0,944× tanto para parede quanto para CPU, isto é, a configuração
+`speed` apresentou regressão mediana de aproximadamente 5,9%.
+
+A inspeção do KMP mostrou um efeito coerente com pressão de registradores: o frame de
+`kmp-count` passou de 96 para 1.312 bytes e o símbolo cresceu de 5.024 para 7.208 bytes
+(aproximadamente 44%). O assembly contém spills adicionais. Por isso, o gate rejeita
+`speed` como padrão neste estágio; o nível continua disponível de forma explícita para
+investigar e corrigir o IR do frontend.

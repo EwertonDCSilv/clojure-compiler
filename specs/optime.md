@@ -236,7 +236,17 @@ Debug   -> opt_level none
 Release -> opt_level speed
 ```
 
-Os testes estruturais devem passar nos dois modos; os benchmarks usam `Release`. A
+Implementado: `CodegenOptions` e a CLI aceitam
+`--opt-level none|speed|speed-and-size`. O nível `speed` ativa o pipeline de otimização
+do Cranelift, mas não habilita inlining por si só; a política de inlining e o acesso aos
+corpos das funções continuam sendo responsabilidade do frontend.
+
+O gate Cormen de 2026-07-26 rejeitou temporariamente a promoção de `speed` a padrão:
+97,74 s contra 93,08 s de `none`, com regressão em 25/30 casos. O padrão continua
+`none` até reduzir os spills e o crescimento de frames observado no IR atual.
+
+Os testes estruturais devem passar nos dois modos; os benchmarks registram o nível
+explicitamente. A
 correção não pode depender de o otimizador remover calls ou stores que o frontend emitiu.
 
 ---

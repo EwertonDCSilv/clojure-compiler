@@ -12,6 +12,30 @@
 Esta ADR refina o codegen escolhido na ADR-0001 e a manutenção do shadow-stack da
 ADR-0002. Ela **não** troca o backend, a representação externa de valores nem o coletor.
 
+### Baseline do otimizador
+
+O backend fixava `opt_level = "none"` independentemente de o compilador ter sido
+construído com `cargo build --release`. O perfil Cargo otimiza o próprio compilador Rust,
+mas não configura o código de máquina produzido pelo Cranelift. Enquanto isso, o AOT do
+Clojure/JVM gera classes antecipadamente sem desabilitar o profiling e o JIT adaptativo
+do HotSpot durante a execução.
+
+O codegen passa a oferecer configuração explícita por `CodegenOptions`, e a CLI aceita
+`--opt-level none|speed|speed-and-size` para diagnóstico e comparação reproduzível. A
+intenção inicial era usar `speed` por padrão em release.
+
+Na versão atual do Cranelift, `speed` habilita seu pipeline de otimização e a análise de
+aliases. Isso não implica inlining automático: a infraestrutura de inlining do
+Cranelift exige que o frontend forneça uma política e os corpos dos callees. Inlining
+permanece, portanto, trabalho explícito do frontend.
+
+O gate Cormen executado em 2026-07-26 rejeitou `speed` como padrão: no controle pareado
+em escala 25×, ele somou 97,74 s contra 93,08 s de `none`, perdeu em 25 dos 30 casos e
+teve mediana 5,6% pior. No KMP, o frame de `kmp-count` cresceu de 96 para 1.312 bytes e
+o corpo da função cresceu cerca de 44%, acompanhado de spills adicionais. Assim,
+`speed` permanece opt-in até que a pressão de registradores do IR gerado seja corrigida
+e o gate deixe de apresentar regressão.
+
 ## Forças de decisão
 
 - Preservar a semântica dinâmica: operandos podem não ser inteiros e operações podem

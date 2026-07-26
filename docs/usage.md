@@ -14,7 +14,11 @@ cargo build -p clojure-native-cli
   - Avalia uma expressão em modo interpretado
 - `clojure-native run <arquivo.clj> [--main]`
   - Executa um script Clojure via interpretador
-- `clojure-native build <arquivo.clj> [-o saída]`
+- `clojure-native build <arquivo.clj> [-o saída] [--opt-level nível]`
+
+O nível de otimização do Cranelift pode ser `none`, `speed` ou `speed-and-size`. O padrão
+atual é `none`; `speed` permanece explícito enquanto o gate Cormen registra regressão
+por pressão de registradores no IR atual.
   - Compila um arquivo Clojure para binário nativo
 
 ## Exemplos

@@ -5,6 +5,7 @@ default_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script_dir="${CLJN_BENCHMARK_SUITE_DIR:-$default_script_dir}"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 compiler="$repo_root/target/release/clojure-native"
+opt_level=""
 chapter=""
 gc_stress=0
 list_only=0
@@ -18,6 +19,7 @@ usage() {
     "" \
     "  --chapter PREFIX    Executa um capítulo, por exemplo 04" \
     "  --compiler PATH     Usa um binário específico do compilador" \
+    "  --opt-level LEVEL   Usa none, speed ou speed-and-size no Cranelift" \
     "  --gc-stress         Executa com CLJN_GC_STRESS=1" \
     "  --extreme           Multiplica a carga interna por 25" \
     "  --scale N           Multiplica a carga interna por N" \
@@ -35,6 +37,10 @@ while (($# > 0)); do
       ;;
     --compiler)
       compiler="${2:-}"
+      shift 2
+      ;;
+    --opt-level)
+      opt_level="${2:-}"
       shift 2
       ;;
     --gc-stress)
@@ -77,6 +83,14 @@ if [[ ! "$scale" =~ ^[1-9][0-9]*$ ]]; then
   printf 'Escala inválida: %s\n' "$scale" >&2
   exit 2
 fi
+
+case "$opt_level" in
+  ""|none|speed|speed-and-size) ;;
+  *)
+    printf 'Nível de otimização inválido: %s\n' "$opt_level" >&2
+    exit 2
+    ;;
+esac
 
 declare -a sources=()
 while IFS= read -r source; do
@@ -171,8 +185,13 @@ for source in "${sources[@]}"; do
     wanted="not-recorded"
   fi
 
+  declare -a build_args=(build "$build_source" -o "$executable")
+  if [[ -n "$opt_level" ]]; then
+    build_args+=(--opt-level "$opt_level")
+  fi
+
   compile_start="$(date +%s%N)"
-  if ! build_output="$("$compiler" build "$build_source" -o "$executable" 2>&1)"; then
+  if ! build_output="$("$compiler" "${build_args[@]}" 2>&1)"; then
     compile_end="$(date +%s%N)"
     compile_ms=$(((compile_end - compile_start) / 1000000))
     row="$(printf '%s,%s,%s,%s,,,,,,,,%s,BUILD_FAIL' \
