@@ -19,11 +19,12 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **Macros no caminho compilado** ✅ (ADR-0004) pré-passo de expansão no analyzer: `when when-not if-not cond and or -> ->>` funcionam em `build` (expandidos para as formas especiais antes da análise; `and`/`or` com gensym, sem duplo-eval).
 > - **Closures / funções de 1ª classe** ✅ (protótipos #2/#3) `fn` com captura léxica (incl. **transitiva/aninhada**), HOF (`my-map`/`my-reduce` em Clojure compilado), fn de topo como valor (`FnRef`), **chamada indireta** (`call_indirect`) com checagem de aridade em runtime. Closures são objetos GC-traçados (`free[]` marcado). Convenção: toda fn recebe `self` (a closure) como 1º arg.
 > - **Coleções: vetores, mapas, sets, keywords** ✅ literais `[]`/`{}`/`#{}`, keywords (`:k`, `(:k m)`), imutáveis com semântica de valor correta (array-map/vetor imutável copy-on-write; a versão com structural sharing — vector trie/HAMT — é otimização posterior). Ops: `get nth assoc dissoc conj contains? keys vals count first rest empty? =`. GC rastreia todos; validado sob `CLJN_GC_STRESS=1`.
-> - **`clojure.core` compilável (bootstrap, ADR-0005)** ✅ um `core.clj` no subconjunto compilável é pré-carregado em todo `build`: `map filter reduce remove reverse take drop range into mapv every? some comp identity second last zero? pos? neg? even? odd? max min` — **sem** o usuário defini-los. **Primitivas como valor** (`(map inc ...)`, `(reduce + 0 ...)`) via wrapper sintetizado. Validado normal + GC-stress.
-> - ~50 testes verdes (e2e de closures/HOF, coleções e stdlib, normal + GC-stress).
+> - **`clojure.core` compilável (bootstrap, ADR-0005)** ✅ um `core.clj` no subconjunto compilável é pré-carregado em todo `build`: `map filter reduce remove reverse take drop range into mapv every? some comp identity second last zero? pos? neg? even? odd? max min` — **sem** o usuário defini-los. **Primitivas como valor** (`(map inc ...)`, `(reduce + 0 ...)`) via wrapper sintetizado.
+> - **Variádicos, multi-aridade e `apply`** ✅ convenção de chamada uniforme `(self, argc, argv)` (args no shadow-stack, `argv` = ponteiro pra lá, GC-safe). `(fn [a & rest] ...)`, `defn`/`fn` multi-aridade com dispatch por `argc` em runtime, `(apply f a b coll)` (coll lista ou vetor). Validado normal + GC-stress.
+> - ~51 testes verdes (e2e de closures/HOF, coleções, stdlib, variádicos/apply; normal + GC-stress).
 >
 > Próximo: structural sharing (vector trie/HAMT) p/ perf; `defprotocol`/`defrecord`;
-> variádicos/multi-aridade; `eval`/REPL sobre o interpretador.
+> mais de `clojure.core` (agora variádico: `str`/`+`/`concat`/`comp` n-ários); `eval`/REPL.
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

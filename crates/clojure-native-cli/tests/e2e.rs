@@ -119,6 +119,33 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn compiles_variadic_multiarity_apply() {
+    if !have_cc() {
+        return;
+    }
+    let src = r#"(ns v.core)
+(defn lista [a & mais] (cons a mais))
+(defn saudar
+  ([] "oi")
+  ([n] (str "oi " n))
+  ([s n] (str s " " n)))
+(defn soma3 [a b c] (+ a b c))
+(defn sum-all [& xs] (reduce + 0 xs))
+(defn -main []
+  (println (lista 1 2 3 4) (lista 9))
+  (println (saudar) (saudar "a") (saudar "b" "c"))
+  (println (apply soma3 (list 1 2 3)) (apply soma3 10 (list 20 30)))
+  (println (apply sum-all (range 5)) (apply soma3 [7 8 9])))
+(-main)"#;
+    let expected = "(1 2 3 4) (9)\noi oi a b c\n6 60\n10 24\n";
+    assert_eq!(build_and_run("cljn_e2e_var", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_var_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiled_stdlib_available() {
     if !have_cc() {
         return;

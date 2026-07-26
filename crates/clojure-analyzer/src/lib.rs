@@ -43,6 +43,8 @@ pub enum Ast {
     Call { callee: Callee, args: Vec<Ast> },
     /// Chamada indireta de um valor-função (closure).
     CallValue { f: Box<Ast>, args: Vec<Ast> },
+    /// `(apply f a b ... coll)`: chama `f` com os args fixos + elementos de `coll`.
+    Apply { f: Box<Ast>, fixed: Vec<Ast>, coll: Box<Ast> },
 }
 
 #[derive(Debug, Clone)]
@@ -62,12 +64,27 @@ pub enum Prim {
     Get, Nth, Assoc, Dissoc, Contains, Keys, Vals, Conj, Vector, HashMap, HashSet,
 }
 
+/// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
+#[derive(Debug, Clone)]
+pub struct FnMethod {
+    pub params: Vec<String>,
+    pub rest: Option<String>,
+    pub body: Ast,
+}
+
+impl FnMethod {
+    /// Número de slots que a aridade ocupa (params + rest).
+    pub fn nslots(&self) -> usize {
+        self.params.len() + self.rest.is_some() as usize
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
-    pub params: Vec<String>,
-    pub body: Ast,
-    /// Slots locais (params + lets + loop vars). **Não** inclui `self`.
+    /// Uma ou mais aridades (multi-arity). Só uma variádica, sempre a de maior aridade.
+    pub methods: Vec<FnMethod>,
+    /// Slots locais reservados no frame (máximo sobre as aridades). **Não** inclui `self`.
     pub local_count: u32,
     /// Verdadeiro para lambdas (usam `self` para ler capturas); falso p/ defns de topo.
     pub is_lambda: bool,
@@ -89,11 +106,11 @@ pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
 fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut diags = Diagnostics::new();
 
-    // Assinaturas de funções de topo (para forward-ref / recursão / FnRef).
-    let mut sigs: HashMap<String, usize> = HashMap::new();
+    // Assinaturas de funções de topo: aridades (fixos, variádica?) por nome.
+    let mut sigs: HashMap<String, Vec<(usize, bool)>> = HashMap::new();
     for f in forms {
-        if let Some((name, params, _)) = match_defn(f) {
-            sigs.insert(name, params.len());
+        if let Some((name, decls)) = match_defn(f) {
+            sigs.insert(name, decls.iter().map(|(p, r, _)| (p.len(), r.is_some())).collect());
         }
     }
 
@@ -107,20 +124,12 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         if is_ns(f) {
             continue;
         }
-        if let Some((name, params, body_forms)) = match_defn(f) {
-            an.frames.push(Frame::new(false));
-            for p in &params {
-                an.push_local(p.clone());
-            }
-            an.top().recur_arity.push(params.len());
-            let body = an.analyze_body(&body_forms, f.span, true);
-            let fr = an.frames.pop().unwrap();
-            match body {
-                Ok(body) => an.functions.push(Function {
+        if let Some((name, decls)) = match_defn(f) {
+            match an.analyze_methods(&decls, false, f.span) {
+                Ok((methods, lc, _caps)) => an.functions.push(Function {
                     name,
-                    params,
-                    body,
-                    local_count: fr.max_slots,
+                    methods,
+                    local_count: lc,
                     is_lambda: false,
                 }),
                 Err(d) => diags.push(d),
@@ -149,8 +158,11 @@ fn is_ns(f: &SForm) -> bool {
         if matches!(items.first().map(|h| h.node.strip_meta()), Some(Form::Symbol(n)) if n.ns.is_none() && n.name == "ns"))
 }
 
-/// Reconhece `(defn nome [params] body...)` (aridade fixa, sem docstring/attrs).
-fn match_defn(f: &SForm) -> Option<(String, Vec<String>, Vec<SForm>)> {
+type MethodDecl = (Vec<String>, Option<String>, Vec<SForm>);
+
+/// Reconhece `(defn nome [params] body...)` ou multi-aridade
+/// `(defn nome ([a] ...) ([a b] ...))`. Devolve o nome e as aridades.
+fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     let Form::List(items) = f.node.strip_meta() else { return None };
     let head = items.first()?;
     let Form::Symbol(n) = head.node.strip_meta() else { return None };
@@ -161,21 +173,54 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<String>, Vec<SForm>)> {
         Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
         _ => return None,
     };
-    let params = parse_params(items.get(2)?)?;
-    let body = items[3..].to_vec();
-    Some((name, params, body))
+    // Descarta docstring opcional.
+    let mut rest = &items[2..];
+    if rest.len() > 1 && matches!(rest[0].node.strip_meta(), Form::Str(_)) {
+        rest = &rest[1..];
+    }
+    let methods = parse_methods(rest)?;
+    Some((name, methods))
 }
 
-fn parse_params(f: &SForm) -> Option<Vec<String>> {
+/// Aridade única `[params] body...` ou multi `([params] body...) ...`.
+fn parse_methods(forms: &[SForm]) -> Option<Vec<MethodDecl>> {
+    match forms.first().map(|f| f.node.strip_meta()) {
+        Some(Form::Vector(_)) => {
+            let (params, rest) = parse_params(&forms[0])?;
+            Some(vec![(params, rest, forms[1..].to_vec())])
+        }
+        Some(Form::List(_)) => {
+            let mut out = Vec::new();
+            for m in forms {
+                let Form::List(items) = m.node.strip_meta() else { return None };
+                let (params, rest) = parse_params(items.first()?)?;
+                out.push((params, rest, items[1..].to_vec()));
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+/// Vetor de parâmetros → (fixos, rest opcional após `&`).
+fn parse_params(f: &SForm) -> Option<(Vec<String>, Option<String>)> {
     let Form::Vector(ps) = f.node.strip_meta() else { return None };
     let mut out = Vec::new();
-    for p in ps {
+    let mut it = ps.iter();
+    while let Some(p) = it.next() {
         match p.node.strip_meta() {
+            Form::Symbol(pn) if pn.ns.is_none() && pn.name == "&" => {
+                let r = it.next()?;
+                match r.node.strip_meta() {
+                    Form::Symbol(rn) if rn.ns.is_none() => return Some((out, Some(rn.name.clone()))),
+                    _ => return None,
+                }
+            }
             Form::Symbol(pn) if pn.ns.is_none() => out.push(pn.name.clone()),
-            _ => return None, // destructuring/variádico fora do slice
+            _ => return None, // destructuring fora do slice
         }
     }
-    Some(out)
+    Some((out, None))
 }
 
 /// Frame léxico de uma função ou lambda.
@@ -204,10 +249,15 @@ impl Frame {
 }
 
 struct Analyzer<'a> {
-    sigs: &'a HashMap<String, usize>,
+    sigs: &'a HashMap<String, Vec<(usize, bool)>>,
     frames: Vec<Frame>,
     functions: Vec<Function>,
     lam: u32,
+}
+
+/// Alguma aridade de `arities` aceita `n` argumentos?
+fn arity_accepts(arities: &[(usize, bool)], n: usize) -> bool {
+    arities.iter().any(|&(fixed, variadic)| if variadic { n >= fixed } else { n == fixed })
 }
 
 impl<'a> Analyzer<'a> {
@@ -321,8 +371,7 @@ impl<'a> Analyzer<'a> {
                 self.lam += 1;
                 self.functions.push(Function {
                     name: lname.clone(),
-                    params,
-                    body,
+                    methods: vec![FnMethod { params, rest: None, body }],
                     local_count: arity as u32,
                     is_lambda: true,
                 });
@@ -381,6 +430,15 @@ impl<'a> Analyzer<'a> {
             "loop" | "loop*" => self.analyze_loop(args, span, tail),
             "recur" => self.analyze_recur(args, span, tail),
             "fn" | "fn*" => self.analyze_fn(args, span),
+            "apply" => {
+                if args.len() < 2 {
+                    return Err(unsupported("apply requer função e uma coleção", span));
+                }
+                let f = self.analyze(&args[0], false)?;
+                let coll = self.analyze(&args[args.len() - 1], false)?;
+                let fixed = self.analyze_seq(&args[1..args.len() - 1])?;
+                Ok(Ast::Apply { f: Box::new(f), fixed, coll: Box::new(coll) })
+            }
             "quote" => Err(unsupported("quote ainda não é compilável", span)),
             "def" | "defn" | "defn-" => Err(unsupported("def/defn só é permitido no nível de topo", span)),
             name => {
@@ -392,11 +450,11 @@ impl<'a> Analyzer<'a> {
                     // Local/captura em posição de operador → chamada indireta.
                     let a = self.analyze_seq(args)?;
                     Ok(Ast::CallValue { f: Box::new(ast), args: a })
-                } else if let Some(&arity) = self.sigs.get(name) {
-                    if arity != args.len() {
+                } else if let Some(arities) = self.sigs.get(name) {
+                    if !arity_accepts(arities, args.len()) {
                         return Err(Diagnostic::error(
                             "E0103",
-                            format!("aridade errada ao chamar {name}: esperava {arity}, recebeu {}", args.len()),
+                            format!("aridade errada ao chamar {name}: recebeu {}", args.len()),
                         )
                         .with_span(span));
                     }
@@ -491,41 +549,66 @@ impl<'a> Analyzer<'a> {
         Ok(Ast::Recur(self.analyze_seq(args)?))
     }
 
-    /// `(fn [params] body...)` ou `(fn* nome? [params] body...)` → cria uma lambda
-    /// (função separada) e um `MakeFn` com as capturas léxicas.
+    /// Analisa as aridades de uma função num frame próprio; devolve
+    /// (métodos, slots máximos, capturas). Para lambdas, as capturas são
+    /// compartilhadas entre as aridades.
+    fn analyze_methods(
+        &mut self,
+        decls: &[MethodDecl],
+        is_lambda: bool,
+        span: Span,
+    ) -> Result<(Vec<FnMethod>, u32, Vec<Ast>), Diagnostic> {
+        self.frames.push(Frame::new(is_lambda));
+        let mut methods = Vec::new();
+        let mut variadic_seen = false;
+        for (params, rest, body_forms) in decls {
+            if rest.is_some() {
+                if variadic_seen {
+                    self.frames.pop();
+                    return Err(unsupported("fn: só uma aridade variádica é permitida", span));
+                }
+                variadic_seen = true;
+            }
+            // Cada aridade tem seu próprio conjunto de slots (reutilizam a região).
+            self.top().locals.clear();
+            self.top().next_slot = 0;
+            for p in params {
+                self.push_local(p.clone());
+            }
+            if let Some(r) = rest {
+                self.push_local(r.clone());
+            }
+            let arity = params.len() + rest.is_some() as usize;
+            self.top().recur_arity.push(arity);
+            let body = self.analyze_body(body_forms, span, true);
+            self.top().recur_arity.pop();
+            match body {
+                Ok(body) => methods.push(FnMethod { params: params.clone(), rest: rest.clone(), body }),
+                Err(d) => {
+                    self.frames.pop();
+                    return Err(d);
+                }
+            }
+        }
+        let fr = self.frames.pop().unwrap();
+        Ok((methods, fr.max_slots, fr.captures))
+    }
+
+    /// `(fn [params] body...)`, `(fn* nome? [params] body...)` ou multi-aridade
+    /// `(fn ([a] ...) ([a b] ...))` → cria uma lambda + `MakeFn` com as capturas.
     fn analyze_fn(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let mut idx = 0;
-        // Nome opcional (auto-referência não suportada no slice; apenas ignorado).
         if matches!(args.first().map(|f| f.node.strip_meta()), Some(Form::Symbol(_))) {
-            idx = 1;
+            idx = 1; // nome opcional (auto-referência não suportada; ignorado)
         }
-        let params = match args.get(idx) {
-            Some(p) => parse_params(p)
-                .ok_or_else(|| unsupported("fn: parâmetros devem ser um vetor de símbolos (sem destructuring/variádico)", p.span))?,
-            None => return Err(unsupported("fn: faltam parâmetros", span)),
-        };
-        let body_forms = &args[idx + 1..];
-
-        self.frames.push(Frame::new(true)); // lambda
-        for p in &params {
-            self.push_local(p.clone());
-        }
-        self.top().recur_arity.push(params.len());
-        let body = self.analyze_body(body_forms, span, true);
-        let fr = self.frames.pop().unwrap();
-        let body = body?;
-
+        let decls = parse_methods(&args[idx..])
+            .ok_or_else(|| unsupported("fn: forma inválida (esperava [params] corpo ou aridades)", span))?;
+        let (methods, lc, captures) = self.analyze_methods(&decls, true, span)?;
         let name = format!("__lambda_{}", self.lam);
         self.lam += 1;
-        let arity = params.len();
-        self.functions.push(Function {
-            name: name.clone(),
-            params,
-            body,
-            local_count: fr.max_slots,
-            is_lambda: true,
-        });
-        Ok(Ast::MakeFn { lambda: name, arity, captures: fr.captures })
+        let arity = methods[0].params.len();
+        self.functions.push(Function { name: name.clone(), methods, local_count: lc, is_lambda: true });
+        Ok(Ast::MakeFn { lambda: name, arity, captures })
     }
 }
 
@@ -612,9 +695,9 @@ mod tests {
         // adder captura n; a lambda tem 1 captura.
         let p = prog("(defn adder [n] (fn [x] (+ x n)))");
         let lam = p.functions.iter().find(|f| f.is_lambda).unwrap();
-        assert_eq!(lam.params, vec!["x"]);
+        assert_eq!(lam.methods[0].params, vec!["x"]);
         // O MakeFn no corpo de adder deve capturar 1 valor.
-        if let Ast::MakeFn { captures, arity, .. } = &p.functions.iter().find(|f| f.name == "adder").unwrap().body {
+        if let Ast::MakeFn { captures, arity, .. } = &p.functions.iter().find(|f| f.name == "adder").unwrap().methods[0].body {
             assert_eq!(*arity, 1);
             assert_eq!(captures.len(), 1);
             assert!(matches!(captures[0], Ast::Local(_)));
@@ -627,14 +710,14 @@ mod tests {
     fn higher_order_call_value() {
         let p = prog("(defn ap [f x] (f x))");
         let ap = p.functions.iter().find(|f| f.name == "ap").unwrap();
-        assert!(matches!(ap.body, Ast::CallValue { .. }));
+        assert!(matches!(ap.methods[0].body, Ast::CallValue { .. }));
     }
 
     #[test]
     fn fn_as_value_is_fnref() {
         let p = prog("(defn inc1 [x] (+ x 1))\n(defn use [] (ap inc1 5))\n(defn ap [f x] (f x))");
         let usef = p.functions.iter().find(|f| f.name == "use").unwrap();
-        if let Ast::Call { args, .. } = &usef.body {
+        if let Ast::Call { args, .. } = &usef.methods[0].body {
             assert!(matches!(args[0], Ast::FnRef(_)));
         } else {
             panic!("esperava Call");
@@ -645,7 +728,7 @@ mod tests {
     fn macros_expand() {
         let p = prog("(defn f [n] (cond (< n 0) -1 :else 1))");
         // cond vira if aninhado
-        assert!(matches!(p.functions[0].body, Ast::If(..)));
+        assert!(matches!(p.functions[0].methods[0].body, Ast::If(..)));
     }
 
     #[test]
