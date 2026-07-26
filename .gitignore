@@ -1,5 +1,5 @@
 /target
-.clj-kondo/.cache/v1/clj/cormen.*.transit.json
+/.clj-kondo/.cache/
 **/*.rs.bk
 Cargo.lock.orig
 /prototypes/**/target
