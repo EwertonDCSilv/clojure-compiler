@@ -69,9 +69,9 @@ struct Runtime {
     // GC / shadow-stack de roots
     gc_enter: FuncId,    // (i64)->i64  reserva slots; devolve base
     gc_leave: FuncId,    // (i64)->void restaura sp=base
-    gc_push: FuncId,     // (i64)->void empurra temporário
-    gc_popn: FuncId,     // (i64)->void retira n temporários
-    gc_set: FuncId,      // (i64,i64)->void escreve slot de local
+    // ADR-0006 Fase 3: push/popn/set viram stores diretos nestes globais.
+    gc_stack_data: DataId, // Value gc_stack[]
+    gc_sp_data: DataId,    // int64_t gc_sp
     // Funções de primeira classe
     make_fn: FuncId,     // (code,arity,nfree)->fn
     set_free: FuncId,    // (fn,i,v)->void
@@ -312,9 +312,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         print_newline: voidfn(m, "cljn_print_newline", false),
         gc_enter: una(m, "cljn_gc_enter"),
         gc_leave: voidfn(m, "cljn_gc_leave", true),
-        gc_push: voidfn(m, "cljn_gc_push", true),
-        gc_popn: voidfn(m, "cljn_gc_popn", true),
-        gc_set: bin_void(m, "cljn_gc_set"),
+        gc_stack_data: m.declare_data("gc_stack", Linkage::Import, true, false).unwrap(),
+        gc_sp_data: m.declare_data("gc_sp", Linkage::Import, true, false).unwrap(),
         make_fn: ternary(m, "cljn_make_fn"),
         set_free: ternary_void(m, "cljn_fn_set_free"),
         fn_free: bin(m, "cljn_fn_free"),
@@ -412,26 +411,52 @@ impl<'a> FnGen<'a> {
         v
     }
 
-    // -- shadow-stack de roots (ABI de GC) --------------------------------
+    // -- shadow-stack de roots (stores diretos, ADR-0006 Fase 3) ----------
+    fn addr_gc_sp(&mut self) -> CValue {
+        let gv = self.module.declare_data_in_func(self.rt.gc_sp_data, self.builder.func);
+        self.builder.ins().symbol_value(self.ptr, gv)
+    }
+    fn addr_gc_stack(&mut self) -> CValue {
+        let gv = self.module.declare_data_in_func(self.rt.gc_stack_data, self.builder.func);
+        self.builder.ins().symbol_value(self.ptr, gv)
+    }
+    /// Endereço de `gc_stack[idx]`.
+    fn slot_addr(&mut self, idx: CValue) -> CValue {
+        let stack = self.addr_gc_stack();
+        let off = self.builder.ins().imul_imm(idx, 8);
+        self.builder.ins().iadd(stack, off)
+    }
+    /// Empurra um root: `gc_stack[gc_sp++] = v` (store direto).
     fn gc_push_val(&mut self, v: CValue) {
-        self.call_void(self.rt.gc_push, &[v]);
+        let sp_addr = self.addr_gc_sp();
+        let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+        let elem = self.slot_addr(sp);
+        self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
+        let sp1 = self.builder.ins().iadd_imm(sp, 1);
+        self.builder.ins().store(MemFlags::trusted(), sp1, sp_addr, 0);
     }
     fn gc_popn(&mut self, n: usize) {
         if n > 0 {
-            let k = self.builder.ins().iconst(types::I64, n as i64);
-            self.call_void(self.rt.gc_popn, &[k]);
+            let sp_addr = self.addr_gc_sp();
+            let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+            let sp2 = self.builder.ins().iadd_imm(sp, -(n as i64));
+            self.builder.ins().store(MemFlags::trusted(), sp2, sp_addr, 0);
         }
     }
     /// Retira uma quantidade calculada em runtime.
     fn gc_popn_val(&mut self, n: CValue) {
-        self.call_void(self.rt.gc_popn, &[n]);
+        let sp_addr = self.addr_gc_sp();
+        let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+        let sp2 = self.builder.ins().isub(sp, n);
+        self.builder.ins().store(MemFlags::trusted(), sp2, sp_addr, 0);
     }
-    /// Escreve o slot de root de um local: shadow[base + slot] = v.
+    /// Escreve o slot de root de um local: `gc_stack[base + slot] = v`.
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
         let base_var = self.frame_base.expect("frame_base definido");
         let base = self.builder.use_var(base_var);
         let idx = self.builder.ins().iadd_imm(base, slot as i64);
-        self.call_void(self.rt.gc_set, &[idx, v]);
+        let elem = self.slot_addr(idx);
+        self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
     }
     /// Vincula um local: define a variável Cranelift e espelha no shadow-stack.
     fn bind_local(&mut self, slot: u32, v: CValue) {

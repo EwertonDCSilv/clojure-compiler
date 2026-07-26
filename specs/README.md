@@ -22,10 +22,11 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > - **`clojure.core` compilável (bootstrap, ADR-0005)** ✅ um `core.clj` no subconjunto compilável é pré-carregado em todo `build`: `map filter reduce remove reverse take drop range into mapv every? some comp identity second last zero? pos? neg? even? odd? max min` — **sem** o usuário defini-los. **Primitivas como valor** (`(map inc ...)`, `(reduce + 0 ...)`) via wrapper sintetizado.
 > - **Variádicos, multi-aridade e `apply`** ✅ convenção de chamada uniforme `(self, argc, argv)` (args no shadow-stack, `argv` = ponteiro pra lá, GC-safe). `(fn [a & rest] ...)`, `defn`/`fn` multi-aridade com dispatch por `argc` em runtime, `(apply f a b coll)` (coll lista ou vetor). Validado normal + GC-stress.
 > - **`defrecord`** ✅ records tipados (`T_RECORD` = nome + mapa): construtor `->Name`, acesso por keyword `(:campo r)`, `assoc`/`keys`/`count`/`=`/print tipados (`#Name{...}`), GC-traçado. (Protocols: pendente.)
-> - **Fast paths de fixnum (ADR-0006, Fases 1-2)** ✅ `+ - inc dec < <= > >=` compilam para operações inteiras nativas (guard de tag → unbox → op → range-check `±2^62` → retag; slow path = runtime p/ tipo inválido/overflow). Hot loop sem calls de aritmética; **~1,7x** no benchmark de 100M iterações. Runtime endurecido (`mk_fix_checked`, unsigned). `*`/`quot`/`mod` e o rooting por safepoint (Fases 3-5) ficam para depois.
+> - **Fast paths de fixnum (ADR-0006, Fases 1-2)** ✅ `+ - inc dec < <= > >=` compilam para operações inteiras nativas (guard de tag → unbox → op → range-check `±2^62` → retag; slow path = runtime p/ tipo inválido/overflow). Runtime endurecido (`mk_fix_checked`, unsigned).
+> - **Stores diretos de root (ADR-0006, Fase 3)** ✅ `gc_push/popn/set` viram load/store diretos nos globais `gc_stack`/`gc_sp` (o objeto **não importa** mais esses símbolos). Ganho combinado: benchmark de 100M iterações **3,02s → 0,66s (~4,6x)**; **meta de 2x do ADR-0006 superada**. Rooting ainda **eager** (Fase 4 muda a frequência p/ só-safepoints); reclamação de GC preservada (10M cons → ~6 MB) e correto sob `CLJN_GC_STRESS=1`.
 > - ~53 testes verdes (closures/HOF, coleções, stdlib, variádicos/apply, records, fixnum; normal + GC-stress).
 >
-> Próximo (ADR-0006 Fases 3-5): frame de roots fixo + rooting só em safepoints (tira `gc_push/popn/set` do hot path → 2x); depois protocols, `*` fast path, structural sharing.
+> Próximo (ADR-0006 Fases 4-5): rooting só em safepoints (liveness); depois protocols, `*` fast path, structural sharing.
 
 O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
 descartáveis são permitidos e devem ser marcados como não-produtivos.

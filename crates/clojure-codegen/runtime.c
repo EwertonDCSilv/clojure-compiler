@@ -52,9 +52,11 @@ typedef struct { Obj h; int64_t n; Value kv[]; } Map;         /* array-map: kv[2
 typedef struct { Obj h; Value type_name; Value map; } Record; /* defrecord: nome + mapa */
 
 /* ---------- shadow-stack de roots ---------- */
+/* Exportados: o código gerado (ADR-0006 Fase 3) escreve/lê diretamente, sem call.
+ * `gc_sp` é um índice (contagem de slots vivos). Single-thread. */
 #define GC_STACK_CAP (1u << 22) /* 4M slots */
-static Value gc_stack[GC_STACK_CAP];
-static size_t gc_sp = 0;
+Value gc_stack[GC_STACK_CAP];
+int64_t gc_sp = 0;
 
 Value cljn_gc_enter(Value nslots) {
     size_t base = gc_sp;
