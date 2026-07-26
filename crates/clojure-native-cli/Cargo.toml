@@ -1,0 +1,20 @@
+[package]
+name = "clojure-native-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "clojure-native"
+path = "src/main.rs"
+
+[dependencies]
+clojure-span.workspace = true
+clojure-diagnostics.workspace = true
+clojure-syntax.workspace = true
+clojure-reader.workspace = true
+clojure-value.workspace = true
+clojure-interp.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

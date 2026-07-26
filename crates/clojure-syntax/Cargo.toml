@@ -1,0 +1,11 @@
+[package]
+name = "clojure-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clojure-span.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

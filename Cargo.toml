@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/clojure-span",
+    "crates/clojure-diagnostics",
+    "crates/clojure-syntax",
+    "crates/clojure-reader",
+    "crates/clojure-value",
+    "crates/clojure-interp",
+    "crates/clojure-native-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.74"
+
+[workspace.dependencies]
+clojure-span = { path = "crates/clojure-span" }
+clojure-diagnostics = { path = "crates/clojure-diagnostics" }
+clojure-syntax = { path = "crates/clojure-syntax" }
+clojure-reader = { path = "crates/clojure-reader" }
+clojure-value = { path = "crates/clojure-value" }
+clojure-interp = { path = "crates/clojure-interp" }
+
+[profile.release]
+opt-level = 2
