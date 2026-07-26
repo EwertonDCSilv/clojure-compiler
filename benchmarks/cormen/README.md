@@ -44,3 +44,10 @@ benchmarks/cormen/compare-clojure.sh \
 
 As opções, colunas CSV e razões de comparação são as mesmas documentadas na
 [suíte cracking](../cracking/README.md).
+
+## Resultados de referência
+
+A execução extrema versionada (`--scale 25`) está em
+[`results/extreme.csv`](results/extreme.csv), acompanhada do
+[ambiente, metodologia e resumo](results/README.md). Os 30 casos foram comparados
+com Clojure/JVM AOT e tiveram checksums idênticos.
