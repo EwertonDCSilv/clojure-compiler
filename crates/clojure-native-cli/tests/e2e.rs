@@ -231,6 +231,32 @@ fn compiles_large_hash_map() {
 }
 
 #[test]
+fn compiles_large_hash_set() {
+    if !have_cc() {
+        return;
+    }
+    // Set pequeno é array (O(n)); grande promove a HAMT (O(log n)) via conj > 8 elems.
+    let src = r#"(ns hs.core)
+(defn build [n] (loop [i 1 s #{}] (if (<= i n) (recur (inc i) (conj s i)) s)))
+(defn -main []
+  (println #{1 2 3})
+  (let [s (build 1000)]
+    (println (count s) (contains? s 500) (contains? s 1000) (contains? s 0) (get s 42) (get s 9999))
+    (println (count (conj s 500)) (count (conj s 5000)))
+    (println (reduce + 0 (build 100)))
+    (println (apply max (build 50)))
+    (println (empty? s) (empty? #{})))
+  (println (= (build 20) (build 20)) (= (build 20) (build 21))))
+(-main)"#;
+    let expected = "#{1 2 3}\n1000 true true false 42 nil\n1000 1001\n5050\n50\nfalse true\ntrue false\n";
+    assert_eq!(build_and_run("cljn_e2e_hset", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_hset_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_records() {
     if !have_cc() {
         return;
