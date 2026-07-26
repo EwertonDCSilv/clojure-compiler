@@ -113,6 +113,7 @@ forces collection at every allocation.
 | `crates/clojure-analyzer` | Analysis, macro expansion, closures, records, and protocols |
 | `crates/clojure-codegen` | Cranelift code generation and embedded C runtime |
 | `crates/clojure-native-cli` | `read`, `eval`, `run`, and `build` commands |
+| `benchmarks/cracking` | 60 chapter-organized algorithm benchmarks |
 | `examples` | Clojure examples and performance workloads |
 | `specs` | Language scope, runtime model, plans, risks, and ADRs |
 | `docs` | Short usage and architecture guides |
@@ -227,6 +228,7 @@ coleta em cada alocação.
 | `crates/clojure-analyzer` | Análise, expansão de macros, closures, records e protocolos |
 | `crates/clojure-codegen` | Codegen Cranelift e runtime C embutido |
 | `crates/clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
+| `benchmarks/cracking` | 60 benchmarks algorítmicos organizados por capítulo |
 | `examples` | Exemplos Clojure e cargas de performance |
 | `specs` | Escopo, modelo de runtime, planos, riscos e ADRs |
 | `docs` | Guias breves de uso e arquitetura |
