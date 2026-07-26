@@ -25,9 +25,14 @@ typedef intptr_t Value;
 #define EMPTY  ((Value)18)
 
 #define IS_FIX(v)  ((v) & 1)
-#define MK_FIX(n)  ((Value)(((intptr_t)(n) << 1) | 1))
+/* Codificação por unsigned para não fazer left shift de signed negativo (UB). */
+#define MK_FIX(n)  ((Value)(((uintptr_t)(intptr_t)(n) << 1) | 1u))
 #define FIX(v)     ((intptr_t)(v) >> 1)
 #define IS_PTR(v)  (((v) & 7) == 0)
+
+/* Intervalo de fixnum em alvo de 64 bits (fonte única — deve casar com o codegen). */
+#define FIXNUM_MIN (-((intptr_t)1 << 62))
+#define FIXNUM_MAX (((intptr_t)1 << 62) - 1)
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8 };
 
@@ -490,18 +495,23 @@ static intptr_t need_fix(Value v, const char *op) {
     if (!IS_FIX(v)) { fprintf(stderr, "erro: argumento não-numérico em %s\n", op); exit(1); }
     return FIX(v);
 }
-Value cljn_add(Value a, Value b) { intptr_t r; if (__builtin_add_overflow(need_fix(a,"+"),need_fix(b,"+"),&r)) die("overflow em +"); return MK_FIX(r); }
-Value cljn_sub(Value a, Value b) { intptr_t r; if (__builtin_sub_overflow(need_fix(a,"-"),need_fix(b,"-"),&r)) die("overflow em -"); return MK_FIX(r); }
-Value cljn_mul(Value a, Value b) { intptr_t r; if (__builtin_mul_overflow(need_fix(a,"*"),need_fix(b,"*"),&r)) die("overflow em *"); return MK_FIX(r); }
-Value cljn_quot(Value a, Value b) { intptr_t y=need_fix(b,"quot"); if(y==0) die("divisão por zero"); return MK_FIX(need_fix(a,"quot")/y); }
+/* Valida o intervalo de fixnum ANTES do retag (i64 tem 63 bits, fixnum 62). */
+static Value mk_fix_checked(intptr_t r, const char *op) {
+    if (r < FIXNUM_MIN || r > FIXNUM_MAX) { fprintf(stderr, "erro: overflow em %s\n", op); exit(1); }
+    return MK_FIX(r);
+}
+Value cljn_add(Value a, Value b) { intptr_t r; if (__builtin_add_overflow(need_fix(a,"+"),need_fix(b,"+"),&r)) die("overflow em +"); return mk_fix_checked(r,"+"); }
+Value cljn_sub(Value a, Value b) { intptr_t r; if (__builtin_sub_overflow(need_fix(a,"-"),need_fix(b,"-"),&r)) die("overflow em -"); return mk_fix_checked(r,"-"); }
+Value cljn_mul(Value a, Value b) { intptr_t r; if (__builtin_mul_overflow(need_fix(a,"*"),need_fix(b,"*"),&r)) die("overflow em *"); return mk_fix_checked(r,"*"); }
+Value cljn_quot(Value a, Value b) { intptr_t y=need_fix(b,"quot"); if(y==0) die("divisão por zero"); intptr_t x=need_fix(a,"quot"); if(x==FIXNUM_MIN&&y==-1) die("overflow em quot"); return mk_fix_checked(x/y,"quot"); }
 Value cljn_mod(Value a, Value b) {
     intptr_t y=need_fix(b,"mod"); if(y==0) die("divisão por zero");
     intptr_t x=need_fix(a,"mod"), r=x%y;
     if (r!=0 && ((r<0)!=(y<0))) r+=y;
-    return MK_FIX(r);
+    return mk_fix_checked(r,"mod");
 }
-Value cljn_inc(Value a) { return cljn_add(a, MK_FIX(1)); }
-Value cljn_dec(Value a) { return cljn_sub(a, MK_FIX(1)); }
+Value cljn_inc(Value a) { intptr_t r; if(__builtin_add_overflow(need_fix(a,"inc"),(intptr_t)1,&r)) die("overflow em inc"); return mk_fix_checked(r,"inc"); }
+Value cljn_dec(Value a) { intptr_t r; if(__builtin_sub_overflow(need_fix(a,"dec"),(intptr_t)1,&r)) die("overflow em dec"); return mk_fix_checked(r,"dec"); }
 
 static Value b2v(int b) { return b ? TRUEV : FALSEV; }
 Value cljn_lt(Value a, Value b) { return b2v(need_fix(a,"<")<need_fix(b,"<")); }

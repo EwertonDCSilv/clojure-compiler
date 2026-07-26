@@ -30,6 +30,9 @@ pub const RUNTIME_C: &str = include_str!("../runtime.c");
 const NIL: i64 = 2;
 const FALSEV: i64 = 6;
 const TRUEV: i64 = 10;
+// Intervalo de fixnum (deve casar com FIXNUM_MIN/MAX em runtime.c).
+const FIX_MIN: i64 = -(1 << 62);
+const FIX_MAX: i64 = (1 << 62) - 1;
 
 /// FuncIds das funções de runtime importadas.
 struct Runtime {
@@ -986,14 +989,154 @@ impl<'a> FnGen<'a> {
         }
     }
 
+    // -- fast paths de fixnum (ADR-0006) ---------------------------------
+    /// Guarda "ambos são fixnum": `(a & b & 1) != 0`.
+    fn fix_both_guard(&mut self, a: CValue, b: CValue) -> CValue {
+        let ab = self.builder.ins().band(a, b);
+        let m = self.builder.ins().band_imm(ab, 1);
+        self.builder.ins().icmp_imm(IntCC::NotEqual, m, 0)
+    }
+    fn fix_guard(&mut self, a: CValue) -> CValue {
+        let m = self.builder.ins().band_imm(a, 1);
+        self.builder.ins().icmp_imm(IntCC::NotEqual, m, 0)
+    }
+    fn fix_retag(&mut self, raw: CValue) -> CValue {
+        let sh = self.builder.ins().ishl_imm(raw, 1);
+        self.builder.ins().bor_imm(sh, 1)
+    }
+    /// `raw` está em [FIX_MIN, FIX_MAX]?
+    fn fix_in_range(&mut self, raw: CValue) -> CValue {
+        let lo = self.builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, raw, FIX_MIN);
+        let hi = self.builder.ins().icmp_imm(IntCC::SignedLessThanOrEqual, raw, FIX_MAX);
+        self.builder.ins().band(lo, hi)
+    }
+
+    /// `+`/`-` inline com guard + range-check + retag; slow path = runtime.
+    fn gen_fix_arith(&mut self, a: CValue, b: CValue, add: bool, slow: FuncId) -> CValue {
+        let both = self.fix_both_guard(a, b);
+        let fast_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+
+        self.builder.switch_to_block(fast_b);
+        self.builder.seal_block(fast_b);
+        let ar = self.builder.ins().sshr_imm(a, 1);
+        let br = self.builder.ins().sshr_imm(b, 1);
+        let rr = if add { self.builder.ins().iadd(ar, br) } else { self.builder.ins().isub(ar, br) };
+        let inr = self.fix_in_range(rr);
+        let ok_b = self.builder.create_block();
+        self.builder.ins().brif(inr, ok_b, &[], slow_b, &[]);
+        self.builder.switch_to_block(ok_b);
+        self.builder.seal_block(ok_b);
+        let tagged = self.fix_retag(rr);
+        self.builder.ins().jump(merge, &[tagged.into()]);
+
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sr = self.call2(slow, a, b);
+        self.builder.ins().jump(merge, &[sr.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    /// `inc`/`dec` inline (`delta` = +1/-1); slow path = runtime.
+    fn gen_fix_unop(&mut self, a: CValue, delta: i64, slow: FuncId) -> CValue {
+        let g = self.fix_guard(a);
+        let fast_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(g, fast_b, &[], slow_b, &[]);
+
+        self.builder.switch_to_block(fast_b);
+        self.builder.seal_block(fast_b);
+        let ar = self.builder.ins().sshr_imm(a, 1);
+        let rr = self.builder.ins().iadd_imm(ar, delta);
+        let inr = self.fix_in_range(rr);
+        let ok_b = self.builder.create_block();
+        self.builder.ins().brif(inr, ok_b, &[], slow_b, &[]);
+        self.builder.switch_to_block(ok_b);
+        self.builder.seal_block(ok_b);
+        let tagged = self.fix_retag(rr);
+        self.builder.ins().jump(merge, &[tagged.into()]);
+
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sr = self.call1(slow, a);
+        self.builder.ins().jump(merge, &[sr.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    /// `< <= > >=` inline: guard, unbox, icmp, select(TRUE/FALSE); slow = runtime.
+    fn gen_fix_cmp(&mut self, a: CValue, b: CValue, cc: IntCC, slow: FuncId) -> CValue {
+        let both = self.fix_both_guard(a, b);
+        let fast_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+
+        self.builder.switch_to_block(fast_b);
+        self.builder.seal_block(fast_b);
+        let ar = self.builder.ins().sshr_imm(a, 1);
+        let br = self.builder.ins().sshr_imm(b, 1);
+        let c = self.builder.ins().icmp(cc, ar, br);
+        let t = self.builder.ins().iconst(types::I64, TRUEV);
+        let f = self.builder.ins().iconst(types::I64, FALSEV);
+        let r = self.builder.ins().select(c, t, f);
+        self.builder.ins().jump(merge, &[r.into()]);
+
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sr = self.call2(slow, a, b);
+        self.builder.ins().jump(merge, &[sr.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    /// Fold de `+`/`-` com fast path por par.
+    fn fold_fix(&mut self, args: &[Ast], add: bool, slow: FuncId) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(args.len());
+        for a in args {
+            vals.push(self.expr_val(a)?);
+        }
+        let mut acc = vals[0];
+        for v in &vals[1..] {
+            acc = self.gen_fix_arith(acc, *v, add, slow);
+        }
+        self.gc_popn(args.len());
+        Ok(acc)
+    }
+    fn fix_cmp2(&mut self, args: &[Ast], cc: IntCC, slow: FuncId) -> Result<CValue, Diagnostic> {
+        let a = self.expr_val(&args[0])?;
+        let b = self.expr_val(&args[1])?;
+        let r = self.gen_fix_cmp(a, b, cc, slow);
+        self.gc_popn(2);
+        Ok(r)
+    }
+    fn fix_una(&mut self, args: &[Ast], delta: i64, slow: FuncId) -> Result<CValue, Diagnostic> {
+        let a = self.expr_val(&args[0])?;
+        let r = self.gen_fix_unop(a, delta, slow);
+        self.gc_popn(1);
+        Ok(r)
+    }
+
     fn gen_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
         match prim {
             Prim::Println | Prim::Print => self.gen_print(prim, args),
             Prim::Str => self.gen_str(args),
             Prim::List => self.gen_list(args),
-            // binárias associativas (fold)
-            Prim::Add => self.fold_bin(self.rt.add, args),
-            Prim::Mul => self.fold_bin(self.rt.mul, args),
+            // aritmética com fast path de fixnum (ADR-0006)
+            Prim::Add => self.fold_fix(args, true, self.rt.add),
             Prim::Sub => {
                 if args.len() == 1 {
                     let v = self.expr_val(&args[0])?; // +1
@@ -1002,21 +1145,23 @@ impl<'a> FnGen<'a> {
                     self.gc_popn(1);
                     Ok(r)
                 } else {
-                    self.fold_bin(self.rt.sub, args)
+                    self.fold_fix(args, false, self.rt.sub)
                 }
             }
-            // binárias estritas
+            Prim::Mul => self.fold_bin(self.rt.mul, args), // * ainda no runtime
+            // comparações com fast path de fixnum
+            Prim::Lt => self.fix_cmp2(args, IntCC::SignedLessThan, self.rt.lt),
+            Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le),
+            Prim::Gt => self.fix_cmp2(args, IntCC::SignedGreaterThan, self.rt.gt),
+            Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge),
+            // binárias estritas (runtime)
             Prim::Quot => self.bin(self.rt.quot, args),
             Prim::Mod => self.bin(self.rt.mod_, args),
             Prim::Eq => self.bin(self.rt.eq, args),
-            Prim::Lt => self.bin(self.rt.lt, args),
-            Prim::Le => self.bin(self.rt.le, args),
-            Prim::Gt => self.bin(self.rt.gt, args),
-            Prim::Ge => self.bin(self.rt.ge, args),
             Prim::Cons => self.bin(self.rt.cons, args),
             // unárias
-            Prim::Inc => self.una(self.rt.inc, args),
-            Prim::Dec => self.una(self.rt.dec, args),
+            Prim::Inc => self.fix_una(args, 1, self.rt.inc),
+            Prim::Dec => self.fix_una(args, -1, self.rt.dec),
             Prim::Not => self.una(self.rt.not_, args),
             Prim::NilP => self.una(self.rt.nilp, args),
             Prim::EmptyP => self.una(self.rt.emptyp, args),

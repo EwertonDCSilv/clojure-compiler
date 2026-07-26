@@ -557,8 +557,11 @@ impl<'a> Analyzer<'a> {
             let slot = self.push_local(name);
             slots.push((slot, val));
         }
+        // O corpo do loop é sempre contexto de cauda para o seu próprio recur,
+        // independentemente de o loop estar ou não em posição de cauda externa.
+        let _ = tail;
         self.top().recur_arity.push(slots.len());
-        let body = self.analyze_body(&args[1..], span, tail);
+        let body = self.analyze_body(&args[1..], span, true);
         self.top().recur_arity.pop();
         let body = body?;
         let fr = self.top();

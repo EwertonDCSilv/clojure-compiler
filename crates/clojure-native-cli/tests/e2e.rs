@@ -119,6 +119,27 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn fixnum_fast_paths_correct() {
+    if !have_cc() {
+        return;
+    }
+    // Correção dos fast paths: negativos, zero, comparações, inc/dec, mistura.
+    let src = r#"(ns n.core)
+(defn -main []
+  (println (+ 2 3) (+ -5 2) (- 10 3 4) (inc -1) (dec 0))
+  (println (< 1 2) (< 2 1) (<= 3 3) (> 5 4) (>= 4 5))
+  (loop [i 0 acc 0] (if (< i 1000) (recur (inc i) (+ acc i)) (println "soma:" acc))))
+(-main)"#;
+    let expected = "5 -3 3 0 -1\ntrue false true true false\nsoma: 499500\n";
+    assert_eq!(build_and_run("cljn_e2e_fix", src), expected);
+    // sob GC-stress (fast path não deve interferir no rooting dos temporários)
+    assert_eq!(
+        build_and_run_env("cljn_e2e_fix_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_records() {
     if !have_cc() {
         return;
