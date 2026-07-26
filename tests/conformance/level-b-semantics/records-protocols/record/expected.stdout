@@ -1,0 +1,1 @@
+#Point{:x 3, :y 4} 3 #Point{:x 9, :y 4} true

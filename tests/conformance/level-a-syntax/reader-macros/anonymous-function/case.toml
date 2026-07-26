@@ -1,0 +1,11 @@
+id = "a.reader_macros.anonymous_function"
+level = "A"
+area = "syntax/reader-macros"
+status = "active"
+class = "spec"
+target = "reader"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented with deterministic argument names; JVM-generated names are intentionally not compared."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

@@ -1,0 +1,11 @@
+id = "d.functional_library"
+level = "D"
+area = "pure-libraries/functional"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Requires a multi-file project loader for a pure functional library."
+tracking = "specs/COMPATIBILITY_SPEC.md"

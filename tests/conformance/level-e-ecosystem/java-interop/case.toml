@@ -1,0 +1,11 @@
+id = "e.java_interop"
+level = "E"
+area = "ecosystem/java-interop"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Java interop has no native equivalent."
+tracking = "specs/COMPATIBILITY_SPEC.md"

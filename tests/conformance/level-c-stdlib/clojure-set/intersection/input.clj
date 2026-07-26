@@ -1,0 +1,1 @@
+(clojure.set/intersection #{1 2} #{2 3})

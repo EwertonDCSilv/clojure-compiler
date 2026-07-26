@@ -1,0 +1,11 @@
+id = "d.multiple_namespaces"
+level = "D"
+area = "pure-libraries/namespaces"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Requires dependency ordering across multiple source files."
+tracking = "specs/COMPATIBILITY_SPEC.md"

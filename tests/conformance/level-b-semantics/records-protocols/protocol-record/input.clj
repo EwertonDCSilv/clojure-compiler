@@ -1,0 +1,6 @@
+(ns b.proto)
+(defprotocol Shape (area [this]))
+(defrecord Rect [w h])
+(extend-type Rect Shape (area [this] (* (:w this) (:h this))))
+(defn -main [] (println (area (->Rect 3 4)) (area (->Rect 0 9))))
+(-main)

@@ -11,6 +11,7 @@ members = [
     "crates/clojure-analyzer",
     "crates/clojure-codegen",
     "crates/clojure-native-cli",
+    "crates/clojure-test-support",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ clojure-value = { path = "crates/clojure-value" }
 clojure-interp = { path = "crates/clojure-interp" }
 clojure-analyzer = { path = "crates/clojure-analyzer" }
 clojure-codegen = { path = "crates/clojure-codegen" }
+clojure-test-support = { path = "crates/clojure-test-support" }
 
 [profile.release]
 opt-level = 2

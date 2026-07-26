@@ -100,10 +100,22 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 scripts/coverage.sh
+scripts/conformance.sh verify
 ```
 
 The native end-to-end suite also exercises the collector with `CLJN_GC_STRESS=1`, which
 forces collection at every allocation.
+
+The executable compatibility matrix contains active, expected-failure, and pending
+cases across levels A–E. It runs offline without a JVM:
+
+```bash
+scripts/conformance.sh list --level A
+scripts/conformance.sh verify
+```
+
+See [`specs/conformance/README.md`](specs/conformance/README.md) for filters, reports,
+checksums, and the optional manual Clojure/JVM 1.12.5 oracle.
 
 ### Project layout
 
@@ -114,6 +126,8 @@ forces collection at every allocation.
 | `crates/clojure-analyzer` | Analysis, macro expansion, closures, records, and protocols |
 | `crates/clojure-codegen` | Cranelift code generation and embedded C runtime |
 | `crates/clojure-native-cli` | `read`, `eval`, `run`, and `build` commands |
+| `crates/clojure-test-support` | Executable conformance runner, schema, oracle, and reports |
+| [`tests/conformance`](tests/conformance) | Compatibility A–E and standard-library fixtures |
 | [`benchmarks/cracking`](benchmarks/cracking/README.md) | 60 chapter-organized algorithm benchmarks with native vs. Clojure/JVM metrics |
 | [`benchmarks/cormen`](benchmarks/cormen/README.md) | 30 CLRS-style algorithm benchmarks with checksum validation and JVM comparison |
 | `examples` | Clojure examples and performance workloads |
@@ -217,10 +231,22 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 scripts/coverage.sh
+scripts/conformance.sh verify
 ```
 
 A suíte end-to-end nativa também exercita o coletor com `CLJN_GC_STRESS=1`, forçando uma
 coleta em cada alocação.
+
+A matriz executável de compatibilidade contém casos ativos, falhas esperadas e itens
+pendentes nos níveis A–E. Ela roda offline e sem JVM:
+
+```bash
+scripts/conformance.sh list --level A
+scripts/conformance.sh verify
+```
+
+Consulte [`specs/conformance/README.md`](specs/conformance/README.md) para filtros,
+relatórios, checksums e o oracle manual opcional com Clojure/JVM 1.12.5.
 
 ### Estrutura do projeto
 
@@ -231,6 +257,8 @@ coleta em cada alocação.
 | `crates/clojure-analyzer` | Análise, expansão de macros, closures, records e protocolos |
 | `crates/clojure-codegen` | Codegen Cranelift e runtime C embutido |
 | `crates/clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
+| `crates/clojure-test-support` | Runner, schema, oracle e relatórios de conformidade |
+| [`tests/conformance`](tests/conformance) | Fixtures de compatibilidade A–E e biblioteca padrão |
 | [`benchmarks/cracking`](benchmarks/cracking/README.md) | 60 benchmarks por capítulo com métricas do nativo contra Clojure/JVM |
 | [`benchmarks/cormen`](benchmarks/cormen/README.md) | 30 benchmarks estilo CLRS com checksums e comparação JVM |
 | `examples` | Exemplos Clojure e cargas de performance |

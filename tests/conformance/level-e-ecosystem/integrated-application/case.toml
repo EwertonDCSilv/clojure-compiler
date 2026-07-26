@@ -1,0 +1,11 @@
+id = "e.integrated_application"
+level = "E"
+area = "ecosystem/application"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "An integrated application needs modules, resources, dependencies, and stable packaging."
+tracking = "specs/COMPATIBILITY_SPEC.md"

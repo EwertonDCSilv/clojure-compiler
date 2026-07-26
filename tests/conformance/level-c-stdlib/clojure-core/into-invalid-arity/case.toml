@@ -1,0 +1,12 @@
+id = "c.clojure_core.into.invalid_arity"
+level = "C"
+area = "stdlib/clojure-core"
+status = "active"
+class = "official"
+target = "build-error"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The active function group includes an invalid-arity scenario with a stable compiler diagnostic."
+tracking = "crates/clojure-native-cli/src/core_compiled.clj"
+namespace = "clojure.core"

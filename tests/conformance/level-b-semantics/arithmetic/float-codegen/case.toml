@@ -1,0 +1,11 @@
+id = "b.arithmetic.float_codegen"
+level = "B"
+area = "semantics/arithmetic"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The feature has a defined Clojure result but no current native execution path."
+tracking = "specs/LANGUAGE_SCOPE.md#números--política-explícita-decisão"

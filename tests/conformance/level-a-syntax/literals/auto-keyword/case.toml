@@ -1,0 +1,11 @@
+id = "a.literals.auto_keyword"
+level = "A"
+area = "syntax/literals"
+status = "xfail"
+class = "unsupported"
+target = "reader"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The syntax is known but the current reader rejects it."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

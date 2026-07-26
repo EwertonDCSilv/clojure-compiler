@@ -1,0 +1,11 @@
+id = "a.trivia.commas_whitespace"
+level = "A"
+area = "syntax/trivia"
+status = "active"
+class = "spec"
+target = "reader"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented by the current reader."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

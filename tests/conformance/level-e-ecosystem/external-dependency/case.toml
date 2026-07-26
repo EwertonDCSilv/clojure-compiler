@@ -1,0 +1,11 @@
+id = "e.external_dependency"
+level = "E"
+area = "ecosystem/dependencies"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "No dependency resolver exists in the native project path."
+tracking = "specs/COMPATIBILITY_SPEC.md"

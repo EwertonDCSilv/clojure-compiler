@@ -248,7 +248,8 @@ fn compiles_large_hash_set() {
     (println (empty? s) (empty? #{})))
   (println (= (build 20) (build 20)) (= (build 20) (build 21))))
 (-main)"#;
-    let expected = "#{1 2 3}\n1000 true true false 42 nil\n1000 1001\n5050\n50\nfalse true\ntrue false\n";
+    let expected =
+        "#{1 2 3}\n1000 true true false 42 nil\n1000 1001\n5050\n50\nfalse true\ntrue false\n";
     assert_eq!(build_and_run("cljn_e2e_hset", src), expected);
     assert_eq!(
         build_and_run_env("cljn_e2e_hset_gc", src, &[("CLJN_GC_STRESS", "1")]),

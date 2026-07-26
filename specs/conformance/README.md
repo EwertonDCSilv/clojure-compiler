@@ -1,55 +1,127 @@
-# Suíte de conformidade
+# Executable Clojure conformance suite
 
-Programas Clojure versionados que servem de **contrato executável** do subconjunto
-suportado. Cada caso é validado por **differential testing** contra o oracle
-(Clojure/JVM) — ver [../TESTING_STRATEGY.md](../TESTING_STRATEGY.md).
+The executable fixtures live in [`tests/conformance/`](../../tests/conformance), while
+this document records their contract and maintenance policy. The suite classifies the
+compiler's current behavior by compatibility levels A–E from
+[`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
+that is executable today, rather than aspirational scope documents.
 
-> Esta pasta contém, por ora, **apenas a especificação da estrutura**. Os arquivos de
-> caso `.clj` + esperados são criados junto com cada fase do
-> [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) (não são código de produção do
-> compilador; são fixtures de teste).
+## Run it
 
-## Estrutura pretendida
+```bash
+# Offline native verification; no JVM and no downloads
+scripts/conformance.sh verify
 
-```text
-conformance/
-├── reader/          # literais, coleções, quoting, metadata, discard, syntax-quote
-├── arithmetic/      # + - * / inc dec ; erros declarados de ratio/overflow
-├── control-flow/    # if do when cond case loop/recur try/catch/finally
-├── functions/       # multi-aridade, variádica, apply, HOF, destructuring
-├── closures/        # captura de variáveis, escopo léxico
-├── recur/           # tail loops, contadores grandes, limites
-├── macros/          # defmacro, syntax-quote, gensym, macroexpand/-1
-├── namespaces/      # ns/require/refer/:as/privados/ordem de carga
-├── collections/     # vector/map/set/list; assoc/conj/get/update; equality/hash
-├── sequences/       # lazy, infinite, take/map/filter/reduce, retenção de memória
-├── metadata/        # meta/with-meta/vary-meta
-└── errors/          # mensagens com arquivo:linha:coluna; categorias de exceção
+# Inventory and filters
+scripts/conformance.sh list
+scripts/conformance.sh list --level A --status active
+scripts/conformance.sh list --area arithmetic
+scripts/conformance.sh list --namespace clojure.string
 ```
 
-## Formato de um caso
+`verify` builds the release CLI once and reuses it for every case. At most four cases
+run concurrently. The machine-readable report is
+`target/conformance/report.json`; the human summary is
+`target/conformance/report-summary.txt`.
 
-Cada caso tem (proposta — a firmar na Fase 1 quando o runner for escrito):
+## Levels and current policy
+
+| Level | Directory | Policy |
+| --- | --- | --- |
+| A | `level-a-syntax` | Reader syntax, trivia, metadata, macros, and diagnostics |
+| B | `level-b-semantics` | Native execution, errors, records/protocols, and GC stress |
+| C | `level-c-stdlib` | Current compiled `clojure.core`; documented namespaces remain visible |
+| D | `level-d-pure-libraries` | Pending project fixtures for pure libraries |
+| E | `level-e-ecosystem` | Pending ecosystem, classpath, interop, and application fixtures |
+
+Every active function in the embedded `clojure.core` subset has normal, boundary, and
+alternate-input calls plus a separate invalid-arity diagnostic case.
+
+Cases have one of three states:
+
+- `active`: must match the committed expectation.
+- `xfail`: must fail for the declared reason. A passing `xfail` is an error and must be
+  promoted to `active`.
+- `pending`: its schema and checksum are validated, but it is not executed.
+
+## Case format
+
+Every case is self-contained:
 
 ```text
-casos/<n>/
-├── input.clj        # fragmento a compilar/rodar
-├── expected.edn     # { :value ... :stdout "..." :error nil :class :spec }
-└── notes.md         # opcional: por que existe, referência à spec
+case-name/
+├── case.toml
+├── input.clj
+├── expected.stdout
+├── expected.stderr
+└── expected.edn
 ```
 
-Campo `:class` classifica o caso (start_spec §30, TESTING_STRATEGY):
-- `:spec` — comportamento especificado; **deve** casar com o oracle.
-- `:official` — comportamento da implementação oficial que adotamos.
-- `:accidental` — acidente da JVM que **não** replicamos (comparação normalizada).
-- `:expected-diff` — divergência **declarada** (ver [../COMPATIBILITY_SPEC.md](../COMPATIBILITY_SPEC.md));
-  o teste afirma a diferença.
+Only the expectation appropriate to the target is required. `case.toml` has the
+mandatory fields:
 
-## Runner
+```toml
+id = "b.arithmetic.addition"
+level = "B"
+area = "semantics/arithmetic"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented by the current native path."
+tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"
+namespace = "clojure.core" # optional filter metadata
+```
 
-O harness (`clojure-test-support`) roda cada caso no oracle e no alvo nativo (ou no
-interpretador nas fases iniciais), normaliza acidentes (hash/ordem de hash-map/formatação
-de exceção) e compara valor/tipo/stdout/erro/metadata/ordem/efeitos.
+Allowed values are:
 
-Cobertura de 100% dos casos `:spec`/`:official` para o subconjunto atual é **critério de
-aceite do MVP #15**.
+- `status`: `active`, `xfail`, `pending`;
+- `class`: `spec`, `official`, `expected-diff`, `unsupported`;
+- `target`: `reader`, `build-run`, `build-error`, `project`;
+- `oracle`: `equal`, `expected-diff`, `not-applicable`.
+
+Reader results use structural comparison: map and set order does not affect equality.
+Build-error expectations are stable diagnostic fragments/categories, so temporary
+paths do not make fixtures platform-specific. Line endings are normalized.
+
+## Checksums
+
+`tests/conformance/checksums.sha256` covers every manifest, input, and expectation.
+Verification fails on missing, stale, or changed entries. After an intentional fixture
+edit, regenerate the matrix and checksums with:
+
+```bash
+cargo run -p clojure-test-support --example generate_suite
+```
+
+Review the resulting diff before committing.
+
+## Manual Clojure/JVM oracle
+
+The oracle is deliberately excluded from CI and never downloads artifacts. Supply a
+local classpath containing Clojure **1.12.5** and its dependencies:
+
+```bash
+CLOJURE_CLASSPATH=/path/to/clojure-1.12.5.jar:/path/to/spec.alpha.jar:/path/to/core.specs.alpha.jar \
+  scripts/conformance.sh oracle --check
+```
+
+The runner checks the reported Clojure version before executing cases. Updating
+expectations is a separate, explicit operation:
+
+```bash
+CLOJURE_CLASSPATH=... scripts/conformance.sh oracle --bless
+```
+
+`--bless` updates only `oracle = "equal"` cases and refreshes checksums. Declared
+differences are never overwritten from the JVM.
+
+## Acceptance gate
+
+CI runs `scripts/conformance.sh verify` without a JVM. The gate requires all active
+cases to pass, every xfail to remain an expected failure, no unexpected pass, and an
+exact checksum inventory. Unit tests in `clojure-test-support` cover discovery, strict
+TOML parsing, path/newline normalization, process timeouts, structural collection
+comparison, error categories, checksums, filters, and state accounting.

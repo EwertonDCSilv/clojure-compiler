@@ -1,0 +1,11 @@
+id = "b.control_flow.let"
+level = "B"
+area = "semantics/control-flow"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented by the current analyzer, code generator, and runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"

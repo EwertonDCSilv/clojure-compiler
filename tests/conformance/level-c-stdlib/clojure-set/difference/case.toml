@@ -1,0 +1,12 @@
+id = "c.clojure_set.difference"
+level = "C"
+area = "stdlib/clojure-set"
+status = "pending"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The namespace is documented but is not loadable through the compiled path yet."
+tracking = "specs/STANDARD_LIBRARY_SCOPE.md#namespaces-avaliados"
+namespace = "clojure.set"

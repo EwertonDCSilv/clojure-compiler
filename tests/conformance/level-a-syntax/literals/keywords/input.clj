@@ -1,0 +1,1 @@
+:alpha :foo/bar :kebab-case

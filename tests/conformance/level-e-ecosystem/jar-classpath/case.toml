@@ -1,0 +1,11 @@
+id = "e.jar_classpath"
+level = "E"
+area = "ecosystem/jar-classpath"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "JAR and JVM classpath loading are outside the native runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md"

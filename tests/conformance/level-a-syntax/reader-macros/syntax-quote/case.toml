@@ -1,0 +1,11 @@
+id = "a.reader_macros.syntax_quote"
+level = "A"
+area = "syntax/reader-macros"
+status = "xfail"
+class = "unsupported"
+target = "reader"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The syntax is known but the current reader rejects it."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

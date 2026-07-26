@@ -1,0 +1,11 @@
+id = "a.trivia.shebang"
+level = "A"
+area = "syntax/trivia"
+status = "active"
+class = "spec"
+target = "reader"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Shebang handling belongs to the source-file entry path, not the JVM EDN reader helper."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

@@ -1,0 +1,11 @@
+id = "e.dynamic_loading"
+level = "E"
+area = "ecosystem/dynamic-loading"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Dynamic require and eval are not part of the current AOT path."
+tracking = "specs/COMPATIBILITY_SPEC.md"

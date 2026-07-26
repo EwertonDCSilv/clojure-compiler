@@ -1,0 +1,11 @@
+id = "d.macro_library"
+level = "D"
+area = "pure-libraries/macros"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Requires build-time loading of macros from another namespace."
+tracking = "specs/COMPATIBILITY_SPEC.md"

@@ -1,0 +1,5 @@
+(ns b.proto-list)
+(defprotocol Sized (size-of [this]))
+(extend-type List Sized (size-of [this] (count this)))
+(defn -main [] (println (size-of (list)) (size-of (list 1 2 3))))
+(-main)

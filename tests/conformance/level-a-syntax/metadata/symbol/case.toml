@@ -1,0 +1,11 @@
+id = "a.metadata.symbol"
+level = "A"
+area = "syntax/metadata"
+status = "active"
+class = "expected-diff"
+target = "reader"
+oracle = "expected-diff"
+timeout_ms = 10000
+gc_stress = false
+reason = "The native reader preserves metadata syntax directly; the JVM normalizes it to a metadata map."
+tracking = "specs/LANGUAGE_SCOPE.md#reader"

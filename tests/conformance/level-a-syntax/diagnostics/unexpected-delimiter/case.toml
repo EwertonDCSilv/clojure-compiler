@@ -1,0 +1,11 @@
+id = "a.diagnostics.unexpected_delimiter"
+level = "A"
+area = "syntax/diagnostics"
+status = "active"
+class = "spec"
+target = "build-error"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The reader must reject malformed input with a stable category."
+tracking = "crates/clojure-reader/src/lib.rs"

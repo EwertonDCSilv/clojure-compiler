@@ -1,0 +1,11 @@
+id = "d.persistent_structure_library"
+level = "D"
+area = "pure-libraries/persistent-structures"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Requires a reusable project that builds a persistent data structure."
+tracking = "specs/COMPATIBILITY_SPEC.md"

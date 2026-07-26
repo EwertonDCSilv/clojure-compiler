@@ -1,0 +1,12 @@
+id = "c.clojure_core.max"
+level = "C"
+area = "stdlib/clojure-core"
+status = "active"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The function is compiled from the current embedded clojure.core subset; the case has normal, boundary, and alternate-input scenarios."
+tracking = "crates/clojure-native-cli/src/core_compiled.clj"
+namespace = "clojure.core"
