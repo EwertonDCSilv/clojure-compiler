@@ -14,7 +14,7 @@
 use clojure_analyzer::{Ast, Callee, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, Value as CValue};
+use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlags, Value as CValue};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::{isa, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -74,7 +74,13 @@ struct Runtime {
     set_free: FuncId,    // (fn,i,v)->void
     fn_free: FuncId,     // (fn,i)->v
     fn_code: FuncId,     // (fn)->code
-    check_call: FuncId,  // (fn,nargs)->void
+    check_fn: FuncId,    // (fn)->void  (é função?)
+    // convenção de chamada (self, argc, argv)
+    argv: FuncId,        // (argc)->ptr (topo do shadow-stack)
+    check_arity: FuncId, // (argc,expected)->void
+    check_arity_min: FuncId, // (argc,min)->void
+    collect_rest: FuncId, // (argc,argv,nfixed)->list
+    spread_args: FuncId,  // (fixed_argc,coll)->argc_total
     // coleções
     kw: FuncId,          // (ptr,len)->kw
     vec_alloc: FuncId,   // (n)->vec
@@ -134,15 +140,19 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
     }
 
     // Declara funções do usuário (para recursão/forward-ref).
-    // Toda função tem assinatura (self, args...) -> valor. `self` = a closure
-    // (ou NIL em chamadas estáticas a fns de topo, que ignoram capturas).
+    // Convenção uniforme: entry(self, argc, argv) -> valor. `self` = a closure
+    // (NIL em chamadas estáticas). `argv` aponta para os args no shadow-stack.
+    let entry_sig = |m: &mut ObjectModule| {
+        let mut sig = m.make_signature();
+        sig.params.push(AbiParam::new(types::I64)); // self
+        sig.params.push(AbiParam::new(types::I64)); // argc
+        sig.params.push(AbiParam::new(ptr)); // argv
+        sig.returns.push(AbiParam::new(types::I64));
+        sig
+    };
     let mut fn_ids: HashMap<String, (FuncId, usize)> = HashMap::new();
     for f in &program.functions {
-        let mut sig = module.make_signature();
-        for _ in 0..(f.params.len() + 1) {
-            sig.params.push(AbiParam::new(types::I64));
-        }
-        sig.returns.push(AbiParam::new(types::I64));
+        let sig = entry_sig(&mut module);
         let id = module
             .declare_function(&f.name, Linkage::Local, &sig)
             .map_err(|e| single(format!("declare_function {}: {e}", f.name)))?;
@@ -302,7 +312,12 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         set_free: ternary_void(m, "cljn_fn_set_free"),
         fn_free: bin(m, "cljn_fn_free"),
         fn_code: una(m, "cljn_fn_code"),
-        check_call: bin_void(m, "cljn_check_call"),
+        check_fn: voidfn(m, "cljn_check_fn", true),
+        argv: una(m, "cljn_argv"),
+        check_arity: bin_void(m, "cljn_check_arity"),
+        check_arity_min: bin_void(m, "cljn_check_arity_min"),
+        collect_rest: ternary(m, "cljn_collect_rest"),
+        spread_args: bin(m, "cljn_spread_args"),
         kw: {
             let mut s = m.make_signature();
             s.params.push(AbiParam::new(ptr));
@@ -435,23 +450,29 @@ impl<'a> FnGen<'a> {
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
+        // Convenção: block params = [self, argc, argv].
         let block_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
-        // block_vals[0] = self (a closure); block_vals[1..] = parâmetros do usuário.
         let self_v = self.builder.declare_var(types::I64);
         self.builder.def_var(self_v, block_vals[0]);
         self.self_var = Some(self_v);
-        let param_vals = &block_vals[1..];
+        let argc_v = block_vals[1];
+        let argv_v = block_vals[2];
+
+        // Checagem de aridade (aridade fixa por ora).
+        let n_const = self.builder.ins().iconst(types::I64, params.len() as i64);
+        self.call_void(self.rt.check_arity, &[argc_v, n_const]);
 
         self.enter_frame(local_count);
 
-        let mut param_vars = Vec::with_capacity(param_vals.len());
-        let mut param_slots = Vec::with_capacity(param_vals.len());
-        for (slot, val) in param_vals.iter().enumerate() {
-            self.bind_local(slot as u32, *val); // define var + espelha shadow slot
+        let mut param_vars = Vec::with_capacity(params.len());
+        let mut param_slots = Vec::with_capacity(params.len());
+        for slot in 0..params.len() {
+            // Lê o parâmetro de argv[slot].
+            let val = self.builder.ins().load(types::I64, MemFlags::trusted(), argv_v, (slot * 8) as i32);
+            self.bind_local(slot as u32, val);
             param_vars.push(self.vars[&(slot as u32)]);
             param_slots.push(slot as u32);
         }
-        let _ = params;
 
         let header = self.builder.create_block();
         self.builder.ins().jump(header, &[]);
@@ -729,23 +750,22 @@ impl<'a> FnGen<'a> {
 
     /// Chamada indireta de um valor-função (net-0 no shadow-stack).
     fn gen_call_value(&mut self, f: &Ast, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let f_val = self.expr_val(f)?; // +1
-        let mut argv = vec![f_val]; // self = a própria closure
+        let f_val = self.expr_val(f)?; // +1 (f fica abaixo dos args)
         for a in args {
-            argv.push(self.expr_val(a)?); // +1 cada
+            self.expr_val(a)?; // +1 cada
         }
-        // Verificação de aridade em runtime.
-        let nargs = self.builder.ins().iconst(types::I64, args.len() as i64);
-        self.call_void(self.rt.check_call, &[f_val, nargs]);
+        self.call_void(self.rt.check_fn, &[f_val]);
+        let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
+        let argv_ptr = self.call1(self.rt.argv, argc_v); // topo = os args (f está abaixo)
         let code = self.call1(self.rt.fn_code, f_val);
-        // Assinatura da entrada: (self, args...) -> i64.
+        // Assinatura uniforme da entrada: (self, argc, argv) -> i64.
         let mut sig = self.module.make_signature();
-        for _ in 0..(args.len() + 1) {
-            sig.params.push(AbiParam::new(types::I64));
-        }
+        sig.params.push(AbiParam::new(types::I64)); // self
+        sig.params.push(AbiParam::new(types::I64)); // argc
+        sig.params.push(AbiParam::new(self.ptr)); // argv
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
-        let call = self.builder.ins().call_indirect(sig_ref, code, &argv);
+        let call = self.builder.ins().call_indirect(sig_ref, code, &[f_val, argc_v, argv_ptr]);
         let r = self.builder.inst_results(call)[0];
         self.gc_popn(1 + args.len()); // f + args
         Ok(r)
@@ -844,14 +864,15 @@ impl<'a> FnGen<'a> {
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
-                // Chamada estática: self = NIL (fn de topo ignora capturas).
-                let nil = self.konst(NIL);
-                let mut argv = vec![nil];
+                // Empilha os args no shadow-stack; argv aponta para eles.
                 for a in args {
-                    argv.push(self.expr_val(a)?); // +1 cada
+                    self.expr_val(a)?; // +1 cada
                 }
+                let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
+                let argv_ptr = self.call1(self.rt.argv, argc_v);
+                let nil = self.konst(NIL); // self = NIL (fn de topo ignora capturas)
                 let fref = self.module.declare_func_in_func(id, self.builder.func);
-                let call = self.builder.ins().call(fref, &argv);
+                let call = self.builder.ins().call(fref, &[nil, argc_v, argv_ptr]);
                 let r = self.builder.inst_results(call)[0];
                 self.gc_popn(args.len());
                 Ok(r)

@@ -182,14 +182,60 @@ Value cljn_make_fn(Value code, Value arity, Value nfree) {
 void cljn_fn_set_free(Value fn, Value i, Value v) { ((Fn *)fn)->freev[(size_t)i] = v; }
 Value cljn_fn_free(Value fn, Value i) { return ((Fn *)fn)->freev[(size_t)i]; }
 Value cljn_fn_code(Value fn) { return (Value)((Fn *)fn)->code; }
-/* Verifica que `fn` é função com a aridade dada (erro de runtime senão). */
-void cljn_check_call(Value fn, Value nargs) {
+void cljn_check_fn(Value fn) {
     if (obj_type(fn) != T_FN) die("valor chamado não é uma função");
-    if (((Fn *)fn)->arity != (int64_t)nargs) {
-        fprintf(stderr, "erro: aridade errada na chamada (esperava %ld, recebeu %ld)\n",
-                (long)((Fn *)fn)->arity, (long)nargs);
+}
+
+/* Convenção de chamada uniforme: entry(self, argc, argv) -> valor.
+ * Os argumentos ficam contíguos no topo do shadow-stack; `argv` aponta pra lá
+ * (portanto já rooteados). */
+Value cljn_argv(Value argc) {
+    return (Value)&gc_stack[gc_sp - (size_t)argc];
+}
+void cljn_check_arity(Value argc, Value expected) {
+    if ((int64_t)argc != (int64_t)expected) {
+        fprintf(stderr, "erro: aridade errada (esperava %ld, recebeu %ld)\n",
+                (long)expected, (long)argc);
         exit(1);
     }
+}
+void cljn_check_arity_min(Value argc, Value minv) {
+    if ((int64_t)argc < (int64_t)minv) {
+        fprintf(stderr, "erro: aridade errada (esperava ao menos %ld, recebeu %ld)\n",
+                (long)minv, (long)argc);
+        exit(1);
+    }
+}
+/* Coleta argv[nfixed..argc) numa lista (para o parâmetro `& rest`). */
+Value cljn_collect_rest(Value argc, Value argv, Value nfixed) {
+    Value *a = (Value *)argv;
+    int64_t n = (int64_t)argc, nf = (int64_t)nfixed;
+    Value acc = EMPTY;
+    cljn_gc_push(acc);
+    for (int64_t i = n - 1; i >= nf; i--) {
+        acc = cljn_cons(a[i], acc);
+        gc_stack[gc_sp - 1] = acc;
+    }
+    cljn_gc_popn(1);
+    return acc;
+}
+/* apply: empurra os elementos de `coll` no topo do shadow-stack (após os
+ * `fixed_argc` já empurrados) e devolve o argc total (raw). `coll` está rooteado. */
+Value cljn_spread_args(Value fixed_argc, Value coll) {
+    int64_t extra = 0;
+    int t = obj_type(coll);
+    if (t == T_VEC || t == T_SET) {
+        Vec *v = (Vec *)coll;
+        for (int64_t i = 0; i < v->len; i++) { cljn_gc_push(v->items[i]); extra++; }
+    } else {
+        Value c = coll;
+        while (c != EMPTY && c != NIL && obj_type(c) == T_CONS) {
+            cljn_gc_push(((Cons *)c)->head);
+            c = ((Cons *)c)->tail;
+            extra++;
+        }
+    }
+    return (Value)((int64_t)fixed_argc + extra);
 }
 
 static Value b2v(int b); /* fwd */
