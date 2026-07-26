@@ -1381,6 +1381,58 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
+    /// `quot`/`mod` inline. Guard de tag + divisor≠0 desviam ao slow path (que
+    /// preserva "divisão por zero"). `quot`: range-check p/ o caso `-2^62 / -1`.
+    /// `mod`: ajuste de sinal (mod floored de Clojure), resultado sempre em range.
+    fn gen_fix_div(&mut self, a: CValue, b: CValue, is_quot: bool, slow: FuncId) -> CValue {
+        let both = self.fix_both_guard(a, b);
+        let fast_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+
+        self.builder.switch_to_block(fast_b);
+        self.builder.seal_block(fast_b);
+        let ar = self.builder.ins().sshr_imm(a, 1);
+        let br = self.builder.ins().sshr_imm(b, 1);
+        let bz = self.builder.ins().icmp_imm(IntCC::Equal, br, 0);
+        let cont_b = self.builder.create_block();
+        self.builder.ins().brif(bz, slow_b, &[], cont_b, &[]); // divisor 0 → slow
+        self.builder.switch_to_block(cont_b);
+        self.builder.seal_block(cont_b);
+        if is_quot {
+            let q = self.builder.ins().sdiv(ar, br);
+            let inr = self.fix_in_range(q);
+            let ok_b = self.builder.create_block();
+            self.builder.ins().brif(inr, ok_b, &[], slow_b, &[]);
+            self.builder.switch_to_block(ok_b);
+            self.builder.seal_block(ok_b);
+            let tagged = self.fix_retag(q);
+            self.builder.ins().jump(merge, &[tagged.into()]);
+        } else {
+            let r = self.builder.ins().srem(ar, br);
+            // ajuste floored: se r!=0 && sinal(r)!=sinal(br) então r+br
+            let rnz = self.builder.ins().icmp_imm(IntCC::NotEqual, r, 0);
+            let xr = self.builder.ins().bxor(r, br);
+            let diff = self.builder.ins().icmp_imm(IntCC::SignedLessThan, xr, 0);
+            let adj = self.builder.ins().band(rnz, diff);
+            let radj = self.builder.ins().iadd(r, br);
+            let res = self.builder.ins().select(adj, radj, r);
+            let tagged = self.fix_retag(res);
+            self.builder.ins().jump(merge, &[tagged.into()]);
+        }
+
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sr = self.call2(slow, a, b);
+        self.builder.ins().jump(merge, &[sr.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
     /// `< <= > >=` inline: guard, unbox, icmp, select(TRUE/FALSE); slow = runtime.
     fn gen_fix_cmp(&mut self, a: CValue, b: CValue, cc: IntCC, slow: FuncId) -> CValue {
         let both = self.fix_both_guard(a, b);
@@ -1472,9 +1524,21 @@ impl<'a> FnGen<'a> {
             Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le),
             Prim::Gt => self.fix_cmp2(args, IntCC::SignedGreaterThan, self.rt.gt),
             Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge),
-            // binárias estritas (runtime)
-            Prim::Quot => self.bin(self.rt.quot, args),
-            Prim::Mod => self.bin(self.rt.mod_, args),
+            // divisão inteira com fast path de fixnum
+            Prim::Quot => {
+                let a = self.expr_val(&args[0])?;
+                let b = self.expr_val(&args[1])?;
+                let r = self.gen_fix_div(a, b, true, self.rt.quot);
+                self.gc_popn(2);
+                Ok(r)
+            }
+            Prim::Mod => {
+                let a = self.expr_val(&args[0])?;
+                let b = self.expr_val(&args[1])?;
+                let r = self.gen_fix_div(a, b, false, self.rt.mod_);
+                self.gc_popn(2);
+                Ok(r)
+            }
             Prim::Eq => self.bin(self.rt.eq, args),
             Prim::Cons => self.bin(self.rt.cons, args),
             // unárias
