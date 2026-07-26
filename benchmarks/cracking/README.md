@@ -46,7 +46,7 @@ benchmarks/cracking/run.sh
 O runner imprime CSV:
 
 ```text
-benchmark,compile_ms,run_ms,checksum,expected,status
+benchmark,mode,scale,compile_wall_ms,wall_time_s,cpu_user_s,cpu_system_s,cpu_total_s,cpu_percent,max_rss_kb,checksum,expected,status
 ```
 
 Exemplos:
@@ -58,6 +58,13 @@ benchmarks/cracking/run.sh --chapter 04
 # Exercitar o rooting com coleta em toda alocação
 benchmarks/cracking/run.sh --chapter 07 --gc-stress
 
+# Multiplicar a carga interna de todos os casos por 25 e gravar CSV
+benchmarks/cracking/run.sh --extreme \
+  --csv benchmarks/cracking/results/extreme.csv
+
+# Escolher outro multiplicador de carga
+benchmarks/cracking/run.sh --scale 10 --csv /tmp/scale-10.csv
+
 # Usar outro binário do compilador
 benchmarks/cracking/run.sh --compiler /caminho/para/clojure-native
 
@@ -67,6 +74,28 @@ benchmarks/cracking/run.sh --list
 
 `expected.tsv` contém o checksum esperado de cada programa. Qualquer erro de build,
 execução ou divergência faz o runner terminar com status diferente de zero.
+
+O resultado extremo de referência desta árvore está em
+[`results/extreme.csv`](results/extreme.csv), acompanhado pela descrição da máquina e da
+metodologia em [`results/README.md`](results/README.md).
+
+### Colunas de métricas
+
+| Coluna | Unidade | Significado |
+| --- | --- | --- |
+| `compile_wall_ms` | ms | tempo de parede gasto pelo comando `build` |
+| `wall_time_s` | s | tempo de parede do executável gerado |
+| `cpu_user_s` | s | CPU executando código em user space |
+| `cpu_system_s` | s | CPU gasta no kernel |
+| `cpu_total_s` | s | soma de CPU user e system |
+| `cpu_percent` | % | utilização de CPU reportada pelo GNU `time` |
+| `max_rss_kb` | KiB | pico de resident set size do processo |
+
+`--extreme` não edita os programas versionados. O runner cria uma fonte temporária em
+que apenas a quantidade de rodadas passada a `benchmark` é multiplicada por 25. Use
+`--scale N` para controlar esse multiplicador. Em modo extremo, `expected` aparece como
+`not-recorded`; o checksum medido continua no CSV e a execução ainda falha para saída
+inválida ou status não-zero.
 
 ## Executar um caso manualmente
 
@@ -81,6 +110,8 @@ execução ou divergência faz o runner terminar com status diferente de zero.
 ## Metodologia
 
 - Os tempos de compilação e execução são medidos separadamente.
+- CPU e memória são coletadas pelo GNU `time`; `max_rss_kb` é o pico do processo, não
+  uma medição de alocações individuais do GC.
 - Cada programa repete internamente a operação para reduzir ruído de processos muito
   curtos.
 - A saída é consumida como checksum, impedindo que o resultado seja ignorado.

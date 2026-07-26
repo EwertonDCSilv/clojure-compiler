@@ -8,6 +8,8 @@ chapter=""
 gc_stress=0
 list_only=0
 keep_binaries=0
+scale=1
+csv_path=""
 
 usage() {
   printf '%s\n' \
@@ -16,6 +18,9 @@ usage() {
     "  --chapter PREFIX    Executa um capítulo, por exemplo 04" \
     "  --compiler PATH     Usa um binário específico do compilador" \
     "  --gc-stress         Executa com CLJN_GC_STRESS=1" \
+    "  --extreme           Multiplica a carga interna por 25" \
+    "  --scale N           Multiplica a carga interna por N" \
+    "  --csv PATH          Também grava o resultado CSV em PATH" \
     "  --keep-binaries     Preserva os executáveis temporários" \
     "  --list              Lista os benchmarks selecionados" \
     "  -h, --help          Mostra esta ajuda"
@@ -34,6 +39,18 @@ while (($# > 0)); do
     --gc-stress)
       gc_stress=1
       shift
+      ;;
+    --extreme)
+      scale=25
+      shift
+      ;;
+    --scale)
+      scale="${2:-}"
+      shift 2
+      ;;
+    --csv)
+      csv_path="${2:-}"
+      shift 2
       ;;
     --keep-binaries)
       keep_binaries=1
@@ -54,6 +71,11 @@ while (($# > 0)); do
       ;;
   esac
 done
+
+if [[ ! "$scale" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'Escala inválida: %s\n' "$scale" >&2
+  exit 2
+fi
 
 declare -a sources=()
 while IFS= read -r source; do
@@ -82,6 +104,11 @@ if [[ ! -x "$compiler" ]]; then
   fi
 fi
 
+if [[ ! -x /usr/bin/time ]]; then
+  printf 'GNU time não encontrado em /usr/bin/time\n' >&2
+  exit 1
+fi
+
 declare -A expected=()
 while IFS=$'\t' read -r path checksum; do
   expected["$path"]="$checksum"
@@ -98,52 +125,103 @@ cleanup() {
 trap cleanup EXIT
 
 failures=0
-printf 'benchmark,compile_ms,run_ms,checksum,expected,status\n'
+mode="normal"
+if ((scale > 1)); then
+  mode="extreme"
+fi
+if ((gc_stress)); then
+  mode="$mode-gc-stress"
+fi
+
+if [[ -n "$csv_path" ]]; then
+  mkdir -p "$(dirname "$csv_path")"
+  : > "$csv_path"
+  exec 3>>"$csv_path"
+fi
+
+emit_row() {
+  printf '%s\n' "$1"
+  if [[ -n "$csv_path" ]]; then
+    printf '%s\n' "$1" >&3
+  fi
+}
+
+header="benchmark,mode,scale,compile_wall_ms,wall_time_s,cpu_user_s,cpu_system_s,cpu_total_s,cpu_percent,max_rss_kb,checksum,expected,status"
+emit_row "$header"
 
 for source in "${sources[@]}"; do
   relative="${source#"$script_dir/"}"
   safe_name="${relative//\//_}"
   executable="$output_dir/${safe_name%.clj}"
+  build_source="$source"
+  wanted="${expected[$relative]:-missing}"
+
+  if ((scale > 1)); then
+    build_source="$output_dir/${safe_name%.clj}.scaled.clj"
+    sed -E "s/\\(benchmark ([0-9]+)\\)/\\(benchmark (* \\1 $scale)\\)/" \
+      "$source" > "$build_source"
+    if cmp -s "$source" "$build_source"; then
+      row="$(printf '%s,%s,%s,0,,,,,,,,%s,SCALE_FAIL' \
+        "$relative" "$mode" "$scale" "$wanted")"
+      emit_row "$row"
+      failures=$((failures + 1))
+      continue
+    fi
+    wanted="not-recorded"
+  fi
 
   compile_start="$(date +%s%N)"
-  if ! build_output="$("$compiler" build "$source" -o "$executable" 2>&1)"; then
+  if ! build_output="$("$compiler" build "$build_source" -o "$executable" 2>&1)"; then
     compile_end="$(date +%s%N)"
     compile_ms=$(((compile_end - compile_start) / 1000000))
-    printf '%s,%s,0,,%s,BUILD_FAIL\n' \
-      "$relative" "$compile_ms" "${expected[$relative]:-missing}"
+    row="$(printf '%s,%s,%s,%s,,,,,,,,%s,BUILD_FAIL' \
+      "$relative" "$mode" "$scale" "$compile_ms" "$wanted")"
+    emit_row "$row"
     printf '%s\n' "$build_output" >&2
     failures=$((failures + 1))
     continue
   fi
   compile_end="$(date +%s%N)"
 
-  run_start="$(date +%s%N)"
+  metrics_file="$output_dir/${safe_name%.clj}.metrics"
+  stdout_file="$output_dir/${safe_name%.clj}.stdout"
+  stderr_file="$output_dir/${safe_name%.clj}.stderr"
   if ((gc_stress)); then
-    run_output="$(CLJN_GC_STRESS=1 "$executable" 2>&1)"
+    /usr/bin/time -f '%e\t%U\t%S\t%P\t%M' -o "$metrics_file" \
+      env CLJN_GC_STRESS=1 "$executable" >"$stdout_file" 2>"$stderr_file"
     run_status=$?
   else
-    run_output="$("$executable" 2>&1)"
+    /usr/bin/time -f '%e\t%U\t%S\t%P\t%M' -o "$metrics_file" \
+      "$executable" >"$stdout_file" 2>"$stderr_file"
     run_status=$?
   fi
-  run_end="$(date +%s%N)"
 
   compile_ms=$(((compile_end - compile_start) / 1000000))
-  run_ms=$(((run_end - run_start) / 1000000))
+  IFS=$'\t' read -r wall_time user_cpu system_cpu cpu_percent max_rss < "$metrics_file"
+  cpu_total="$(awk -v usr="$user_cpu" -v sys="$system_cpu" \
+    'BEGIN { printf "%.6f", usr + sys }')"
+  run_output="$(<"$stdout_file")"
   checksum="${run_output//$'\n'/}"
-  wanted="${expected[$relative]:-missing}"
 
   if ((run_status != 0)); then
     status="RUN_FAIL"
     failures=$((failures + 1))
-  elif [[ "$checksum" != "$wanted" ]]; then
+    printf '%s\n' "$(<"$stderr_file")" >&2
+  elif [[ ! "$checksum" =~ ^-?[0-9]+$ ]]; then
+    status="INVALID_OUTPUT"
+    failures=$((failures + 1))
+  elif ((scale == 1)) && [[ "$checksum" != "$wanted" ]]; then
     status="MISMATCH"
     failures=$((failures + 1))
   else
     status="OK"
   fi
 
-  printf '%s,%s,%s,%s,%s,%s\n' \
-    "$relative" "$compile_ms" "$run_ms" "$checksum" "$wanted" "$status"
+  row="$(printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s' \
+    "$relative" "$mode" "$scale" "$compile_ms" "$wall_time" \
+    "$user_cpu" "$system_cpu" "$cpu_total" "$cpu_percent" "$max_rss" \
+    "$checksum" "$wanted" "$status")"
+  emit_row "$row"
 done
 
 if ((failures > 0)); then
