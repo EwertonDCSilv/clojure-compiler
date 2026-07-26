@@ -58,8 +58,12 @@ benchmarks/cracking/run.sh --chapter 04
 # Exercitar o rooting com coleta em toda alocação
 benchmarks/cracking/run.sh --chapter 07 --gc-stress
 
-# Multiplicar a carga interna de todos os casos por 25 e gravar CSV
+# Multiplicar a carga interna de todos os casos por 25 e gravar métricas nativas
 benchmarks/cracking/run.sh --extreme \
+  --csv /tmp/native-extreme.csv
+
+# Comparar o nativo com Clojure/JVM na mesma carga extrema
+benchmarks/cracking/compare-clojure.sh \
   --csv benchmarks/cracking/results/extreme.csv
 
 # Escolher outro multiplicador de carga
@@ -75,7 +79,7 @@ benchmarks/cracking/run.sh --list
 `expected.tsv` contém o checksum esperado de cada programa. Qualquer erro de build,
 execução ou divergência faz o runner terminar com status diferente de zero.
 
-O resultado extremo de referência desta árvore está em
+O resultado extremo comparativo de referência desta árvore está em
 [`results/extreme.csv`](results/extreme.csv), acompanhado pela descrição da máquina e da
 metodologia em [`results/README.md`](results/README.md).
 
@@ -90,6 +94,22 @@ metodologia em [`results/README.md`](results/README.md).
 | `cpu_total_s` | s | soma de CPU user e system |
 | `cpu_percent` | % | utilização de CPU reportada pelo GNU `time` |
 | `max_rss_kb` | KiB | pico de resident set size do processo |
+
+Esses nomes são usados pelo runner exclusivamente nativo. No CSV comparativo,
+`compare-clojure.sh` usa prefixos explícitos:
+
+| Coluna comparativa | Significado |
+| --- | --- |
+| `native_*` | medição do binário gerado pelo `clojure-compiler` |
+| `clojure_*` | medição da referência Clojure/JVM AOT |
+| `wall_speedup_vs_clojure` | `clojure_wall_time_s / native_wall_time_s` |
+| `cpu_speedup_vs_clojure` | `clojure_cpu_total_s / native_cpu_total_s` |
+| `rss_ratio_clojure_over_native` | `clojure_max_rss_kb / native_max_rss_kb` |
+| `native_checksum`, `clojure_checksum` | resultados usados para validar equivalência |
+| `status` | `OK` somente quando ambos executam e os checksums coincidem |
+
+Nas três razões, um valor maior que `1` favorece o nativo: ele levou menos tempo ou
+usou menos memória que Clojure/JVM. Um valor menor que `1` favorece Clojure/JVM.
 
 `--extreme` não edita os programas versionados. O runner cria uma fonte temporária em
 que apenas a quantidade de rodadas passada a `benchmark` é multiplicada por 25. Use
@@ -112,6 +132,12 @@ inválida ou status não-zero.
 - Os tempos de compilação e execução são medidos separadamente.
 - CPU e memória são coletadas pelo GNU `time`; `max_rss_kb` é o pico do processo, não
   uma medição de alocações individuais do GC.
+- A comparação usa Clojure 1.12.5 em Java 21. Cada namespace Clojure é compilado AOT
+  antes da medição; `clojure_compile_wall_ms` registra esse custo separadamente.
+- `clojure_wall_time_s` ainda inclui a inicialização do processo JVM, assim como
+  `native_wall_time_s` inclui a inicialização do processo nativo.
+- Na primeira comparação, os JARs oficiais fixados de Clojure e `spec.alpha` são
+  baixados do Maven Central para `target/benchmark-clojure`, que não é versionado.
 - Cada programa repete internamente a operação para reduzir ruído de processos muito
   curtos.
 - A saída é consumida como checksum, impedindo que o resultado seja ignorado.
