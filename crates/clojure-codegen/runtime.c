@@ -159,8 +159,10 @@ static void gc_sweep(void) {
     }
 }
 
+static void gc_mark_method_table(void); /* fwd */
 static void gc_collect(void) {
-    for (size_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
+    for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
+    gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
     gc_sweep();
     alloc_since_gc = 0;
 }
@@ -422,6 +424,59 @@ Value cljn_make_record(Value type_name, Value map) {
 }
 Value cljn_record_type(Value r) { return ((Record *)r)->type_name; }
 Value cljn_record_map(Value r) { return ((Record *)r)->map; }
+
+/* ---------- protocols (defprotocol / extend-type) ---------- */
+/* Tabela global (method_id, type_key) -> impl. As entradas são malloc'd (nunca
+ * liberadas) e o coletor marca key/impl como roots permanentes. */
+typedef struct MethodEntry {
+    int64_t method_id;
+    Value key;
+    Value impl;
+    struct MethodEntry *next;
+} MethodEntry;
+static MethodEntry *method_table = NULL;
+
+/* Chave de tipo para dispatch: records → sua keyword; builtins → fixnum distinto. */
+Value cljn_type_key(Value v) {
+    if (IS_FIX(v)) return MK_FIX(1000);
+    if (v == NIL) return MK_FIX(1010);
+    if (v == TRUEV || v == FALSEV) return MK_FIX(1011);
+    if (v == EMPTY) return MK_FIX(1002);
+    switch (obj_type(v)) {
+        case T_STR: return MK_FIX(1001);
+        case T_CONS: return MK_FIX(1002);
+        case T_FN: return MK_FIX(1003);
+        case T_KW: return MK_FIX(1004);
+        case T_VEC: return MK_FIX(1005);
+        case T_MAP: return MK_FIX(1006);
+        case T_SET: return MK_FIX(1007);
+        case T_RECORD: return ((Record *)v)->type_name;
+    }
+    return MK_FIX(1099);
+}
+void cljn_register_method(Value method_id, Value key, Value impl) {
+    MethodEntry *e = xalloc(sizeof(MethodEntry));
+    e->method_id = (int64_t)method_id;
+    e->key = key;
+    e->impl = impl;
+    e->next = method_table;
+    method_table = e;
+}
+Value cljn_lookup_method(Value method_id, Value key) {
+    for (MethodEntry *e = method_table; e; e = e->next)
+        if (e->method_id == (int64_t)method_id && cljn_equal_raw(e->key, key)) return e->impl;
+    return NIL;
+}
+void cljn_no_method(Value method_id) {
+    fprintf(stderr, "erro: protocolo não implementado para o tipo (método %ld)\n", (long)method_id);
+    exit(1);
+}
+static void gc_mark_method_table(void) {
+    for (MethodEntry *e = method_table; e; e = e->next) {
+        gc_mark(e->key);
+        gc_mark(e->impl);
+    }
+}
 
 /* ---------- genéricos (dispatch por tipo) ---------- */
 Value cljn_contains(Value coll, Value key);

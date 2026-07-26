@@ -47,6 +47,8 @@ pub enum Ast {
     Apply { f: Box<Ast>, fixed: Vec<Ast>, coll: Box<Ast> },
     /// Constrói um record: nome do tipo + campos (nome → valor).
     MakeRecord { type_name: String, fields: Vec<(String, Ast)> },
+    /// Registra uma impl de protocolo em runtime: `(method_id, key) → impl`.
+    RegisterMethod { method_id: i64, key: Box<Ast>, impl_fn: Box<Ast> },
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,9 @@ pub struct Function {
     pub local_count: u32,
     /// Verdadeiro para lambdas (usam `self` para ler capturas); falso p/ defns de topo.
     pub is_lambda: bool,
+    /// Se `Some(method_id)`, é uma função-despacho de protocolo (encaminha argc/argv
+    /// para a impl encontrada por `(method_id, type_key(arg0))`).
+    pub dispatch: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,16 +115,26 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
 
     // Assinaturas de funções de topo: aridades (fixos, variádica?) por nome.
     let mut sigs: HashMap<String, Vec<(usize, bool)>> = HashMap::new();
+    // Protocolos: nome do método → (method_id, aridade). Records: nomes de tipo.
+    let mut protos: HashMap<String, (i64, usize)> = HashMap::new();
+    let mut records: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut next_mid: i64 = 1;
     for f in forms {
         if let Some((name, decls)) = match_defn(f) {
             sigs.insert(name, decls.iter().map(|(p, r, _)| (p.len(), r.is_some())).collect());
         } else if let Some((name, fields)) = match_defrecord(f) {
-            // defrecord Name [f...] gera o construtor ->Name de aridade |fields|.
+            records.insert(name.clone());
             sigs.insert(format!("->{name}"), vec![(fields.len(), false)]);
+        } else if let Some((_pname, methods)) = match_defprotocol(f) {
+            for (mname, arity) in methods {
+                protos.insert(mname.clone(), (next_mid, arity));
+                sigs.insert(mname, vec![(arity, false)]);
+                next_mid += 1;
+            }
         }
     }
 
-    let mut an = Analyzer { sigs: &sigs, frames: Vec::new(), functions: Vec::new(), lam: 0 };
+    let mut an = Analyzer { sigs: &sigs, protos: &protos, records: &records, frames: Vec::new(), functions: Vec::new(), lam: 0 };
     let mut main_body = Vec::new();
 
     // Frame do "main" (topo). Fica na base; frames de defn entram/saem acima.
@@ -136,6 +151,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                     methods,
                     local_count: lc,
                     is_lambda: false,
+                    dispatch: None,
                 }),
                 Err(d) => diags.push(d),
             }
@@ -150,7 +166,53 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 methods: vec![FnMethod { params: fields.clone(), rest: None, body: make }],
                 local_count: fields.len() as u32,
                 is_lambda: false,
+                dispatch: None,
             });
+        } else if let Some((_pname, methods)) = match_defprotocol(f) {
+            // Cada método vira uma função-despacho.
+            for (mname, _arity) in methods {
+                let mid = an.protos[&mname].0;
+                an.functions.push(Function {
+                    name: mname,
+                    methods: vec![],
+                    local_count: 0,
+                    is_lambda: false,
+                    dispatch: Some(mid),
+                });
+            }
+        } else if let Some((typename, impls)) = match_extend_type(f) {
+            for (mname, params, body_forms) in impls {
+                let Some(&(mid, _)) = an.protos.get(&mname) else {
+                    diags.push(unsupported(format!("método de protocolo desconhecido: {mname}"), f.span));
+                    continue;
+                };
+                let Some(key) = key_for(&typename, an.records) else {
+                    diags.push(unsupported(format!("tipo desconhecido em extend-type: {typename}"), f.span));
+                    continue;
+                };
+                let decls = vec![(params, None, body_forms)];
+                match an.analyze_methods(&decls, true, f.span) {
+                    Ok((lmethods, lc, caps)) => {
+                        let lname = format!("__impl_{}", an.lam);
+                        an.lam += 1;
+                        let arity = lmethods[0].params.len();
+                        an.functions.push(Function {
+                            name: lname.clone(),
+                            methods: lmethods,
+                            local_count: lc,
+                            is_lambda: true,
+                            dispatch: None,
+                        });
+                        let make = Ast::MakeFn { lambda: lname, arity, captures: caps };
+                        main_body.push(Ast::RegisterMethod {
+                            method_id: mid,
+                            key: Box::new(key),
+                            impl_fn: Box::new(make),
+                        });
+                    }
+                    Err(d) => diags.push(d),
+                }
+            }
         } else {
             match an.analyze(f, false) {
                 Ok(a) => main_body.push(a),
@@ -217,6 +279,82 @@ fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
         return None;
     }
     Some((name, fields))
+}
+
+/// `(defprotocol Nome (m1 [args]) (m2 [args]))` → nome + (método, aridade).
+fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
+    let Form::List(items) = f.node.strip_meta() else { return None };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else { return None };
+    if n.ns.is_some() || n.name != "defprotocol" {
+        return None;
+    }
+    let name = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
+        _ => return None,
+    };
+    let mut methods = Vec::new();
+    for m in &items[2..] {
+        if let Form::List(mi) = m.node.strip_meta() {
+            if let (Some(Form::Symbol(mn)), Some(Form::Vector(ps))) =
+                (mi.first().map(|x| x.node.strip_meta()), mi.get(1).map(|x| x.node.strip_meta()))
+            {
+                methods.push((mn.name.clone(), ps.len()));
+            }
+        }
+        // strings (docstrings) e outros são ignorados
+    }
+    Some((name, methods))
+}
+
+/// `(extend-type Tipo Proto (m [args] body...) ...)` → tipo + impls (método/params/corpo).
+/// Nomes de protocolo intercalados são ignorados (dispatch é por nome de método).
+#[allow(clippy::type_complexity)]
+fn match_extend_type(f: &SForm) -> Option<(String, Vec<(String, Vec<String>, Vec<SForm>)>)> {
+    let Form::List(items) = f.node.strip_meta() else { return None };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else { return None };
+    if n.ns.is_some() || n.name != "extend-type" {
+        return None;
+    }
+    let typename = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(t)) if t.ns.is_none() => t.name.clone(),
+        _ => return None,
+    };
+    let mut impls = Vec::new();
+    for it in &items[2..] {
+        if let Form::List(mi) = it.node.strip_meta() {
+            let (params, rest) = parse_params(mi.get(1)?)?;
+            if rest.is_some() {
+                return None;
+            }
+            if let Some(Form::Symbol(mn)) = mi.first().map(|x| x.node.strip_meta()) {
+                impls.push((mn.name.clone(), params, mi[2..].to_vec()));
+            }
+        }
+        // Symbol (nome de protocolo) → ignorado.
+    }
+    Some((typename, impls))
+}
+
+/// Chave de dispatch para um nome de tipo: records → keyword; builtins → fixnum.
+/// Deve casar com `cljn_type_key` no runtime.
+fn key_for(typename: &str, records: &std::collections::HashSet<String>) -> Option<Ast> {
+    if records.contains(typename) {
+        return Some(Ast::Keyword(typename.to_string()));
+    }
+    let code = match typename {
+        "Int" | "Long" | "Integer" | "Number" => 1000,
+        "String" => 1001,
+        "List" | "PersistentList" | "Cons" | "Seq" => 1002,
+        "Fn" | "IFn" | "Function" => 1003,
+        "Keyword" => 1004,
+        "Vector" | "PersistentVector" => 1005,
+        "Map" | "PersistentArrayMap" | "PersistentHashMap" => 1006,
+        "Set" | "PersistentHashSet" => 1007,
+        "Nil" => 1010,
+        "Boolean" | "Bool" => 1011,
+        _ => return None,
+    };
+    Some(Ast::Int(code))
 }
 
 /// Aridade única `[params] body...` ou multi `([params] body...) ...`.
@@ -287,6 +425,8 @@ impl Frame {
 
 struct Analyzer<'a> {
     sigs: &'a HashMap<String, Vec<(usize, bool)>>,
+    protos: &'a HashMap<String, (i64, usize)>,
+    records: &'a std::collections::HashSet<String>,
     frames: Vec<Frame>,
     functions: Vec<Function>,
     lam: u32,
@@ -411,6 +551,7 @@ impl<'a> Analyzer<'a> {
                     methods: vec![FnMethod { params, rest: None, body }],
                     local_count: arity as u32,
                     is_lambda: true,
+                    dispatch: None,
                 });
                 return Ok(Ast::MakeFn { lambda: lname, arity, captures: vec![] });
             }
@@ -647,7 +788,7 @@ impl<'a> Analyzer<'a> {
         let name = format!("__lambda_{}", self.lam);
         self.lam += 1;
         let arity = methods[0].params.len();
-        self.functions.push(Function { name: name.clone(), methods, local_count: lc, is_lambda: true });
+        self.functions.push(Function { name: name.clone(), methods, local_count: lc, is_lambda: true, dispatch: None });
         Ok(Ast::MakeFn { lambda: name, arity, captures })
     }
 }

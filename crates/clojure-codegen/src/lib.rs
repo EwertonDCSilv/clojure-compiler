@@ -101,6 +101,11 @@ struct Runtime {
     p_vals: FuncId,      // (map)->list
     p_conj: FuncId,      // (coll,x)->coll
     make_record: FuncId, // (type_name,map)->record
+    // protocols
+    type_key: FuncId,        // (v)->key
+    register_method: FuncId, // (mid,key,impl)->void
+    lookup_method: FuncId,   // (mid,key)->impl|NIL
+    no_method: FuncId,       // (mid)->void
 }
 
 /// Compila o programa para bytes de um objeto nativo da plataforma host.
@@ -163,7 +168,8 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
             .declare_function(&f.name, Linkage::Local, &sig)
             .map_err(|e| single(format!("declare_function {}: {e}", f.name)))?;
         // usize = aridade informativa (primeira aridade) para FnRef.
-        fn_ids.insert(f.name.clone(), (id, f.methods[0].params.len()));
+        let arity0 = f.methods.first().map(|m| m.params.len()).unwrap_or(0);
+        fn_ids.insert(f.name.clone(), (id, arity0));
     }
 
     let mut diags = Diagnostics::new();
@@ -175,7 +181,7 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         let mut fbctx = FunctionBuilderContext::new();
         let res = {
             let mut fg = FnGen::new(&mut module, &mut ctx.func, &mut fbctx, ptr, &runtime, &fn_ids, &str_data);
-            fg.build_entry(&f.methods, f.local_count)
+            fg.build_entry(&f.methods, f.local_count, f.dispatch)
         };
         match res {
             Ok(()) => {
@@ -346,6 +352,10 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         p_vals: una(m, "cljn_map_vals"),
         p_conj: bin(m, "cljn_conj"),
         make_record: bin(m, "cljn_make_record"),
+        type_key: una(m, "cljn_type_key"),
+        register_method: ternary_void(m, "cljn_register_method"),
+        lookup_method: bin(m, "cljn_lookup_method"),
+        no_method: voidfn(m, "cljn_no_method", true),
     }
 }
 
@@ -482,7 +492,7 @@ impl<'a> FnGen<'a> {
         self.call_void(self.rt.gc_leave, &[base]);
     }
 
-    fn build_entry(mut self, methods: &[FnMethod], local_count: u32) -> Result<(), Diagnostic> {
+    fn build_entry(mut self, methods: &[FnMethod], local_count: u32, dispatch: Option<i64>) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
@@ -494,6 +504,13 @@ impl<'a> FnGen<'a> {
         self.self_var = Some(self_v);
         let argc_v = block_vals[1];
         let argv_v = block_vals[2];
+
+        // Função-despacho de protocolo: encaminha argc/argv para a impl.
+        if let Some(mid) = dispatch {
+            self.gen_dispatch(mid, argc_v, argv_v);
+            self.builder.finalize();
+            return Ok(());
+        }
 
         self.enter_frame(local_count);
 
@@ -524,6 +541,37 @@ impl<'a> FnGen<'a> {
 
         self.builder.finalize();
         Ok(())
+    }
+
+    /// Função-despacho: `impl = lookup(mid, type_key(argv[0]))`; encaminha argc/argv.
+    fn gen_dispatch(&mut self, mid: i64, argc_v: CValue, argv_v: CValue) {
+        let arg0 = self.builder.ins().load(types::I64, MemFlags::trusted(), argv_v, 0);
+        let key = self.call1(self.rt.type_key, arg0);
+        let mid_v = self.builder.ins().iconst(types::I64, mid);
+        let impl_v = self.call2(self.rt.lookup_method, mid_v, key);
+        let is_nil = self.builder.ins().icmp_imm(IntCC::Equal, impl_v, NIL);
+        let err_b = self.builder.create_block();
+        let ok_b = self.builder.create_block();
+        self.builder.ins().brif(is_nil, err_b, &[], ok_b, &[]);
+
+        self.builder.switch_to_block(err_b);
+        self.builder.seal_block(err_b);
+        self.call_void(self.rt.no_method, &[mid_v]);
+        let z = self.konst(NIL);
+        self.builder.ins().return_(&[z]);
+
+        self.builder.switch_to_block(ok_b);
+        self.builder.seal_block(ok_b);
+        let code = self.call1(self.rt.fn_code, impl_v);
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(self.ptr));
+        sig.returns.push(AbiParam::new(types::I64));
+        let sig_ref = self.builder.import_signature(sig);
+        let call = self.builder.ins().call_indirect(sig_ref, code, &[impl_v, argc_v, argv_v]);
+        let r = self.builder.inst_results(call)[0];
+        self.builder.ins().return_(&[r]);
     }
 
     /// Vincula os parâmetros (fixos + rest) e compila o corpo de uma aridade.
@@ -715,6 +763,16 @@ impl<'a> FnGen<'a> {
                 let v = self.gen_make_record(type_name, fields)?; // net-0
                 self.gc_push_val(v);
                 Flow::Val(v)
+            }
+            Ast::RegisterMethod { method_id, key, impl_fn } => {
+                let key_v = self.expr_val(key)?; // +1
+                let impl_v = self.expr_val(impl_fn)?; // +1 (MakeFn rooteado)
+                let mid_v = self.builder.ins().iconst(types::I64, *method_id);
+                self.call_void3(self.rt.register_method, mid_v, key_v, impl_v);
+                self.gc_popn(2);
+                let nil = self.konst(NIL);
+                self.gc_push_val(nil);
+                Flow::Val(nil)
             }
             Ast::Capture(i) => {
                 let self_v = self.builder.use_var(self.self_var.expect("self"));
@@ -1337,6 +1395,10 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
                 out.push(fname.clone());
                 collect_strings(v, out);
             });
+        }
+        Ast::RegisterMethod { key, impl_fn, .. } => {
+            collect_strings(key, out);
+            collect_strings(impl_fn, out);
         }
         Ast::Loop { slots, body } | Ast::Let { slots, body } => {
             slots.iter().for_each(|(_, a)| collect_strings(a, out));

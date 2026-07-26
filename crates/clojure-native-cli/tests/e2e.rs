@@ -140,6 +140,32 @@ fn fixnum_fast_paths_correct() {
 }
 
 #[test]
+fn compiles_protocols() {
+    if !have_cc() {
+        return;
+    }
+    let src = r#"(ns p.core)
+(defprotocol Forma (area [this]) (nome [this]))
+(defrecord Circulo [r])
+(defrecord Retangulo [w h])
+(extend-type Circulo Forma (area [this] (* 3 (* (:r this) (:r this)))) (nome [this] "circ"))
+(extend-type Retangulo Forma (area [this] (* (:w this) (:h this))) (nome [this] "ret"))
+(extend-type List Forma (area [this] (count this)) (nome [this] "lst"))
+(defn -main []
+  (println (nome (->Circulo 10)) (area (->Circulo 10)))
+  (println (nome (->Retangulo 4 5)) (area (->Retangulo 4 5)))
+  (println (nome (list 1 2 3)) (area (list 1 2 3)))
+  (println (map area (list (->Circulo 1) (->Retangulo 2 3) (list 9 9)))))
+(-main)"#;
+    let expected = "circ 300\nret 20\nlst 3\n(3 6 2)\n";
+    assert_eq!(build_and_run("cljn_e2e_proto", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_proto_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_records() {
     if !have_cc() {
         return;
