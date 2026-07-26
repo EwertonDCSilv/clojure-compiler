@@ -61,7 +61,10 @@ fn compiles_and_runs_hello() {
     let src = r#"(ns hello.core)
 (defn -main [] (println "Hello from native Clojure"))
 (-main)"#;
-    assert_eq!(build_and_run("cljn_e2e_hello", src), "Hello from native Clojure\n");
+    assert_eq!(
+        build_and_run("cljn_e2e_hello", src),
+        "Hello from native Clojure\n"
+    );
 }
 
 #[test]
@@ -322,7 +325,10 @@ fn gc_correctness_under_stress() {
   (println (str "x=" (first (upto 20 (list))) " len=" (count (upto 20 (list))))))
 (-main)"#;
     let expected = "(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)\n21\nx=0 len=21\n";
-    assert_eq!(build_and_run_env("cljn_e2e_gc_stress", src, &[("CLJN_GC_STRESS", "1")]), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_gc_stress", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
 }
 
 #[test]
@@ -347,14 +353,30 @@ fn native_binary_has_no_jvm_dep() {
     let dir = std::env::temp_dir();
     let clj = dir.join("cljn_e2e_dep.clj");
     let exe = dir.join("cljn_e2e_dep.bin");
-    std::fs::write(&clj, "(ns d.core)\n(defn -main [] (println \"x\"))\n(-main)").unwrap();
-    let out = Command::new(cli()).arg("build").arg(&clj).arg("-o").arg(&exe).output().unwrap();
+    std::fs::write(
+        &clj,
+        "(ns d.core)\n(defn -main [] (println \"x\"))\n(-main)",
+    )
+    .unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let ldd = Command::new("ldd").arg(&exe).output();
     if let Ok(ldd) = ldd {
         let deps = String::from_utf8_lossy(&ldd.stdout).to_lowercase();
-        assert!(!deps.contains("jvm"), "binário não deve depender de JVM: {deps}");
-        assert!(!deps.contains("java"), "binário não deve depender de Java: {deps}");
+        assert!(
+            !deps.contains("jvm"),
+            "binário não deve depender de JVM: {deps}"
+        );
+        assert!(
+            !deps.contains("java"),
+            "binário não deve depender de Java: {deps}"
+        );
     }
     let _ = std::fs::remove_file(&clj);
     let _ = std::fs::remove_file(&exe);

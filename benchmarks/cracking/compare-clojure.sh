@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -u
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+default_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="${CLJN_BENCHMARK_SUITE_DIR:-$default_script_dir}"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 native_runner="$script_dir/run.sh"
 compiler=""

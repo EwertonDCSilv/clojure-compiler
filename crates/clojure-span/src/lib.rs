@@ -24,7 +24,11 @@ impl Span {
 
     /// Span vazio em uma posição (útil para nós sintéticos/erros de EOF).
     pub fn point(source: SourceId, at: u32) -> Self {
-        Span { source, start: at, end: at }
+        Span {
+            source,
+            start: at,
+            end: at,
+        }
     }
 
     /// Une dois spans (assume mesma fonte).
@@ -64,11 +68,17 @@ impl<T> Spanned<T> {
     }
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
-        Spanned { node: f(self.node), span: self.span }
+        Spanned {
+            node: f(self.node),
+            span: self.span,
+        }
     }
 
     pub fn as_ref(&self) -> Spanned<&T> {
-        Spanned { node: &self.node, span: self.span }
+        Spanned {
+            node: &self.node,
+            span: self.span,
+        }
     }
 }
 
@@ -113,7 +123,9 @@ pub struct SourceMap {
 
 impl SourceMap {
     pub fn new() -> Self {
-        SourceMap { sources: Vec::new() }
+        SourceMap {
+            sources: Vec::new(),
+        }
     }
 
     /// Registra uma fonte e devolve seu id.
@@ -121,7 +133,11 @@ impl SourceMap {
         let text = text.into();
         let line_starts = compute_line_starts(&text);
         let id = self.sources.len() as SourceId;
-        self.sources.push(Source { name: name.into(), text, line_starts });
+        self.sources.push(Source {
+            name: name.into(),
+            text,
+            line_starts,
+        });
         id
     }
 
@@ -149,7 +165,10 @@ impl SourceMap {
         };
         let line_start = s.line_starts[line_idx];
         let col = s.text[line_start as usize..offset as usize].chars().count() as u32 + 1;
-        LineCol { line: line_idx as u32 + 1, col }
+        LineCol {
+            line: line_idx as u32 + 1,
+            col,
+        }
     }
 
     /// Texto completo da linha (sem o `\n`) que contém `offset`.
@@ -160,7 +179,10 @@ impl SourceMap {
             Err(i) => i - 1,
         };
         let start = s.line_starts[line_idx] as usize;
-        let end = s.text[start..].find('\n').map(|n| start + n).unwrap_or(s.text.len());
+        let end = s.text[start..]
+            .find('\n')
+            .map(|n| start + n)
+            .unwrap_or(s.text.len());
         &s.text[start..end]
     }
 }
@@ -193,5 +215,41 @@ mod tests {
         let mut sm = SourceMap::new();
         let id = sm.add("t", "hello world");
         assert_eq!(sm.snippet(Span::new(id, 6, 11)), "world");
+    }
+
+    #[test]
+    fn span_and_spanned_helpers_preserve_location() {
+        let point = Span::point(7, 12);
+        assert!(point.is_empty());
+        assert_eq!(point.len(), 0);
+        assert_eq!(format!("{point:?}"), "7:12..12");
+
+        let value = Spanned::new(21, Span::new(7, 3, 5));
+        let mapped = value.map(|n| n * 2);
+        assert_eq!(mapped.node, 42);
+        assert_eq!(mapped.span, Span::new(7, 3, 5));
+        assert_eq!(*mapped.as_ref().node, 42);
+        assert_eq!(format!("{mapped:?}"), "42");
+    }
+
+    #[test]
+    fn source_map_exposes_name_text_and_unicode_columns() {
+        let mut sm = SourceMap::new();
+        let id = sm.add("unicode.clj", "áβ\nfim");
+        assert_eq!(sm.name(id), "unicode.clj");
+        assert_eq!(sm.text(id), "áβ\nfim");
+        assert_eq!(sm.line_col(id, 2), LineCol { line: 1, col: 2 });
+        assert_eq!(sm.line_col(id, 5), LineCol { line: 2, col: 1 });
+        assert_eq!(sm.line_text(id, 0), "áβ");
+        assert_eq!(sm.line_text(id, 8), "fim");
+    }
+
+    #[test]
+    fn source_map_handles_exact_line_boundaries_and_eof() {
+        let mut sm = SourceMap::new();
+        let id = sm.add("lines.clj", "a\nb\n");
+        assert_eq!(sm.line_col(id, 2), LineCol { line: 2, col: 1 });
+        assert_eq!(sm.line_col(id, 4), LineCol { line: 3, col: 1 });
+        assert_eq!(sm.line_text(id, 4), "");
     }
 }

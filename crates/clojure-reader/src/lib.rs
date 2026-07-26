@@ -7,7 +7,7 @@
 //! reader conditionals `#?`, regex `#"..."`, ratios, bignum/bigdec, `::kw`.
 
 use clojure_diagnostics::{Diagnostic, Diagnostics};
-use clojure_span::{Span, SourceId, Spanned};
+use clojure_span::{SourceId, Span, Spanned};
 use clojure_syntax::{Form, Name, SForm};
 
 /// Lê todas as forms de nível superior de uma fonte.
@@ -52,7 +52,13 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
     fn new(src: SourceId, text: &'a str) -> Self {
         let chars: Vec<(u32, char)> = text.char_indices().map(|(i, c)| (i as u32, c)).collect();
-        Reader { src, chars, len: text.len() as u32, pos: 0, text }
+        Reader {
+            src,
+            chars,
+            len: text.len() as u32,
+            pos: 0,
+            text,
+        }
     }
 
     fn at_eof(&self) -> bool {
@@ -69,7 +75,10 @@ impl<'a> Reader<'a> {
 
     /// Offset de byte da posição atual (ou EOF).
     fn offset(&self) -> u32 {
-        self.chars.get(self.pos).map(|&(o, _)| o).unwrap_or(self.len)
+        self.chars
+            .get(self.pos)
+            .map(|&(o, _)| o)
+            .unwrap_or(self.len)
     }
 
     fn bump(&mut self) -> Option<char> {
@@ -128,16 +137,26 @@ impl<'a> Reader<'a> {
         let start = self.offset();
         let c = match self.peek() {
             Some(c) => c,
-            None => return Err(self.err("E0002", "fim de arquivo inesperado", self.span_from(start))),
+            None => {
+                return Err(self.err("E0002", "fim de arquivo inesperado", self.span_from(start)))
+            }
         };
 
         match c {
-            '(' => self.read_coll(start, '(', ')').map(|(items, span)| Spanned::new(Form::List(items), span)),
-            '[' => self.read_coll(start, '[', ']').map(|(items, span)| Spanned::new(Form::Vector(items), span)),
+            '(' => self
+                .read_coll(start, '(', ')')
+                .map(|(items, span)| Spanned::new(Form::List(items), span)),
+            '[' => self
+                .read_coll(start, '[', ']')
+                .map(|(items, span)| Spanned::new(Form::Vector(items), span)),
             '{' => self.read_map(start),
             ')' | ']' | '}' => {
                 self.bump();
-                Err(self.err("E0003", format!("delimitador inesperado `{c}`"), self.span_from(start)))
+                Err(self.err(
+                    "E0003",
+                    format!("delimitador inesperado `{c}`"),
+                    self.span_from(start),
+                ))
             }
             '"' => self.read_string(start),
             '\\' => self.read_char(start),
@@ -148,7 +167,11 @@ impl<'a> Reader<'a> {
             '`' => {
                 self.bump();
                 Err(self
-                    .err("E0010", "syntax-quote (`) ainda não é suportado", self.span_from(start))
+                    .err(
+                        "E0010",
+                        "syntax-quote (`) ainda não é suportado",
+                        self.span_from(start),
+                    )
                     .with_help("fora do escopo do MVP inicial; ver specs/LANGUAGE_SCOPE.md"))
             }
             '~' => {
@@ -157,7 +180,11 @@ impl<'a> Reader<'a> {
                     self.bump();
                 }
                 Err(self
-                    .err("E0011", "unquote (~/~@) fora de syntax-quote", self.span_from(start))
+                    .err(
+                        "E0011",
+                        "unquote (~/~@) fora de syntax-quote",
+                        self.span_from(start),
+                    )
                     .with_help("só é válido dentro de `; não suportado no MVP inicial"))
             }
             '#' => self.read_dispatch(start),
@@ -180,7 +207,10 @@ impl<'a> Reader<'a> {
         let form = self.read_form()?;
         let span = self.span_from(start);
         Ok(Spanned::new(
-            Form::Meta { meta: Box::new(meta), form: Box::new(form) },
+            Form::Meta {
+                meta: Box::new(meta),
+                form: Box::new(form),
+            },
             span,
         ))
     }
@@ -202,10 +232,17 @@ impl<'a> Reader<'a> {
             }
             Some('(') => self.read_anon_fn(start),
             Some('"') => Err(self
-                .err("E0012", "literal de regex (#\"...\") não é suportado", self.span_from(start))
+                .err(
+                    "E0012",
+                    "literal de regex (#\"...\") não é suportado",
+                    self.span_from(start),
+                )
                 .with_help("use a feature `regex` quando disponível; fora do MVP inicial")),
-            Some('?') => Err(self
-                .err("E0013", "reader conditional (#?) não é suportado no MVP inicial", self.span_from(start))),
+            Some('?') => Err(self.err(
+                "E0013",
+                "reader conditional (#?) não é suportado no MVP inicial",
+                self.span_from(start),
+            )),
             other => {
                 let msg = match other {
                     Some(c) => format!("macro de leitura desconhecida `#{c}`"),
@@ -231,7 +268,10 @@ impl<'a> Reader<'a> {
 
         let mut params: Vec<SForm> = Vec::new();
         for i in 1..=max_pos {
-            params.push(Spanned::new(Form::sym(&format!("%{i}")), Span::point(self.src, start)));
+            params.push(Spanned::new(
+                Form::sym(&format!("%{i}")),
+                Span::point(self.src, start),
+            ));
         }
         if has_rest {
             params.push(Spanned::new(Form::sym("&"), Span::point(self.src, start)));
@@ -257,7 +297,11 @@ impl<'a> Reader<'a> {
             match self.peek() {
                 None => {
                     return Err(self
-                        .err("E0004", format!("`{open}` sem `{close}` correspondente"), self.span_from(start))
+                        .err(
+                            "E0004",
+                            format!("`{open}` sem `{close}` correspondente"),
+                            self.span_from(start),
+                        )
                         .with_help(format!("adicione `{close}`")));
                 }
                 Some(c) if c == close => {
@@ -297,7 +341,11 @@ impl<'a> Reader<'a> {
         loop {
             match self.bump() {
                 None => {
-                    return Err(self.err("E0007", "string sem aspas de fechamento", self.span_from(start)))
+                    return Err(self.err(
+                        "E0007",
+                        "string sem aspas de fechamento",
+                        self.span_from(start),
+                    ))
                 }
                 Some('"') => break,
                 Some('\\') => {
@@ -345,7 +393,11 @@ impl<'a> Reader<'a> {
                             ))
                         }
                         None => {
-                            return Err(self.err("E0007", "string sem aspas de fechamento", self.span_from(start)))
+                            return Err(self.err(
+                                "E0007",
+                                "string sem aspas de fechamento",
+                                self.span_from(start),
+                            ))
                         }
                     }
                 }
@@ -357,7 +409,7 @@ impl<'a> Reader<'a> {
 
     fn read_char(&mut self, start: u32) -> Result<SForm, Diagnostic> {
         self.bump(); // '\'
-        // Primeiro caractere após a barra é obrigatório.
+                     // Primeiro caractere após a barra é obrigatório.
         let first = match self.bump() {
             Some(c) => c,
             None => return Err(self.err("E0015", "`\\` sem caractere", self.span_from(start))),
@@ -385,7 +437,10 @@ impl<'a> Reader<'a> {
                 "backspace" => '\u{8}',
                 "formfeed" => '\u{c}',
                 w if w.starts_with('u') && w.len() == 5 => {
-                    match u32::from_str_radix(&w[1..], 16).ok().and_then(char::from_u32) {
+                    match u32::from_str_radix(&w[1..], 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                    {
                         Some(c) => c,
                         None => {
                             return Err(self.err(
@@ -415,7 +470,11 @@ impl<'a> Reader<'a> {
         if self.peek() == Some(':') {
             self.bump();
             return Err(self
-                .err("E0017", "keyword auto-resolvida (::) não suportada no MVP inicial", self.span_from(start))
+                .err(
+                    "E0017",
+                    "keyword auto-resolvida (::) não suportada no MVP inicial",
+                    self.span_from(start),
+                )
                 .with_help("use uma keyword qualificada explícita `:ns/nome`"));
         }
         let tok = self.read_token_str();
@@ -451,7 +510,8 @@ impl<'a> Reader<'a> {
         let bytes = tok.as_bytes();
         let first = bytes[0];
         let numeric_start = first.is_ascii_digit()
-            || ((first == b'-' || first == b'+') && bytes.get(1).is_some_and(|b| b.is_ascii_digit()));
+            || ((first == b'-' || first == b'+')
+                && bytes.get(1).is_some_and(|b| b.is_ascii_digit()));
 
         if numeric_start {
             return self.parse_number(tok, span);
@@ -462,12 +522,20 @@ impl<'a> Reader<'a> {
     fn parse_number(&self, tok: &str, span: Span) -> Result<Form, Diagnostic> {
         if tok.contains('/') {
             return Err(self
-                .err("E0020", format!("ratios não são suportados no MVP: `{tok}`"), span)
+                .err(
+                    "E0020",
+                    format!("ratios não são suportados no MVP: `{tok}`"),
+                    span,
+                )
                 .with_help("ver specs/LANGUAGE_SCOPE.md — Ratio é [FUTURO]"));
         }
         if tok.ends_with('N') || tok.ends_with('M') {
             return Err(self
-                .err("E0021", format!("BigInt/BigDecimal não suportados no MVP: `{tok}`"), span)
+                .err(
+                    "E0021",
+                    format!("BigInt/BigDecimal não suportados no MVP: `{tok}`"),
+                    span,
+                )
                 .with_help("remova o sufixo N/M; ver specs/LANGUAGE_SCOPE.md"));
         }
         if let Ok(n) = tok.parse::<i64>() {
@@ -496,7 +564,20 @@ fn is_terminator(c: char) -> bool {
     c.is_whitespace()
         || matches!(
             c,
-            ',' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | ';' | '@' | '^' | '`' | '\'' | '~' | '\\'
+            ',' | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '"'
+                | ';'
+                | '@'
+                | '^'
+                | '`'
+                | '\''
+                | '~'
+                | '\\'
         )
 }
 
@@ -590,7 +671,7 @@ mod tests {
     fn atoms() {
         assert_eq!(read1("42").node, Form::Int(42));
         assert_eq!(read1("-7").node, Form::Int(-7));
-        assert_eq!(read1("3.14").node, Form::Float(3.14));
+        assert_eq!(read1("2.5").node, Form::Float(2.5));
         assert_eq!(read1("nil").node, Form::Nil);
         assert_eq!(read1("true").node, Form::Bool(true));
         assert_eq!(read1("false").node, Form::Bool(false));
@@ -652,5 +733,69 @@ mod tests {
         assert_eq!(read_all(0, "1/2").unwrap_err().items[0].code, "E0020");
         assert_eq!(read_all(0, "42N").unwrap_err().items[0].code, "E0021");
         assert_eq!(read_all(0, "`x").unwrap_err().items[0].code, "E0010");
+    }
+
+    #[test]
+    fn shebang_commas_unicode_and_nested_discard_are_trivia_safe() {
+        assert_eq!(dump("#!/usr/bin/env clojure\n[1, 2 #_#_3 4 5]"), "[1 2 5]");
+        assert_eq!(read1(r#""olá \u03b2""#).node, Form::Str("olá β".into()));
+    }
+
+    #[test]
+    fn named_and_unicode_characters() {
+        assert_eq!(read1(r"\tab").node, Form::Char('\t'));
+        assert_eq!(read1(r"\space").node, Form::Char(' '));
+        assert_eq!(read1(r"\return").node, Form::Char('\r'));
+        assert_eq!(read1(r"\backspace").node, Form::Char('\u{8}'));
+        assert_eq!(read1(r"\formfeed").node, Form::Char('\u{c}'));
+        assert_eq!(read1(r"\u03b2").node, Form::Char('β'));
+    }
+
+    #[test]
+    fn structural_errors_have_stable_codes() {
+        let cases = [
+            (")", "E0003"),
+            ("[1 2", "E0004"),
+            ("[1}", "E0005"),
+            ("{:a 1 :b}", "E0006"),
+            ("\"open", "E0007"),
+            (r#""\u12x4""#, "E0008"),
+            (r#""\q""#, "E0009"),
+            ("~@x", "E0011"),
+            (r#"#"x""#, "E0012"),
+            ("#?x", "E0013"),
+            ("#z", "E0014"),
+            ("\\", "E0015"),
+            (r"\unknown", "E0016"),
+            ("::auto", "E0017"),
+            (":", "E0018"),
+        ];
+        for (source, code) in cases {
+            assert_eq!(
+                read_all(0, source).unwrap_err().items[0].code,
+                code,
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn anonymous_function_tracks_positional_and_rest_arguments() {
+        assert_eq!(
+            dump("#(list % %3 %& {:value %})"),
+            "(fn* [%1 %2 %3 & %&] (list %1 %3 %& {:value %1}))"
+        );
+    }
+
+    #[test]
+    fn qualified_keywords_and_numeric_forms() {
+        assert_eq!(
+            read1(":algo/name").node,
+            Form::Keyword(Name::qualified("algo", "name"))
+        );
+        assert_eq!(read1("+12").node, Form::Int(12));
+        assert_eq!(read1("-2.5e2").node, Form::Float(-250.0));
+        assert_eq!(read1("/").node, Form::sym("/"));
+        assert_eq!(read_all(0, "12oops").unwrap_err().items[0].code, "E0022");
     }
 }

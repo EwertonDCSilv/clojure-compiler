@@ -33,22 +33,49 @@ pub enum Ast {
     FnRef(String),
     /// Cria uma closure: função-lambda + valores capturados (avaliados no contexto
     /// que contém o `fn`).
-    MakeFn { lambda: String, arity: usize, captures: Vec<Ast> },
+    MakeFn {
+        lambda: String,
+        arity: usize,
+        captures: Vec<Ast>,
+    },
     If(Box<Ast>, Box<Ast>, Box<Ast>),
     Do(Vec<Ast>),
-    Let { slots: Vec<(u32, Ast)>, body: Box<Ast> },
-    Loop { slots: Vec<(u32, Ast)>, body: Box<Ast> },
+    Let {
+        slots: Vec<(u32, Ast)>,
+        body: Box<Ast>,
+    },
+    Loop {
+        slots: Vec<(u32, Ast)>,
+        body: Box<Ast>,
+    },
     Recur(Vec<Ast>),
     /// Chamada direta a primitiva ou função de topo conhecida.
-    Call { callee: Callee, args: Vec<Ast> },
+    Call {
+        callee: Callee,
+        args: Vec<Ast>,
+    },
     /// Chamada indireta de um valor-função (closure).
-    CallValue { f: Box<Ast>, args: Vec<Ast> },
+    CallValue {
+        f: Box<Ast>,
+        args: Vec<Ast>,
+    },
     /// `(apply f a b ... coll)`: chama `f` com os args fixos + elementos de `coll`.
-    Apply { f: Box<Ast>, fixed: Vec<Ast>, coll: Box<Ast> },
+    Apply {
+        f: Box<Ast>,
+        fixed: Vec<Ast>,
+        coll: Box<Ast>,
+    },
     /// Constrói um record: nome do tipo + campos (nome → valor).
-    MakeRecord { type_name: String, fields: Vec<(String, Ast)> },
+    MakeRecord {
+        type_name: String,
+        fields: Vec<(String, Ast)>,
+    },
     /// Registra uma impl de protocolo em runtime: `(method_id, key) → impl`.
-    RegisterMethod { method_id: i64, key: Box<Ast>, impl_fn: Box<Ast> },
+    RegisterMethod {
+        method_id: i64,
+        key: Box<Ast>,
+        impl_fn: Box<Ast>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -59,13 +86,41 @@ pub enum Callee {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Prim {
-    Add, Sub, Mul, Quot, Mod, Inc, Dec,
-    Eq, Lt, Le, Gt, Ge,
-    Not, NilP, EmptyP,
-    Cons, First, Rest, Count, List,
-    Str, Println, Print,
+    Add,
+    Sub,
+    Mul,
+    Quot,
+    Mod,
+    Inc,
+    Dec,
+    Eq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Not,
+    NilP,
+    EmptyP,
+    Cons,
+    First,
+    Rest,
+    Count,
+    List,
+    Str,
+    Println,
+    Print,
     // coleções
-    Get, Nth, Assoc, Dissoc, Contains, Keys, Vals, Conj, Vector, HashMap, HashSet,
+    Get,
+    Nth,
+    Assoc,
+    Dissoc,
+    Contains,
+    Keys,
+    Vals,
+    Conj,
+    Vector,
+    HashMap,
+    HashSet,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -121,7 +176,13 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut next_mid: i64 = 1;
     for f in forms {
         if let Some((name, decls)) = match_defn(f) {
-            sigs.insert(name, decls.iter().map(|(p, r, _)| (p.len(), r.is_some())).collect());
+            sigs.insert(
+                name,
+                decls
+                    .iter()
+                    .map(|(p, r, _)| (p.len(), r.is_some()))
+                    .collect(),
+            );
         } else if let Some((name, fields)) = match_defrecord(f) {
             records.insert(name.clone());
             sigs.insert(format!("->{name}"), vec![(fields.len(), false)]);
@@ -134,7 +195,14 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         }
     }
 
-    let mut an = Analyzer { sigs: &sigs, protos: &protos, records: &records, frames: Vec::new(), functions: Vec::new(), lam: 0 };
+    let mut an = Analyzer {
+        sigs: &sigs,
+        protos: &protos,
+        records: &records,
+        frames: Vec::new(),
+        functions: Vec::new(),
+        lam: 0,
+    };
     let mut main_body = Vec::new();
 
     // Frame do "main" (topo). Fica na base; frames de defn entram/saem acima.
@@ -159,11 +227,19 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
             // Gera o construtor ->Name que monta o record.
             let make = Ast::MakeRecord {
                 type_name: rname.clone(),
-                fields: fields.iter().enumerate().map(|(i, fld)| (fld.clone(), Ast::Local(i as u32))).collect(),
+                fields: fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, fld)| (fld.clone(), Ast::Local(i as u32)))
+                    .collect(),
             };
             an.functions.push(Function {
                 name: format!("->{rname}"),
-                methods: vec![FnMethod { params: fields.clone(), rest: None, body: make }],
+                methods: vec![FnMethod {
+                    params: fields.clone(),
+                    rest: None,
+                    body: make,
+                }],
                 local_count: fields.len() as u32,
                 is_lambda: false,
                 dispatch: None,
@@ -183,11 +259,17 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         } else if let Some((typename, impls)) = match_extend_type(f) {
             for (mname, params, body_forms) in impls {
                 let Some(&(mid, _)) = an.protos.get(&mname) else {
-                    diags.push(unsupported(format!("método de protocolo desconhecido: {mname}"), f.span));
+                    diags.push(unsupported(
+                        format!("método de protocolo desconhecido: {mname}"),
+                        f.span,
+                    ));
                     continue;
                 };
                 let Some(key) = key_for(&typename, an.records) else {
-                    diags.push(unsupported(format!("tipo desconhecido em extend-type: {typename}"), f.span));
+                    diags.push(unsupported(
+                        format!("tipo desconhecido em extend-type: {typename}"),
+                        f.span,
+                    ));
                     continue;
                 };
                 let decls = vec![(params, None, body_forms)];
@@ -203,7 +285,11 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                             is_lambda: true,
                             dispatch: None,
                         });
-                        let make = Ast::MakeFn { lambda: lname, arity, captures: caps };
+                        let make = Ast::MakeFn {
+                            lambda: lname,
+                            arity,
+                            captures: caps,
+                        };
                         main_body.push(Ast::RegisterMethod {
                             method_id: mid,
                             key: Box::new(key),
@@ -242,9 +328,13 @@ type MethodDecl = (Vec<String>, Option<String>, Vec<SForm>);
 /// Reconhece `(defn nome [params] body...)` ou multi-aridade
 /// `(defn nome ([a] ...) ([a b] ...))`. Devolve o nome e as aridades.
 fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
-    let Form::List(items) = f.node.strip_meta() else { return None };
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
     let head = items.first()?;
-    let Form::Symbol(n) = head.node.strip_meta() else { return None };
+    let Form::Symbol(n) = head.node.strip_meta() else {
+        return None;
+    };
     if n.ns.is_some() || (n.name != "defn" && n.name != "defn-") {
         return None;
     }
@@ -264,9 +354,13 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
 /// Reconhece `(defrecord Nome [campos...])`. Impls inline de protocolo ainda não
 /// são suportadas (viram erro no analyzer, não silêncio).
 fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
-    let Form::List(items) = f.node.strip_meta() else { return None };
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
     let head = items.first()?;
-    let Form::Symbol(n) = head.node.strip_meta() else { return None };
+    let Form::Symbol(n) = head.node.strip_meta() else {
+        return None;
+    };
     if n.ns.is_some() || n.name != "defrecord" {
         return None;
     }
@@ -283,8 +377,12 @@ fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
 
 /// `(defprotocol Nome (m1 [args]) (m2 [args]))` → nome + (método, aridade).
 fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
-    let Form::List(items) = f.node.strip_meta() else { return None };
-    let Form::Symbol(n) = items.first()?.node.strip_meta() else { return None };
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else {
+        return None;
+    };
     if n.ns.is_some() || n.name != "defprotocol" {
         return None;
     }
@@ -295,9 +393,10 @@ fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
     let mut methods = Vec::new();
     for m in &items[2..] {
         if let Form::List(mi) = m.node.strip_meta() {
-            if let (Some(Form::Symbol(mn)), Some(Form::Vector(ps))) =
-                (mi.first().map(|x| x.node.strip_meta()), mi.get(1).map(|x| x.node.strip_meta()))
-            {
+            if let (Some(Form::Symbol(mn)), Some(Form::Vector(ps))) = (
+                mi.first().map(|x| x.node.strip_meta()),
+                mi.get(1).map(|x| x.node.strip_meta()),
+            ) {
                 methods.push((mn.name.clone(), ps.len()));
             }
         }
@@ -310,8 +409,12 @@ fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
 /// Nomes de protocolo intercalados são ignorados (dispatch é por nome de método).
 #[allow(clippy::type_complexity)]
 fn match_extend_type(f: &SForm) -> Option<(String, Vec<(String, Vec<String>, Vec<SForm>)>)> {
-    let Form::List(items) = f.node.strip_meta() else { return None };
-    let Form::Symbol(n) = items.first()?.node.strip_meta() else { return None };
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else {
+        return None;
+    };
     if n.ns.is_some() || n.name != "extend-type" {
         return None;
     }
@@ -367,7 +470,9 @@ fn parse_methods(forms: &[SForm]) -> Option<Vec<MethodDecl>> {
         Some(Form::List(_)) => {
             let mut out = Vec::new();
             for m in forms {
-                let Form::List(items) = m.node.strip_meta() else { return None };
+                let Form::List(items) = m.node.strip_meta() else {
+                    return None;
+                };
                 let (params, rest) = parse_params(items.first()?)?;
                 out.push((params, rest, items[1..].to_vec()));
             }
@@ -379,7 +484,9 @@ fn parse_methods(forms: &[SForm]) -> Option<Vec<MethodDecl>> {
 
 /// Vetor de parâmetros → (fixos, rest opcional após `&`).
 fn parse_params(f: &SForm) -> Option<(Vec<String>, Option<String>)> {
-    let Form::Vector(ps) = f.node.strip_meta() else { return None };
+    let Form::Vector(ps) = f.node.strip_meta() else {
+        return None;
+    };
     let mut out = Vec::new();
     let mut it = ps.iter();
     while let Some(p) = it.next() {
@@ -387,7 +494,9 @@ fn parse_params(f: &SForm) -> Option<(Vec<String>, Option<String>)> {
             Form::Symbol(pn) if pn.ns.is_none() && pn.name == "&" => {
                 let r = it.next()?;
                 match r.node.strip_meta() {
-                    Form::Symbol(rn) if rn.ns.is_none() => return Some((out, Some(rn.name.clone()))),
+                    Form::Symbol(rn) if rn.ns.is_none() => {
+                        return Some((out, Some(rn.name.clone())))
+                    }
                     _ => return None,
                 }
             }
@@ -434,7 +543,9 @@ struct Analyzer<'a> {
 
 /// Alguma aridade de `arities` aceita `n` argumentos?
 fn arity_accepts(arities: &[(usize, bool)], n: usize) -> bool {
-    arities.iter().any(|&(fixed, variadic)| if variadic { n >= fixed } else { n == fixed })
+    arities
+        .iter()
+        .any(|&(fixed, variadic)| if variadic { n >= fixed } else { n == fixed })
 }
 
 impl<'a> Analyzer<'a> {
@@ -500,21 +611,33 @@ impl<'a> Analyzer<'a> {
             Form::Bool(b) => Ok(Ast::Bool(*b)),
             Form::Int(n) => Ok(Ast::Int(*n)),
             Form::Str(s) => Ok(Ast::Str(s.clone())),
-            Form::Float(_) => Err(unsupported("ponto flutuante ainda não é compilável (slice inteiro)", f.span)),
+            Form::Float(_) => Err(unsupported(
+                "ponto flutuante ainda não é compilável (slice inteiro)",
+                f.span,
+            )),
             Form::Char(_) => Err(unsupported("char ainda não é compilável", f.span)),
             Form::Keyword(n) => {
                 if n.ns.is_some() {
-                    return Err(unsupported("keyword qualificada ainda não é compilável", f.span));
+                    return Err(unsupported(
+                        "keyword qualificada ainda não é compilável",
+                        f.span,
+                    ));
                 }
                 Ok(Ast::Keyword(n.name.clone()))
             }
             Form::Symbol(n) => self.analyze_symbol_value(&n.ns, &n.name, f.span),
-            Form::Vector(items) => {
-                Ok(Ast::VecLit(items.iter().map(|it| self.analyze(it, false)).collect::<Result<_, _>>()?))
-            }
-            Form::Set(items) => {
-                Ok(Ast::SetLit(items.iter().map(|it| self.analyze(it, false)).collect::<Result<_, _>>()?))
-            }
+            Form::Vector(items) => Ok(Ast::VecLit(
+                items
+                    .iter()
+                    .map(|it| self.analyze(it, false))
+                    .collect::<Result<_, _>>()?,
+            )),
+            Form::Set(items) => Ok(Ast::SetLit(
+                items
+                    .iter()
+                    .map(|it| self.analyze(it, false))
+                    .collect::<Result<_, _>>()?,
+            )),
             Form::Map(pairs) => {
                 let mut out = Vec::with_capacity(pairs.len());
                 for (k, v) in pairs {
@@ -528,9 +651,17 @@ impl<'a> Analyzer<'a> {
     }
 
     /// Símbolo em posição de valor: local/captura, ou função de topo (FnRef).
-    fn analyze_symbol_value(&mut self, ns: &Option<String>, name: &str, span: Span) -> Result<Ast, Diagnostic> {
+    fn analyze_symbol_value(
+        &mut self,
+        ns: &Option<String>,
+        name: &str,
+        span: Span,
+    ) -> Result<Ast, Diagnostic> {
         if ns.is_some() {
-            return Err(unsupported(format!("símbolo qualificado {name} fora do slice"), span));
+            return Err(unsupported(
+                format!("símbolo qualificado {name} fora do slice"),
+                span,
+            ));
         }
         if let Some(ast) = self.resolve(name) {
             return Ok(ast);
@@ -543,26 +674,41 @@ impl<'a> Analyzer<'a> {
             if let Some(arity) = prim_value_arity(prim) {
                 let params: Vec<String> = (0..arity).map(|i| format!("__p{i}")).collect();
                 let call_args = (0..arity).map(|i| Ast::Local(i as u32)).collect();
-                let body = Ast::Call { callee: Callee::Prim(prim), args: call_args };
+                let body = Ast::Call {
+                    callee: Callee::Prim(prim),
+                    args: call_args,
+                };
                 let lname = format!("__prim_{}", self.lam);
                 self.lam += 1;
                 self.functions.push(Function {
                     name: lname.clone(),
-                    methods: vec![FnMethod { params, rest: None, body }],
+                    methods: vec![FnMethod {
+                        params,
+                        rest: None,
+                        body,
+                    }],
                     local_count: arity as u32,
                     is_lambda: true,
                     dispatch: None,
                 });
-                return Ok(Ast::MakeFn { lambda: lname, arity, captures: vec![] });
+                return Ok(Ast::MakeFn {
+                    lambda: lname,
+                    arity,
+                    captures: vec![],
+                });
             }
             return Err(unsupported(
                 format!("primitiva variádica `{name}` como valor ainda não é compilável; envolva em (fn [& xs] ...)"),
                 span,
             ));
         }
-        Err(Diagnostic::error("E0101", format!("símbolo não resolvido: {name}"))
-            .with_span(span)
-            .with_help("locais, capturas, funções de topo (como valor) e primitivas (em chamada)"))
+        Err(
+            Diagnostic::error("E0101", format!("símbolo não resolvido: {name}"))
+                .with_span(span)
+                .with_help(
+                    "locais, capturas, funções de topo (como valor) e primitivas (em chamada)",
+                ),
+        )
     }
 
     fn analyze_list(&mut self, items: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
@@ -585,15 +731,25 @@ impl<'a> Analyzer<'a> {
         let Form::Symbol(op) = head.node.strip_meta() else {
             let f = self.analyze(head, false)?;
             let a = self.analyze_seq(args)?;
-            return Ok(Ast::CallValue { f: Box::new(f), args: a });
+            return Ok(Ast::CallValue {
+                f: Box::new(f),
+                args: a,
+            });
         };
         if op.ns.is_some() {
-            return Err(unsupported(format!("operador qualificado {op} fora do slice"), head.span));
+            return Err(unsupported(
+                format!("operador qualificado {op} fora do slice"),
+                head.span,
+            ));
         }
         match op.name.as_str() {
             "if" => {
                 if args.len() < 2 || args.len() > 3 {
-                    return Err(Diagnostic::error("E0102", "if requer test, then e (opcional) else").with_span(span));
+                    return Err(Diagnostic::error(
+                        "E0102",
+                        "if requer test, then e (opcional) else",
+                    )
+                    .with_span(span));
                 }
                 let test = self.analyze(&args[0], false)?;
                 let then = self.analyze(&args[1], tail)?;
@@ -615,19 +771,32 @@ impl<'a> Analyzer<'a> {
                 let f = self.analyze(&args[0], false)?;
                 let coll = self.analyze(&args[args.len() - 1], false)?;
                 let fixed = self.analyze_seq(&args[1..args.len() - 1])?;
-                Ok(Ast::Apply { f: Box::new(f), fixed, coll: Box::new(coll) })
+                Ok(Ast::Apply {
+                    f: Box::new(f),
+                    fixed,
+                    coll: Box::new(coll),
+                })
             }
             "quote" => Err(unsupported("quote ainda não é compilável", span)),
-            "def" | "defn" | "defn-" => Err(unsupported("def/defn só é permitido no nível de topo", span)),
+            "def" | "defn" | "defn-" => Err(unsupported(
+                "def/defn só é permitido no nível de topo",
+                span,
+            )),
             name => {
                 if let Some(prim) = prim_of(name) {
                     check_prim_arity(prim, args.len(), span)?;
                     let a = self.analyze_seq(args)?;
-                    Ok(Ast::Call { callee: Callee::Prim(prim), args: a })
+                    Ok(Ast::Call {
+                        callee: Callee::Prim(prim),
+                        args: a,
+                    })
                 } else if let Some(ast) = self.resolve(name) {
                     // Local/captura em posição de operador → chamada indireta.
                     let a = self.analyze_seq(args)?;
-                    Ok(Ast::CallValue { f: Box::new(ast), args: a })
+                    Ok(Ast::CallValue {
+                        f: Box::new(ast),
+                        args: a,
+                    })
                 } else if let Some(arities) = self.sigs.get(name) {
                     if !arity_accepts(arities, args.len()) {
                         return Err(Diagnostic::error(
@@ -637,11 +806,16 @@ impl<'a> Analyzer<'a> {
                         .with_span(span));
                     }
                     let a = self.analyze_seq(args)?;
-                    Ok(Ast::Call { callee: Callee::Fn(name.to_string()), args: a })
+                    Ok(Ast::Call {
+                        callee: Callee::Fn(name.to_string()),
+                        args: a,
+                    })
                 } else {
-                    Err(Diagnostic::error("E0101", format!("função não resolvida: {name}"))
-                        .with_span(span)
-                        .with_help("defina-a com defn, use uma primitiva, um local ou um fn"))
+                    Err(
+                        Diagnostic::error("E0101", format!("função não resolvida: {name}"))
+                            .with_span(span)
+                            .with_help("defina-a com defn, use uma primitiva, um local ou um fn"),
+                    )
                 }
             }
         }
@@ -654,7 +828,11 @@ impl<'a> Analyzer<'a> {
     fn analyze_let(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         let bindings = match args.first().map(|f| f.node.strip_meta()) {
             Some(Form::Vector(b)) => b,
-            _ => return Err(Diagnostic::error("E0104", "let requer vetor de bindings").with_span(span)),
+            _ => {
+                return Err(
+                    Diagnostic::error("E0104", "let requer vetor de bindings").with_span(span)
+                )
+            }
         };
         if bindings.len() % 2 != 0 {
             return Err(Diagnostic::error("E0104", "let: bindings em pares").with_span(span));
@@ -665,7 +843,12 @@ impl<'a> Analyzer<'a> {
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(unsupported("let: binding deve ser símbolo simples (sem destructuring)", pair[0].span)),
+                _ => {
+                    return Err(unsupported(
+                        "let: binding deve ser símbolo simples (sem destructuring)",
+                        pair[0].span,
+                    ))
+                }
             };
             let val = self.analyze(&pair[1], false)?;
             let slot = self.push_local(name);
@@ -675,13 +858,20 @@ impl<'a> Analyzer<'a> {
         let fr = self.top();
         fr.locals.truncate(saved);
         fr.next_slot = saved_next;
-        Ok(Ast::Let { slots, body: Box::new(body) })
+        Ok(Ast::Let {
+            slots,
+            body: Box::new(body),
+        })
     }
 
     fn analyze_loop(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
         let bindings = match args.first().map(|f| f.node.strip_meta()) {
             Some(Form::Vector(b)) => b,
-            _ => return Err(Diagnostic::error("E0106", "loop requer vetor de bindings").with_span(span)),
+            _ => {
+                return Err(
+                    Diagnostic::error("E0106", "loop requer vetor de bindings").with_span(span)
+                )
+            }
         };
         if bindings.len() % 2 != 0 {
             return Err(Diagnostic::error("E0106", "loop: bindings em pares").with_span(span));
@@ -692,7 +882,12 @@ impl<'a> Analyzer<'a> {
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(unsupported("loop: binding deve ser símbolo simples", pair[0].span)),
+                _ => {
+                    return Err(unsupported(
+                        "loop: binding deve ser símbolo simples",
+                        pair[0].span,
+                    ))
+                }
             };
             let val = self.analyze(&pair[1], false)?;
             let slot = self.push_local(name);
@@ -708,7 +903,10 @@ impl<'a> Analyzer<'a> {
         let fr = self.top();
         fr.locals.truncate(saved);
         fr.next_slot = saved_next;
-        Ok(Ast::Loop { slots, body: Box::new(body) })
+        Ok(Ast::Loop {
+            slots,
+            body: Box::new(body),
+        })
     }
 
     fn analyze_recur(&mut self, args: &[SForm], span: Span, tail: bool) -> Result<Ast, Diagnostic> {
@@ -716,9 +914,11 @@ impl<'a> Analyzer<'a> {
             return Err(Diagnostic::error("E0107", "recur fora de loop/fn").with_span(span));
         };
         if !tail {
-            return Err(Diagnostic::error("E0108", "recur não está em posição de cauda")
-                .with_span(span)
-                .with_help("recur só pode ser a última expressão de uma fn ou loop"));
+            return Err(
+                Diagnostic::error("E0108", "recur não está em posição de cauda")
+                    .with_span(span)
+                    .with_help("recur só pode ser a última expressão de uma fn ou loop"),
+            );
         }
         if args.len() != arity {
             return Err(Diagnostic::error(
@@ -746,7 +946,10 @@ impl<'a> Analyzer<'a> {
             if rest.is_some() {
                 if variadic_seen {
                     self.frames.pop();
-                    return Err(unsupported("fn: só uma aridade variádica é permitida", span));
+                    return Err(unsupported(
+                        "fn: só uma aridade variádica é permitida",
+                        span,
+                    ));
                 }
                 variadic_seen = true;
             }
@@ -764,7 +967,11 @@ impl<'a> Analyzer<'a> {
             let body = self.analyze_body(body_forms, span, true);
             self.top().recur_arity.pop();
             match body {
-                Ok(body) => methods.push(FnMethod { params: params.clone(), rest: rest.clone(), body }),
+                Ok(body) => methods.push(FnMethod {
+                    params: params.clone(),
+                    rest: rest.clone(),
+                    body,
+                }),
                 Err(d) => {
                     self.frames.pop();
                     return Err(d);
@@ -779,34 +986,74 @@ impl<'a> Analyzer<'a> {
     /// `(fn ([a] ...) ([a b] ...))` → cria uma lambda + `MakeFn` com as capturas.
     fn analyze_fn(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let mut idx = 0;
-        if matches!(args.first().map(|f| f.node.strip_meta()), Some(Form::Symbol(_))) {
+        if matches!(
+            args.first().map(|f| f.node.strip_meta()),
+            Some(Form::Symbol(_))
+        ) {
             idx = 1; // nome opcional (auto-referência não suportada; ignorado)
         }
-        let decls = parse_methods(&args[idx..])
-            .ok_or_else(|| unsupported("fn: forma inválida (esperava [params] corpo ou aridades)", span))?;
+        let decls = parse_methods(&args[idx..]).ok_or_else(|| {
+            unsupported(
+                "fn: forma inválida (esperava [params] corpo ou aridades)",
+                span,
+            )
+        })?;
         let (methods, lc, captures) = self.analyze_methods(&decls, true, span)?;
         let name = format!("__lambda_{}", self.lam);
         self.lam += 1;
         let arity = methods[0].params.len();
-        self.functions.push(Function { name: name.clone(), methods, local_count: lc, is_lambda: true, dispatch: None });
-        Ok(Ast::MakeFn { lambda: name, arity, captures })
+        self.functions.push(Function {
+            name: name.clone(),
+            methods,
+            local_count: lc,
+            is_lambda: true,
+            dispatch: None,
+        });
+        Ok(Ast::MakeFn {
+            lambda: name,
+            arity,
+            captures,
+        })
     }
 }
 
 fn prim_of(name: &str) -> Option<Prim> {
     Some(match name {
-        "+" => Prim::Add, "-" => Prim::Sub, "*" => Prim::Mul,
-        "quot" => Prim::Quot, "mod" => Prim::Mod, "inc" => Prim::Inc, "dec" => Prim::Dec,
-        "=" => Prim::Eq, "<" => Prim::Lt, "<=" => Prim::Le, ">" => Prim::Gt, ">=" => Prim::Ge,
-        "not" => Prim::Not, "nil?" => Prim::NilP, "empty?" => Prim::EmptyP,
-        "cons" => Prim::Cons, "first" => Prim::First, "rest" => Prim::Rest,
-        "count" => Prim::Count, "list" => Prim::List, "str" => Prim::Str,
-        "println" => Prim::Println, "print" => Prim::Print,
-        "get" => Prim::Get, "nth" => Prim::Nth, "assoc" => Prim::Assoc,
-        "dissoc" => Prim::Dissoc, "contains?" => Prim::Contains,
-        "keys" => Prim::Keys, "vals" => Prim::Vals, "conj" => Prim::Conj,
-        "vector" => Prim::Vector, "hash-map" => Prim::HashMap,
-        "hash-set" => Prim::HashSet, "set" => Prim::HashSet,
+        "+" => Prim::Add,
+        "-" => Prim::Sub,
+        "*" => Prim::Mul,
+        "quot" => Prim::Quot,
+        "mod" => Prim::Mod,
+        "inc" => Prim::Inc,
+        "dec" => Prim::Dec,
+        "=" => Prim::Eq,
+        "<" => Prim::Lt,
+        "<=" => Prim::Le,
+        ">" => Prim::Gt,
+        ">=" => Prim::Ge,
+        "not" => Prim::Not,
+        "nil?" => Prim::NilP,
+        "empty?" => Prim::EmptyP,
+        "cons" => Prim::Cons,
+        "first" => Prim::First,
+        "rest" => Prim::Rest,
+        "count" => Prim::Count,
+        "list" => Prim::List,
+        "str" => Prim::Str,
+        "println" => Prim::Println,
+        "print" => Prim::Print,
+        "get" => Prim::Get,
+        "nth" => Prim::Nth,
+        "assoc" => Prim::Assoc,
+        "dissoc" => Prim::Dissoc,
+        "contains?" => Prim::Contains,
+        "keys" => Prim::Keys,
+        "vals" => Prim::Vals,
+        "conj" => Prim::Conj,
+        "vector" => Prim::Vector,
+        "hash-map" => Prim::HashMap,
+        "hash-set" => Prim::HashSet,
+        "set" => Prim::HashSet,
         _ => return None,
     })
 }
@@ -815,33 +1062,77 @@ fn prim_of(name: &str) -> Option<Prim> {
 /// variádicas (str/list/vector/hash-map/hash-set/println/print).
 fn prim_value_arity(prim: Prim) -> Option<usize> {
     Some(match prim {
-        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP | Prim::First
-        | Prim::Rest | Prim::Count | Prim::Keys | Prim::Vals => 1,
-        Prim::Add | Prim::Sub | Prim::Mul | Prim::Quot | Prim::Mod | Prim::Eq | Prim::Lt
-        | Prim::Le | Prim::Gt | Prim::Ge | Prim::Cons | Prim::Get | Prim::Nth
-        | Prim::Dissoc | Prim::Contains | Prim::Conj => 2,
+        Prim::Inc
+        | Prim::Dec
+        | Prim::Not
+        | Prim::NilP
+        | Prim::EmptyP
+        | Prim::First
+        | Prim::Rest
+        | Prim::Count
+        | Prim::Keys
+        | Prim::Vals => 1,
+        Prim::Add
+        | Prim::Sub
+        | Prim::Mul
+        | Prim::Quot
+        | Prim::Mod
+        | Prim::Eq
+        | Prim::Lt
+        | Prim::Le
+        | Prim::Gt
+        | Prim::Ge
+        | Prim::Cons
+        | Prim::Get
+        | Prim::Nth
+        | Prim::Dissoc
+        | Prim::Contains
+        | Prim::Conj => 2,
         Prim::Assoc => 3,
-        Prim::Str | Prim::List | Prim::Vector | Prim::HashMap | Prim::HashSet
-        | Prim::Println | Prim::Print => return None,
+        Prim::Str
+        | Prim::List
+        | Prim::Vector
+        | Prim::HashMap
+        | Prim::HashSet
+        | Prim::Println
+        | Prim::Print => return None,
     })
 }
 
 fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> {
     let ok = match prim {
         Prim::Sub | Prim::Add | Prim::Mul => n >= 1,
-        Prim::Quot | Prim::Mod | Prim::Cons | Prim::Get | Prim::Nth
-        | Prim::Dissoc | Prim::Contains | Prim::Conj => n == 2,
+        Prim::Quot
+        | Prim::Mod
+        | Prim::Cons
+        | Prim::Get
+        | Prim::Nth
+        | Prim::Dissoc
+        | Prim::Contains
+        | Prim::Conj => n == 2,
         Prim::Assoc => n == 3,
-        Prim::Inc | Prim::Dec | Prim::Not | Prim::NilP | Prim::EmptyP
-        | Prim::First | Prim::Rest | Prim::Count | Prim::Keys | Prim::Vals => n == 1,
+        Prim::Inc
+        | Prim::Dec
+        | Prim::Not
+        | Prim::NilP
+        | Prim::EmptyP
+        | Prim::First
+        | Prim::Rest
+        | Prim::Count
+        | Prim::Keys
+        | Prim::Vals => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => n == 2,
-        Prim::HashMap => n % 2 == 0,
+        Prim::HashMap => n & 1 == 0,
         Prim::List | Prim::Str | Prim::Println | Prim::Print | Prim::Vector | Prim::HashSet => true,
     };
     if ok {
         Ok(())
     } else {
-        Err(Diagnostic::error("E0105", format!("aridade inválida para primitiva ({n} args)")).with_span(span))
+        Err(Diagnostic::error(
+            "E0105",
+            format!("aridade inválida para primitiva ({n} args)"),
+        )
+        .with_span(span))
     }
 }
 
@@ -878,7 +1169,16 @@ mod tests {
         let lam = p.functions.iter().find(|f| f.is_lambda).unwrap();
         assert_eq!(lam.methods[0].params, vec!["x"]);
         // O MakeFn no corpo de adder deve capturar 1 valor.
-        if let Ast::MakeFn { captures, arity, .. } = &p.functions.iter().find(|f| f.name == "adder").unwrap().methods[0].body {
+        if let Ast::MakeFn {
+            captures, arity, ..
+        } = &p
+            .functions
+            .iter()
+            .find(|f| f.name == "adder")
+            .unwrap()
+            .methods[0]
+            .body
+        {
             assert_eq!(*arity, 1);
             assert_eq!(captures.len(), 1);
             assert!(matches!(captures[0], Ast::Local(_)));

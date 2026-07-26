@@ -67,21 +67,20 @@ struct Runtime {
     print_space: FuncId, // ()->void
     print_newline: FuncId,
     // GC / shadow-stack de roots
-    gc_enter: FuncId,    // (i64)->i64  reserva slots; devolve base
-    gc_leave: FuncId,    // (i64)->void restaura sp=base
+    gc_enter: FuncId, // (i64)->i64  reserva slots; devolve base
+    gc_leave: FuncId, // (i64)->void restaura sp=base
     // ADR-0006 Fase 3: push/popn/set viram stores diretos nestes globais.
     gc_stack_data: DataId, // Value gc_stack[]
     gc_sp_data: DataId,    // int64_t gc_sp
     // Funções de primeira classe
-    make_fn: FuncId,     // (code,arity,nfree)->fn
-    set_free: FuncId,    // (fn,i,v)->void
-    fn_free: FuncId,     // (fn,i)->v
-    fn_code: FuncId,     // (fn)->code
-    check_fn: FuncId,    // (fn)->void  (é função?)
+    make_fn: FuncId,  // (code,arity,nfree)->fn
+    set_free: FuncId, // (fn,i,v)->void
+    fn_free: FuncId,  // (fn,i)->v
+    fn_code: FuncId,  // (fn)->code
+    check_fn: FuncId, // (fn)->void  (é função?)
     // convenção de chamada (self, argc, argv)
-    argv: FuncId,        // (argc)->ptr (topo do shadow-stack)
-    check_arity: FuncId, // (argc,expected)->void
-    check_arity_min: FuncId, // (argc,min)->void
+    argv: FuncId,         // (argc)->ptr (topo do shadow-stack)
+    check_arity: FuncId,  // (argc,expected)->void
     collect_rest: FuncId, // (argc,argv,nfixed)->list
     spread_args: FuncId,  // (fixed_argc,coll)->argc_total
     // coleções
@@ -144,9 +143,15 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
             .map_err(|e| single(format!("declare_data: {e}")))?;
         let mut d = DataDescription::new();
         // Bytes crus (o comprimento é passado à parte; sem NUL).
-        let bytes = if s.is_empty() { vec![0u8] } else { s.clone().into_bytes() };
+        let bytes = if s.is_empty() {
+            vec![0u8]
+        } else {
+            s.clone().into_bytes()
+        };
         d.define(bytes.into_boxed_slice());
-        module.define_data(id, &d).map_err(|e| single(format!("define_data: {e}")))?;
+        module
+            .define_data(id, &d)
+            .map_err(|e| single(format!("define_data: {e}")))?;
         str_data.insert(s.clone(), (id, s.len()));
     }
 
@@ -177,10 +182,22 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
     for f in &program.functions {
         let (id, _) = fn_ids[&f.name];
         let mut ctx = Context::new();
-        ctx.func.signature = module.declarations().get_function_decl(id).signature.clone();
+        ctx.func.signature = module
+            .declarations()
+            .get_function_decl(id)
+            .signature
+            .clone();
         let mut fbctx = FunctionBuilderContext::new();
         let res = {
-            let mut fg = FnGen::new(&mut module, &mut ctx.func, &mut fbctx, ptr, &runtime, &fn_ids, &str_data);
+            let fg = FnGen::new(
+                &mut module,
+                &mut ctx.func,
+                &mut fbctx,
+                ptr,
+                &runtime,
+                &fn_ids,
+                &str_data,
+            );
             fg.build_entry(&f.methods, f.local_count, f.dispatch)
         };
         match res {
@@ -203,7 +220,15 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         ctx.func.signature = sig;
         let mut fbctx = FunctionBuilderContext::new();
         let res = {
-            let mut fg = FnGen::new(&mut module, &mut ctx.func, &mut fbctx, ptr, &runtime, &fn_ids, &str_data);
+            let fg = FnGen::new(
+                &mut module,
+                &mut ctx.func,
+                &mut fbctx,
+                ptr,
+                &runtime,
+                &fn_ids,
+                &str_data,
+            );
             fg.build_main(&program.main_body, program.main_local_count)
         };
         match res {
@@ -220,7 +245,9 @@ pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
         return Err(diags);
     }
     let product = module.finish();
-    product.emit().map_err(|e| single(format!("emit do objeto: {e}")))
+    product
+        .emit()
+        .map_err(|e| single(format!("emit do objeto: {e}")))
 }
 
 fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
@@ -277,16 +304,22 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
     str_from_sig.params.push(AbiParam::new(ptr));
     str_from_sig.params.push(AbiParam::new(types::I64));
     str_from_sig.returns.push(AbiParam::new(types::I64));
-    let str_from = m.declare_function("cljn_str_from", Linkage::Import, &str_from_sig).unwrap();
+    let str_from = m
+        .declare_function("cljn_str_from", Linkage::Import, &str_from_sig)
+        .unwrap();
 
     let mut empty_sig = m.make_signature();
     empty_sig.returns.push(AbiParam::new(types::I64));
-    let empty = m.declare_function("cljn_empty", Linkage::Import, &empty_sig).unwrap();
+    let empty = m
+        .declare_function("cljn_empty", Linkage::Import, &empty_sig)
+        .unwrap();
 
     let mut truthy_sig = m.make_signature();
     truthy_sig.params.push(AbiParam::new(types::I64));
     truthy_sig.returns.push(AbiParam::new(types::I32));
-    let truthy = m.declare_function("cljn_truthy", Linkage::Import, &truthy_sig).unwrap();
+    let truthy = m
+        .declare_function("cljn_truthy", Linkage::Import, &truthy_sig)
+        .unwrap();
 
     Runtime {
         add: bin(m, "cljn_add"),
@@ -318,8 +351,12 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         print_newline: voidfn(m, "cljn_print_newline", false),
         gc_enter: una(m, "cljn_gc_enter"),
         gc_leave: voidfn(m, "cljn_gc_leave", true),
-        gc_stack_data: m.declare_data("gc_stack", Linkage::Import, true, false).unwrap(),
-        gc_sp_data: m.declare_data("gc_sp", Linkage::Import, true, false).unwrap(),
+        gc_stack_data: m
+            .declare_data("gc_stack", Linkage::Import, true, false)
+            .unwrap(),
+        gc_sp_data: m
+            .declare_data("gc_sp", Linkage::Import, true, false)
+            .unwrap(),
         make_fn: ternary(m, "cljn_make_fn"),
         set_free: ternary_void(m, "cljn_fn_set_free"),
         fn_free: bin(m, "cljn_fn_free"),
@@ -327,7 +364,6 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         check_fn: voidfn(m, "cljn_check_fn", true),
         argv: una(m, "cljn_argv"),
         check_arity: bin_void(m, "cljn_check_arity"),
-        check_arity_min: bin_void(m, "cljn_check_arity_min"),
         collect_rest: ternary(m, "cljn_collect_rest"),
         spread_args: bin(m, "cljn_spread_args"),
         kw: {
@@ -340,7 +376,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         vec_empty: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
-            m.declare_function("cljn_vec_empty", Linkage::Import, &s).unwrap()
+            m.declare_function("cljn_vec_empty", Linkage::Import, &s)
+                .unwrap()
         },
         vec_conj: bin(m, "cljn_vec_conj"),
         set_alloc: una(m, "cljn_set_alloc"),
@@ -375,7 +412,6 @@ enum Flow {
 #[derive(Clone)]
 struct RecurTarget {
     header: Block,
-    vars: Vec<Variable>,
     slots: Vec<u32>,
 }
 
@@ -427,11 +463,15 @@ impl<'a> FnGen<'a> {
 
     // -- shadow-stack de roots (stores diretos, ADR-0006 Fase 3) ----------
     fn addr_gc_sp(&mut self) -> CValue {
-        let gv = self.module.declare_data_in_func(self.rt.gc_sp_data, self.builder.func);
+        let gv = self
+            .module
+            .declare_data_in_func(self.rt.gc_sp_data, self.builder.func);
         self.builder.ins().symbol_value(self.ptr, gv)
     }
     fn addr_gc_stack(&mut self) -> CValue {
-        let gv = self.module.declare_data_in_func(self.rt.gc_stack_data, self.builder.func);
+        let gv = self
+            .module
+            .declare_data_in_func(self.rt.gc_stack_data, self.builder.func);
         self.builder.ins().symbol_value(self.ptr, gv)
     }
     /// Endereço de `gc_stack[idx]`.
@@ -443,26 +483,41 @@ impl<'a> FnGen<'a> {
     /// Empurra um root: `gc_stack[gc_sp++] = v` (store direto).
     fn gc_push_val(&mut self, v: CValue) {
         let sp_addr = self.addr_gc_sp();
-        let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+        let sp = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), sp_addr, 0);
         let elem = self.slot_addr(sp);
         self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
         let sp1 = self.builder.ins().iadd_imm(sp, 1);
-        self.builder.ins().store(MemFlags::trusted(), sp1, sp_addr, 0);
+        self.builder
+            .ins()
+            .store(MemFlags::trusted(), sp1, sp_addr, 0);
     }
     fn gc_popn(&mut self, n: usize) {
         if n > 0 {
             let sp_addr = self.addr_gc_sp();
-            let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+            let sp = self
+                .builder
+                .ins()
+                .load(types::I64, MemFlags::trusted(), sp_addr, 0);
             let sp2 = self.builder.ins().iadd_imm(sp, -(n as i64));
-            self.builder.ins().store(MemFlags::trusted(), sp2, sp_addr, 0);
+            self.builder
+                .ins()
+                .store(MemFlags::trusted(), sp2, sp_addr, 0);
         }
     }
     /// Retira uma quantidade calculada em runtime.
     fn gc_popn_val(&mut self, n: CValue) {
         let sp_addr = self.addr_gc_sp();
-        let sp = self.builder.ins().load(types::I64, MemFlags::trusted(), sp_addr, 0);
+        let sp = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), sp_addr, 0);
         let sp2 = self.builder.ins().isub(sp, n);
-        self.builder.ins().store(MemFlags::trusted(), sp2, sp_addr, 0);
+        self.builder
+            .ins()
+            .store(MemFlags::trusted(), sp2, sp_addr, 0);
     }
     /// Escreve o slot de root de um local: `gc_stack[base + slot] = v`.
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
@@ -496,7 +551,12 @@ impl<'a> FnGen<'a> {
         self.call_void(self.rt.gc_leave, &[base]);
     }
 
-    fn build_entry(mut self, methods: &[FnMethod], local_count: u32, dispatch: Option<i64>) -> Result<(), Diagnostic> {
+    fn build_entry(
+        mut self,
+        methods: &[FnMethod],
+        local_count: u32,
+        dispatch: Option<i64>,
+    ) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
@@ -522,7 +582,9 @@ impl<'a> FnGen<'a> {
         for m in methods {
             let k = m.params.len();
             let cond = if m.rest.is_some() {
-                self.builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, argc_v, k as i64)
+                self.builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, argc_v, k as i64)
             } else {
                 self.builder.ins().icmp_imm(IntCC::Equal, argc_v, k as i64)
             };
@@ -549,7 +611,10 @@ impl<'a> FnGen<'a> {
 
     /// Função-despacho: `impl = lookup(mid, type_key(argv[0]))`; encaminha argc/argv.
     fn gen_dispatch(&mut self, mid: i64, argc_v: CValue, argv_v: CValue) {
-        let arg0 = self.builder.ins().load(types::I64, MemFlags::trusted(), argv_v, 0);
+        let arg0 = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), argv_v, 0);
         let key = self.call1(self.rt.type_key, arg0);
         let mid_v = self.builder.ins().iconst(types::I64, mid);
         let impl_v = self.call2(self.rt.lookup_method, mid_v, key);
@@ -573,20 +638,29 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr));
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
-        let call = self.builder.ins().call_indirect(sig_ref, code, &[impl_v, argc_v, argv_v]);
+        let call = self
+            .builder
+            .ins()
+            .call_indirect(sig_ref, code, &[impl_v, argc_v, argv_v]);
         let r = self.builder.inst_results(call)[0];
         self.builder.ins().return_(&[r]);
     }
 
     /// Vincula os parâmetros (fixos + rest) e compila o corpo de uma aridade.
     /// O bloco atual já é o "matched"; termina com return (Val) ou recur (Diverged).
-    fn gen_method_body(&mut self, m: &FnMethod, argc_v: CValue, argv_v: CValue) -> Result<(), Diagnostic> {
-        let mut param_vars = Vec::new();
+    fn gen_method_body(
+        &mut self,
+        m: &FnMethod,
+        argc_v: CValue,
+        argv_v: CValue,
+    ) -> Result<(), Diagnostic> {
         let mut param_slots = Vec::new();
         for slot in 0..m.params.len() {
-            let val = self.builder.ins().load(types::I64, MemFlags::trusted(), argv_v, (slot * 8) as i32);
+            let val =
+                self.builder
+                    .ins()
+                    .load(types::I64, MemFlags::trusted(), argv_v, (slot * 8) as i32);
             self.bind_local(slot as u32, val);
-            param_vars.push(self.vars[&(slot as u32)]);
             param_slots.push(slot as u32);
         }
         if m.rest.is_some() {
@@ -594,14 +668,16 @@ impl<'a> FnGen<'a> {
             let nfixed = self.builder.ins().iconst(types::I64, m.params.len() as i64);
             let rest_list = self.call3(self.rt.collect_rest, argc_v, argv_v, nfixed);
             self.bind_local(rest_slot, rest_list);
-            param_vars.push(self.vars[&rest_slot]);
             param_slots.push(rest_slot);
         }
 
         let header = self.builder.create_block();
         self.builder.ins().jump(header, &[]);
         self.builder.switch_to_block(header);
-        self.recur_targets.push(RecurTarget { header, vars: param_vars, slots: param_slots });
+        self.recur_targets.push(RecurTarget {
+            header,
+            slots: param_slots,
+        });
 
         let flow = self.expr(&m.body);
         self.recur_targets.pop();
@@ -679,9 +755,10 @@ impl<'a> FnGen<'a> {
     fn expr_val(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
         match self.expr(ast)? {
             Flow::Val(v) => Ok(v),
-            Flow::Diverged => {
-                Err(Diagnostic::error("E0112", "recur em posição não-cauda (bug do compilador)"))
-            }
+            Flow::Diverged => Err(Diagnostic::error(
+                "E0112",
+                "recur em posição não-cauda (bug do compilador)",
+            )),
         }
     }
 
@@ -716,10 +793,9 @@ impl<'a> FnGen<'a> {
                 Flow::Val(v)
             }
             Ast::Local(slot) => {
-                let var = *self
-                    .vars
-                    .get(slot)
-                    .ok_or_else(|| Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)")))?;
+                let var = *self.vars.get(slot).ok_or_else(|| {
+                    Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)"))
+                })?;
                 let v = self.builder.use_var(var);
                 self.gc_push_val(v);
                 Flow::Val(v)
@@ -768,7 +844,11 @@ impl<'a> FnGen<'a> {
                 self.gc_push_val(v);
                 Flow::Val(v)
             }
-            Ast::RegisterMethod { method_id, key, impl_fn } => {
+            Ast::RegisterMethod {
+                method_id,
+                key,
+                impl_fn,
+            } => {
                 let key_v = self.expr_val(key)?; // +1
                 let impl_v = self.expr_val(impl_fn)?; // +1 (MakeFn rooteado)
                 let mid_v = self.builder.ins().iconst(types::I64, *method_id);
@@ -794,7 +874,11 @@ impl<'a> FnGen<'a> {
                 self.gc_push_val(fnv);
                 Flow::Val(fnv)
             }
-            Ast::MakeFn { lambda, arity, captures } => self.gen_make_fn(lambda, *arity, captures)?,
+            Ast::MakeFn {
+                lambda,
+                arity,
+                captures,
+            } => self.gen_make_fn(lambda, *arity, captures)?,
             Ast::Keyword(name) => {
                 let (data_id, len) = self.str_data[name];
                 let gv = self.module.declare_data_in_func(data_id, self.builder.func);
@@ -881,7 +965,11 @@ impl<'a> FnGen<'a> {
     }
 
     /// Constrói um record (net-0): mapa dos campos + nome de tipo → cljn_make_record.
-    fn gen_make_record(&mut self, type_name: &str, fields: &[(String, Ast)]) -> Result<CValue, Diagnostic> {
+    fn gen_make_record(
+        &mut self,
+        type_name: &str,
+        fields: &[(String, Ast)],
+    ) -> Result<CValue, Diagnostic> {
         let pairs: Vec<(Ast, Ast)> = fields
             .iter()
             .map(|(fname, val)| (Ast::Keyword(fname.clone()), val.clone()))
@@ -896,7 +984,12 @@ impl<'a> FnGen<'a> {
     }
 
     /// Cria uma closure: avalia capturas, aloca o Fn e preenche `freev`.
-    fn gen_make_fn(&mut self, lambda: &str, arity: usize, captures: &[Ast]) -> Result<Flow, Diagnostic> {
+    fn gen_make_fn(
+        &mut self,
+        lambda: &str,
+        arity: usize,
+        captures: &[Ast],
+    ) -> Result<Flow, Diagnostic> {
         let mut cap_vals = Vec::with_capacity(captures.len());
         for c in captures {
             cap_vals.push(self.expr_val(c)?); // +1 cada (rooteados durante o alloc)
@@ -933,7 +1026,10 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr)); // argv
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
-        let call = self.builder.ins().call_indirect(sig_ref, code, &[f_val, argc_v, argv_ptr]);
+        let call = self
+            .builder
+            .ins()
+            .call_indirect(sig_ref, code, &[f_val, argc_v, argv_ptr]);
         let r = self.builder.inst_results(call)[0];
         self.gc_popn(1 + args.len()); // f + args
         Ok(r)
@@ -959,7 +1055,10 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr));
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
-        let call = self.builder.ins().call_indirect(sig_ref, code, &[f_val, total, argv_ptr]);
+        let call = self
+            .builder
+            .ins()
+            .call_indirect(sig_ref, code, &[f_val, total, argv_ptr]);
         let r = self.builder.inst_results(call)[0];
         // Limpa: f (1) + total (fixos + elementos).
         let one = self.builder.ins().iconst(types::I64, 1);
@@ -1014,19 +1113,20 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_loop(&mut self, slots: &[(u32, Ast)], body: &Ast) -> Result<Flow, Diagnostic> {
-        let mut vars = Vec::with_capacity(slots.len());
         let mut slot_ids = Vec::with_capacity(slots.len());
         for (slot, init) in slots {
             let v0 = self.expr_val(init)?; // +1 temp
             self.bind_local(*slot, v0); // escreve slot de local + var
             self.gc_popn(1); // remove temp
-            vars.push(self.vars[slot]);
             slot_ids.push(*slot);
         }
         let header = self.builder.create_block();
         self.builder.ins().jump(header, &[]);
         self.builder.switch_to_block(header);
-        self.recur_targets.push(RecurTarget { header, vars, slots: slot_ids });
+        self.recur_targets.push(RecurTarget {
+            header,
+            slots: slot_ids,
+        });
 
         let flow = self.expr(body);
         self.recur_targets.pop();
@@ -1094,8 +1194,14 @@ impl<'a> FnGen<'a> {
     }
     /// `raw` está em [FIX_MIN, FIX_MAX]?
     fn fix_in_range(&mut self, raw: CValue) -> CValue {
-        let lo = self.builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, raw, FIX_MIN);
-        let hi = self.builder.ins().icmp_imm(IntCC::SignedLessThanOrEqual, raw, FIX_MAX);
+        let lo = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::SignedGreaterThanOrEqual, raw, FIX_MIN);
+        let hi = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::SignedLessThanOrEqual, raw, FIX_MAX);
         self.builder.ins().band(lo, hi)
     }
 
@@ -1112,7 +1218,11 @@ impl<'a> FnGen<'a> {
         self.builder.seal_block(fast_b);
         let ar = self.builder.ins().sshr_imm(a, 1);
         let br = self.builder.ins().sshr_imm(b, 1);
-        let rr = if add { self.builder.ins().iadd(ar, br) } else { self.builder.ins().isub(ar, br) };
+        let rr = if add {
+            self.builder.ins().iadd(ar, br)
+        } else {
+            self.builder.ins().isub(ar, br)
+        };
         let inr = self.fix_in_range(rr);
         let ok_b = self.builder.create_block();
         self.builder.ins().brif(inr, ok_b, &[], slow_b, &[]);
@@ -1269,8 +1379,10 @@ impl<'a> FnGen<'a> {
             Prim::HashSet => self.gen_set(args),
             Prim::HashMap => {
                 // (hash-map k v k v ...) → pares
-                let pairs: Vec<(Ast, Ast)> =
-                    args.chunks_exact(2).map(|c| (c[0].clone(), c[1].clone())).collect();
+                let pairs: Vec<(Ast, Ast)> = args
+                    .chunks_exact(2)
+                    .map(|c| (c[0].clone(), c[1].clone()))
+                    .collect();
                 self.gen_map(&pairs)
             }
         }
@@ -1372,7 +1484,9 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
     match ast {
         Ast::Str(s) => out.push(s.clone()),
         Ast::Keyword(s) => out.push(s.clone()),
-        Ast::VecLit(items) | Ast::SetLit(items) => items.iter().for_each(|a| collect_strings(a, out)),
+        Ast::VecLit(items) | Ast::SetLit(items) => {
+            items.iter().for_each(|a| collect_strings(a, out))
+        }
         Ast::MapLit(pairs) => pairs.iter().for_each(|(k, v)| {
             collect_strings(k, out);
             collect_strings(v, out);
@@ -1419,4 +1533,91 @@ fn single(msg: impl Into<String>) -> Diagnostics {
 }
 fn single_d(msg: impl Into<String>) -> Diagnostic {
     Diagnostic::error("E0120", msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_strings_from_every_nested_ast_container() {
+        let ast = Ast::Do(vec![
+            Ast::Str("plain".into()),
+            Ast::Keyword("keyword".into()),
+            Ast::VecLit(vec![Ast::Str("vector".into())]),
+            Ast::SetLit(vec![Ast::Str("set".into())]),
+            Ast::MapLit(vec![(Ast::Str("key".into()), Ast::Str("value".into()))]),
+            Ast::If(
+                Box::new(Ast::Str("test".into())),
+                Box::new(Ast::Str("then".into())),
+                Box::new(Ast::Str("else".into())),
+            ),
+            Ast::Recur(vec![Ast::Str("recur".into())]),
+            Ast::MakeFn {
+                lambda: "lambda".into(),
+                arity: 1,
+                captures: vec![Ast::Str("capture".into())],
+            },
+            Ast::CallValue {
+                f: Box::new(Ast::Str("callable".into())),
+                args: vec![Ast::Str("argument".into())],
+            },
+            Ast::Apply {
+                f: Box::new(Ast::Str("apply".into())),
+                fixed: vec![Ast::Str("fixed".into())],
+                coll: Box::new(Ast::Str("collection".into())),
+            },
+            Ast::MakeRecord {
+                type_name: "Point".into(),
+                fields: vec![("x".into(), Ast::Str("field-value".into()))],
+            },
+            Ast::RegisterMethod {
+                method_id: 1,
+                key: Box::new(Ast::Str("dispatch-key".into())),
+                impl_fn: Box::new(Ast::Str("implementation".into())),
+            },
+            Ast::Loop {
+                slots: vec![(0, Ast::Str("loop-init".into()))],
+                body: Box::new(Ast::Str("loop-body".into())),
+            },
+            Ast::Let {
+                slots: vec![(1, Ast::Str("let-init".into()))],
+                body: Box::new(Ast::Str("let-body".into())),
+            },
+            Ast::Call {
+                callee: Callee::Prim(Prim::Print),
+                args: vec![Ast::Str("call-arg".into())],
+            },
+        ]);
+
+        let mut strings = Vec::new();
+        collect_strings(&ast, &mut strings);
+        assert!(strings.contains(&"plain".to_string()));
+        assert!(strings.contains(&"keyword".to_string()));
+        assert!(strings.contains(&"Point".to_string()));
+        assert!(strings.contains(&"x".to_string()));
+        assert!(strings.contains(&"implementation".to_string()));
+        assert!(strings.contains(&"call-arg".to_string()));
+        assert_eq!(strings.len(), 26);
+    }
+
+    #[test]
+    fn compiles_minimal_program_to_nonempty_object() {
+        let program = Program {
+            functions: vec![],
+            main_body: vec![Ast::Int(42), Ast::Str("done".into())],
+            main_local_count: 0,
+        };
+        let object = compile_object(&program).expect("minimal program should compile");
+        assert!(object.len() > 100);
+        assert!(object.iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
+    fn codegen_diagnostics_use_stable_code() {
+        let one = single("failure");
+        assert_eq!(one.items[0].code, "E0120");
+        assert_eq!(one.items[0].message, "failure");
+        assert_eq!(single_d("other").code, "E0120");
+    }
 }

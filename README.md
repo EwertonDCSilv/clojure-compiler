@@ -99,6 +99,7 @@ Hello from native Clojure
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+scripts/coverage.sh
 ```
 
 The native end-to-end suite also exercises the collector with `CLJN_GC_STRESS=1`, which
@@ -114,6 +115,7 @@ forces collection at every allocation.
 | `crates/clojure-codegen` | Cranelift code generation and embedded C runtime |
 | `crates/clojure-native-cli` | `read`, `eval`, `run`, and `build` commands |
 | [`benchmarks/cracking`](benchmarks/cracking/README.md) | 60 chapter-organized algorithm benchmarks with native vs. Clojure/JVM metrics |
+| [`benchmarks/cormen`](benchmarks/cormen/README.md) | 30 CLRS-style algorithm benchmarks with checksum validation and JVM comparison |
 | `examples` | Clojure examples and performance workloads |
 | `specs` | Language scope, runtime model, plans, risks, and ADRs |
 | `docs` | Short usage and architecture guides |
@@ -214,6 +216,7 @@ Hello from native Clojure
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+scripts/coverage.sh
 ```
 
 A suíte end-to-end nativa também exercita o coletor com `CLJN_GC_STRESS=1`, forçando uma
@@ -229,6 +232,7 @@ coleta em cada alocação.
 | `crates/clojure-codegen` | Codegen Cranelift e runtime C embutido |
 | `crates/clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
 | [`benchmarks/cracking`](benchmarks/cracking/README.md) | 60 benchmarks por capítulo com métricas do nativo contra Clojure/JVM |
+| [`benchmarks/cormen`](benchmarks/cormen/README.md) | 30 benchmarks estilo CLRS com checksums e comparação JVM |
 | `examples` | Exemplos Clojure e cargas de performance |
 | `specs` | Escopo, modelo de runtime, planos, riscos e ADRs |
 | `docs` | Guias breves de uso e arquitetura |

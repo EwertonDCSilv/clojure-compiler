@@ -34,7 +34,11 @@ fn to_f(n: Num) -> f64 {
     }
 }
 
-fn install_fn(it: &mut Interp, name: &'static str, f: impl Fn(&[Value]) -> Result<Value, String> + 'static) {
+fn install_fn(
+    it: &mut Interp,
+    name: &'static str,
+    f: impl Fn(&[Value]) -> Result<Value, String> + 'static,
+) {
     it.define(name, Value::Native(NativeFn::new(name, f)));
 }
 
@@ -63,11 +67,39 @@ pub(crate) fn install(it: &mut Interp) {
         }
         Ok(num_val(acc))
     });
-    install_fn(it, "inc", |a| Ok(num_val(add(as_num(one(a)?)?, Num::I(1))?)));
-    install_fn(it, "dec", |a| Ok(num_val(sub(as_num(one(a)?)?, Num::I(1))?)));
-    install_fn(it, "quot", |a| int_binop(a, |x, y| if y == 0 { Err("divisão por zero".into()) } else { Ok(x / y) }));
-    install_fn(it, "rem", |a| int_binop(a, |x, y| if y == 0 { Err("divisão por zero".into()) } else { Ok(x % y) }));
-    install_fn(it, "mod", |a| int_binop(a, |x, y| if y == 0 { Err("divisão por zero".into()) } else { Ok(x.rem_euclid(y)) }));
+    install_fn(it, "inc", |a| {
+        Ok(num_val(add(as_num(one(a)?)?, Num::I(1))?))
+    });
+    install_fn(it, "dec", |a| {
+        Ok(num_val(sub(as_num(one(a)?)?, Num::I(1))?))
+    });
+    install_fn(it, "quot", |a| {
+        int_binop(a, |x, y| {
+            if y == 0 {
+                Err("divisão por zero".into())
+            } else {
+                Ok(x / y)
+            }
+        })
+    });
+    install_fn(it, "rem", |a| {
+        int_binop(a, |x, y| {
+            if y == 0 {
+                Err("divisão por zero".into())
+            } else {
+                Ok(x % y)
+            }
+        })
+    });
+    install_fn(it, "mod", |a| {
+        int_binop(a, |x, y| {
+            if y == 0 {
+                Err("divisão por zero".into())
+            } else {
+                Ok(x.rem_euclid(y))
+            }
+        })
+    });
     install_fn(it, "max", |a| fold_cmp(a, true));
     install_fn(it, "min", |a| fold_cmp(a, false));
     install_fn(it, "abs", |a| match as_num(one(a)?)? {
@@ -78,33 +110,84 @@ pub(crate) fn install(it: &mut Interp) {
     // -- comparação -------------------------------------------------------
     install_fn(it, "=", |a| Ok(Value::Bool(all_eq(a))));
     install_fn(it, "not=", |a| Ok(Value::Bool(!all_eq(a))));
-    install_fn(it, "==", |a| num_chain(a, |o| o == std::cmp::Ordering::Equal));
+    install_fn(it, "==", |a| {
+        num_chain(a, |o| o == std::cmp::Ordering::Equal)
+    });
     install_fn(it, "<", |a| num_chain(a, |o| o == std::cmp::Ordering::Less));
-    install_fn(it, ">", |a| num_chain(a, |o| o == std::cmp::Ordering::Greater));
-    install_fn(it, "<=", |a| num_chain(a, |o| o != std::cmp::Ordering::Greater));
-    install_fn(it, ">=", |a| num_chain(a, |o| o != std::cmp::Ordering::Less));
+    install_fn(it, ">", |a| {
+        num_chain(a, |o| o == std::cmp::Ordering::Greater)
+    });
+    install_fn(it, "<=", |a| {
+        num_chain(a, |o| o != std::cmp::Ordering::Greater)
+    });
+    install_fn(it, ">=", |a| {
+        num_chain(a, |o| o != std::cmp::Ordering::Less)
+    });
 
     // -- predicados -------------------------------------------------------
     install_fn(it, "not", |a| Ok(Value::Bool(!one(a)?.is_truthy())));
-    install_fn(it, "nil?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Nil))));
-    install_fn(it, "some?", |a| Ok(Value::Bool(!matches!(one(a)?, Value::Nil))));
-    install_fn(it, "true?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Bool(true)))));
-    install_fn(it, "false?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Bool(false)))));
-    install_fn(it, "zero?", |a| Ok(Value::Bool(matches!(as_num(one(a)?)?, Num::I(0)) || matches!(as_num(one(a)?)?, Num::F(f) if f == 0.0))));
-    install_fn(it, "pos?", |a| Ok(Value::Bool(to_f(as_num(one(a)?)?) > 0.0)));
-    install_fn(it, "neg?", |a| Ok(Value::Bool(to_f(as_num(one(a)?)?) < 0.0)));
+    install_fn(it, "nil?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Nil)))
+    });
+    install_fn(it, "some?", |a| {
+        Ok(Value::Bool(!matches!(one(a)?, Value::Nil)))
+    });
+    install_fn(it, "true?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Bool(true))))
+    });
+    install_fn(it, "false?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Bool(false))))
+    });
+    install_fn(it, "zero?", |a| {
+        Ok(Value::Bool(
+            matches!(as_num(one(a)?)?, Num::I(0))
+                || matches!(as_num(one(a)?)?, Num::F(f) if f == 0.0),
+        ))
+    });
+    install_fn(it, "pos?", |a| {
+        Ok(Value::Bool(to_f(as_num(one(a)?)?) > 0.0))
+    });
+    install_fn(it, "neg?", |a| {
+        Ok(Value::Bool(to_f(as_num(one(a)?)?) < 0.0))
+    });
     install_fn(it, "even?", |a| Ok(Value::Bool(int1(a)? % 2 == 0)));
     install_fn(it, "odd?", |a| Ok(Value::Bool(int1(a)? % 2 != 0)));
-    install_fn(it, "int?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Int(_)))));
-    install_fn(it, "string?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Str(_)))));
-    install_fn(it, "keyword?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Keyword(_)))));
-    install_fn(it, "symbol?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Symbol(_)))));
-    install_fn(it, "map?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Map(_)))));
-    install_fn(it, "vector?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Vector(_)))));
-    install_fn(it, "list?", |a| Ok(Value::Bool(matches!(one(a)?, Value::List(_)))));
-    install_fn(it, "set?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Set(_)))));
-    install_fn(it, "fn?", |a| Ok(Value::Bool(matches!(one(a)?, Value::Fn(_) | Value::Native(_)))));
-    install_fn(it, "coll?", |a| Ok(Value::Bool(matches!(one(a)?, Value::List(_) | Value::Vector(_) | Value::Map(_) | Value::Set(_)))));
+    install_fn(it, "int?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Int(_))))
+    });
+    install_fn(it, "string?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Str(_))))
+    });
+    install_fn(it, "keyword?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Keyword(_))))
+    });
+    install_fn(it, "symbol?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Symbol(_))))
+    });
+    install_fn(it, "map?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Map(_))))
+    });
+    install_fn(it, "vector?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Vector(_))))
+    });
+    install_fn(it, "list?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::List(_))))
+    });
+    install_fn(it, "set?", |a| {
+        Ok(Value::Bool(matches!(one(a)?, Value::Set(_))))
+    });
+    install_fn(it, "fn?", |a| {
+        Ok(Value::Bool(matches!(
+            one(a)?,
+            Value::Fn(_) | Value::Native(_)
+        )))
+    });
+    install_fn(it, "coll?", |a| {
+        Ok(Value::Bool(matches!(
+            one(a)?,
+            Value::List(_) | Value::Vector(_) | Value::Map(_) | Value::Set(_)
+        )))
+    });
     install_fn(it, "empty?", |a| Ok(Value::Bool(is_empty(one(a)?))));
 
     // -- impressão --------------------------------------------------------
@@ -118,10 +201,14 @@ pub(crate) fn install(it: &mut Interp) {
         Ok(Value::str(s))
     });
     install_fn(it, "pr-str", |a| {
-        Ok(Value::str(a.iter().map(pr_str).collect::<Vec<_>>().join(" ")))
+        Ok(Value::str(
+            a.iter().map(pr_str).collect::<Vec<_>>().join(" "),
+        ))
     });
     install_fn(it, "print-str", |a| {
-        Ok(Value::str(a.iter().map(print_str).collect::<Vec<_>>().join(" ")))
+        Ok(Value::str(
+            a.iter().map(print_str).collect::<Vec<_>>().join(" "),
+        ))
     });
     let out = it.output.clone();
     install_fn(it, "println", move |a| {
@@ -223,12 +310,16 @@ pub(crate) fn install(it: &mut Interp) {
         Ok(Value::Bool(contains(&a[0], &a[1])))
     });
     install_fn(it, "keys", |a| match one(a)? {
-        Value::Map(m) => Ok(Value::List(List::from_vec(m.iter().map(|(k, _)| k.clone()).collect()))),
+        Value::Map(m) => Ok(Value::List(List::from_vec(
+            m.iter().map(|(k, _)| k.clone()).collect(),
+        ))),
         Value::Nil => Ok(Value::Nil),
         _ => Err("keys requer um mapa".into()),
     });
     install_fn(it, "vals", |a| match one(a)? {
-        Value::Map(m) => Ok(Value::List(List::from_vec(m.iter().map(|(_, v)| v.clone()).collect()))),
+        Value::Map(m) => Ok(Value::List(List::from_vec(
+            m.iter().map(|(_, v)| v.clone()).collect(),
+        ))),
         Value::Nil => Ok(Value::Nil),
         _ => Err("vals requer um mapa".into()),
     });
@@ -251,7 +342,7 @@ pub(crate) fn install(it: &mut Interp) {
     });
 
     // -- range ------------------------------------------------------------
-    install_fn(it, "range", |a| range(a));
+    install_fn(it, "range", range);
 }
 
 // -- helpers de aridade ---------------------------------------------------
@@ -315,7 +406,11 @@ fn neg(a: Num) -> Num {
     }
 }
 
-fn fold_arith(a: &[Value], init: Num, op: fn(Num, Num) -> Result<Num, String>) -> Result<Value, String> {
+fn fold_arith(
+    a: &[Value],
+    init: Num,
+    op: fn(Num, Num) -> Result<Num, String>,
+) -> Result<Value, String> {
     let mut acc = init;
     for v in a {
         acc = op(acc, as_num(v)?)?;
@@ -339,7 +434,11 @@ fn fold_cmp(a: &[Value], want_max: bool) -> Result<Value, String> {
     let mut best = as_num(&a[0])?;
     for v in &a[1..] {
         let n = as_num(v)?;
-        let take = if want_max { to_f(n) > to_f(best) } else { to_f(n) < to_f(best) };
+        let take = if want_max {
+            to_f(n) > to_f(best)
+        } else {
+            to_f(n) < to_f(best)
+        };
         if take {
             best = n;
         }
@@ -444,7 +543,9 @@ fn conj(coll: Value, x: Value) -> Value {
             // conj de [k v] ou de um mapa.
             let mut nm = m.as_ref().clone();
             match &x {
-                Value::Vector(kv) if kv.len() == 2 => assoc_into(&mut nm, kv[0].clone(), kv[1].clone()),
+                Value::Vector(kv) if kv.len() == 2 => {
+                    assoc_into(&mut nm, kv[0].clone(), kv[1].clone())
+                }
                 Value::Map(other) => {
                     for (k, v) in other.iter() {
                         assoc_into(&mut nm, k.clone(), v.clone());
@@ -469,13 +570,18 @@ fn nth(v: &Value, idx: i64, default: Option<Value>) -> Result<Value, String> {
         Value::Str(s) => s.chars().nth(i).map(Value::Char),
         _ => None,
     };
-    got.or(default).ok_or_else(|| "nth: índice fora dos limites".into())
+    got.or(default)
+        .ok_or_else(|| "nth: índice fora dos limites".into())
 }
 
 /// `get` genérico (bootstrap): mapa por chave, vetor por índice, set por membro.
 pub(crate) fn get(coll: &Value, key: &Value) -> Value {
     match coll {
-        Value::Map(m) => m.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or(Value::Nil),
+        Value::Map(m) => m
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+            .unwrap_or(Value::Nil),
         Value::Vector(v) => match key {
             Value::Int(i) if *i >= 0 => v.get(*i as usize).cloned().unwrap_or(Value::Nil),
             _ => Value::Nil,

@@ -25,10 +25,16 @@ pub struct EvalError {
 
 impl EvalError {
     fn new(msg: impl Into<String>) -> EvalError {
-        EvalError { msg: msg.into(), span: None }
+        EvalError {
+            msg: msg.into(),
+            span: None,
+        }
     }
     fn at(msg: impl Into<String>, span: Span) -> EvalError {
-        EvalError { msg: msg.into(), span: Some(span) }
+        EvalError {
+            msg: msg.into(),
+            span: Some(span),
+        }
     }
 }
 
@@ -115,7 +121,10 @@ impl Interp {
     pub fn eval_source(&mut self, name: &str, text: &str) -> Result<Value, EvalError> {
         let forms = clojure_reader::read_all(0, text).map_err(|d| {
             let first = d.items.into_iter().next().unwrap();
-            EvalError { msg: format!("{}: erro de leitura: {}", name, first.message), span: first.span }
+            EvalError {
+                msg: format!("{}: erro de leitura: {}", name, first.message),
+                span: first.span,
+            }
         })?;
         let mut last = Value::Nil;
         for f in &forms {
@@ -288,7 +297,13 @@ impl Interp {
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(EvalError::at("let: nome de binding deve ser símbolo simples", pair[0].span).into()),
+                _ => {
+                    return Err(EvalError::at(
+                        "let: nome de binding deve ser símbolo simples",
+                        pair[0].span,
+                    )
+                    .into())
+                }
             };
             let val = self.eval(&pair[1], &scope_env)?;
             scope_env = Some(Scope::child(scope_env, vec![(name, val)]));
@@ -308,7 +323,11 @@ impl Interp {
             idx = 1;
         }
         let rest = &args[idx..];
-        let methods = if rest.first().map(|f| matches!(f.node.strip_meta(), Form::Vector(_))).unwrap_or(false) {
+        let methods = if rest
+            .first()
+            .map(|f| matches!(f.node.strip_meta(), Form::Vector(_)))
+            .unwrap_or(false)
+        {
             // aridade única: (fn [params] body...)
             vec![parse_method(rest, span)?]
         } else {
@@ -317,12 +336,20 @@ impl Interp {
             for m in rest {
                 match m.node.strip_meta() {
                     Form::List(items) => ms.push(parse_method(items, m.span)?),
-                    _ => return Err(EvalError::at("fn: método deve ser (params body...)", m.span).into()),
+                    _ => {
+                        return Err(
+                            EvalError::at("fn: método deve ser (params body...)", m.span).into(),
+                        )
+                    }
                 }
             }
             ms
         };
-        Ok(Value::Fn(Rc::new(Closure { name, methods, env: env.clone() })))
+        Ok(Value::Fn(Rc::new(Closure {
+            name,
+            methods,
+            env: env.clone(),
+        })))
     }
 
     fn sf_def(&mut self, args: &[SForm], env: &Option<Rc<Scope>>, span: Span) -> E {
@@ -352,10 +379,17 @@ impl Interp {
         for pair in bindings.chunks_exact(2) {
             let name = match pair[0].node.strip_meta() {
                 Form::Symbol(n) if n.ns.is_none() => n.name.clone(),
-                _ => return Err(EvalError::at("loop: binding deve ser símbolo", pair[0].span).into()),
+                _ => {
+                    return Err(
+                        EvalError::at("loop: binding deve ser símbolo", pair[0].span).into(),
+                    )
+                }
             };
             let val = self.eval(&pair[1], &scope_env)?;
-            scope_env = Some(Scope::child(scope_env.clone(), vec![(name.clone(), val.clone())]));
+            scope_env = Some(Scope::child(
+                scope_env.clone(),
+                vec![(name.clone(), val.clone())],
+            ));
             names.push(name);
             vals.push(val);
         }
@@ -373,7 +407,11 @@ impl Interp {
                     Err(Control::Recur(new)) => {
                         if new.len() != names.len() {
                             return Err(EvalError::at(
-                                format!("recur: esperava {} args, recebeu {}", names.len(), new.len()),
+                                format!(
+                                    "recur: esperava {} args, recebeu {}",
+                                    names.len(),
+                                    new.len()
+                                ),
                                 span,
                             )
                             .into());
@@ -430,7 +468,11 @@ impl Interp {
         let last = self.eval(&args[args.len() - 1], env)?;
         match seq_items(&last) {
             Some(items) => argv.extend(items),
-            None => return Err(EvalError::at("apply: último argumento deve ser uma sequência", span).into()),
+            None => {
+                return Err(
+                    EvalError::at("apply: último argumento deve ser uma sequência", span).into(),
+                )
+            }
         }
         self.invoke(&f, argv, Some(span))
     }
@@ -446,33 +488,36 @@ impl Interp {
 
     fn invoke(&mut self, f: &Value, mut args: Vec<Value>, span: Option<Span>) -> E {
         match f {
-            Value::Native(n) => (n.f)(&args)
-                .map_err(|msg| Control::Err(EvalError { msg, span })),
+            Value::Native(n) => (n.f)(&args).map_err(|msg| Control::Err(EvalError { msg, span })),
             Value::Keyword(_) => {
                 // (:k m) → (get m :k)
                 if args.len() != 1 {
-                    return Err(EvalError::new("keyword como fn requer 1 argumento (o mapa)").into());
+                    return Err(
+                        EvalError::new("keyword como fn requer 1 argumento (o mapa)").into(),
+                    );
                 }
                 Ok(primitives::get(&args[0], f))
             }
             Value::Fn(closure) => {
-                let method = closure
-                    .method_for(args.len())
-                    .ok_or_else(|| {
-                        Control::Err(EvalError {
-                            msg: format!(
-                                "aridade errada: {} recebeu {} args",
-                                closure.name.as_deref().unwrap_or("fn"),
-                                args.len()
-                            ),
-                            span,
-                        })
-                    })?;
+                let method = closure.method_for(args.len()).ok_or_else(|| {
+                    Control::Err(EvalError {
+                        msg: format!(
+                            "aridade errada: {} recebeu {} args",
+                            closure.name.as_deref().unwrap_or("fn"),
+                            args.len()
+                        ),
+                        span,
+                    })
+                })?;
                 // O índice do método pode mudar em recur? Não: recur mantém aridade.
-                let method_idx = closure.methods.iter().position(|m| std::ptr::eq(m, method)).unwrap();
+                let method_idx = closure
+                    .methods
+                    .iter()
+                    .position(|m| std::ptr::eq(m, method))
+                    .unwrap();
                 loop {
-                    let bindings = bind_params(&closure.methods[method_idx], &args)
-                        .map_err(Control::Err)?;
+                    let bindings =
+                        bind_params(&closure.methods[method_idx], &args).map_err(Control::Err)?;
                     let call_env = Some(Scope::child(closure.env.clone(), bindings));
                     let mut last = Value::Nil;
                     let mut recurred = false;
@@ -557,7 +602,7 @@ impl Interp {
                 Ok(list(vec![sym("if"), test, els, then]))
             }
             "cond" => {
-                if args.len() % 2 != 0 {
+                if args.len() & 1 != 0 {
                     return Err(Control::Err(EvalError::at("cond requer pares", span)));
                 }
                 let mut result = mk(Form::Nil);
@@ -581,7 +626,8 @@ impl Interp {
                     let gsym = Spanned::new(Form::sym(&g), span);
                     let mut rest_and = vec![sym("and")];
                     rest_and.extend(args[1..].iter().cloned());
-                    let binding = Spanned::new(Form::Vector(vec![gsym.clone(), args[0].clone()]), span);
+                    let binding =
+                        Spanned::new(Form::Vector(vec![gsym.clone(), args[0].clone()]), span);
                     Ok(list(vec![
                         sym("let*"),
                         binding,
@@ -597,7 +643,8 @@ impl Interp {
                     let gsym = Spanned::new(Form::sym(&g), span);
                     let mut rest_or = vec![sym("or")];
                     rest_or.extend(args[1..].iter().cloned());
-                    let binding = Spanned::new(Form::Vector(vec![gsym.clone(), args[0].clone()]), span);
+                    let binding =
+                        Spanned::new(Form::Vector(vec![gsym.clone(), args[0].clone()]), span);
                     Ok(list(vec![
                         sym("let*"),
                         binding,
@@ -619,7 +666,10 @@ impl Interp {
                 }
                 Ok(expr)
             }
-            _ => Err(Control::Err(EvalError::at(format!("macro desconhecida: {name}"), span))),
+            _ => Err(Control::Err(EvalError::at(
+                format!("macro desconhecida: {name}"),
+                span,
+            ))),
         }
     }
 }
@@ -656,7 +706,12 @@ fn parse_method(items: &[SForm], span: Span) -> Result<FnMethod, EvalError> {
         .ok_or_else(|| EvalError::at("fn: faltam parâmetros", span))?;
     let params_vec = match params_form.node.strip_meta() {
         Form::Vector(p) => p,
-        _ => return Err(EvalError::at("fn: parâmetros devem ser um vetor", params_form.span)),
+        _ => {
+            return Err(EvalError::at(
+                "fn: parâmetros devem ser um vetor",
+                params_form.span,
+            ))
+        }
     };
     let mut params = Vec::new();
     let mut rest = None;
@@ -681,7 +736,11 @@ fn parse_method(items: &[SForm], span: Span) -> Result<FnMethod, EvalError> {
             }
         }
     }
-    Ok(FnMethod { params, rest, body: items[1..].to_vec() })
+    Ok(FnMethod {
+        params,
+        rest,
+        body: items[1..].to_vec(),
+    })
 }
 
 fn bind_params(method: &FnMethod, args: &[Value]) -> Result<Vec<(String, Value)>, EvalError> {
@@ -731,7 +790,10 @@ pub fn form_to_value(f: &SForm) -> Value {
         Form::Vector(items) => Value::Vector(Rc::new(items.iter().map(form_to_value).collect())),
         Form::Set(items) => Value::Set(Rc::new(items.iter().map(form_to_value).collect())),
         Form::Map(pairs) => Value::Map(Rc::new(
-            pairs.iter().map(|(k, v)| (form_to_value(k), form_to_value(v))).collect(),
+            pairs
+                .iter()
+                .map(|(k, v)| (form_to_value(k), form_to_value(v)))
+                .collect(),
         )),
         Form::Meta { .. } => unreachable!("strip_meta remove Meta"),
     }

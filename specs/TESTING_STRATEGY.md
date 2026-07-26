@@ -78,6 +78,9 @@ Cada caso tem: entrada `.clj`, resultado esperado (do oracle) e classificação
 
 - Todo PR: `cargo test`, `clippy` sem warnings, `fmt`, Miri nos crates `unsafe`, suíte de
   conformidade (subconjunto atual), golden snapshots.
+- Cobertura Rust bloqueante com `cargo-llvm-cov`: mínimo global de **82%** para linhas,
+  funções e regiões, além de **30% de linhas por arquivo**. O comando local
+  `scripts/coverage.sh` aplica os mesmos limites do CI.
 - Matriz de plataformas: Linux x86_64 (bloqueante) + Windows x86_64 (bloqueante).
 - Fuzz/bench: jobs periódicos (não bloqueantes por corrida, mas monitorados).
 - Cobertura de conformidade é métrica de sucesso (VISION): 100% dos casos declarados
