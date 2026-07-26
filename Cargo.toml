@@ -8,6 +8,8 @@ members = [
     "crates/clojure-reader",
     "crates/clojure-value",
     "crates/clojure-interp",
+    "crates/clojure-analyzer",
+    "crates/clojure-codegen",
     "crates/clojure-native-cli",
 ]
 
@@ -24,6 +26,8 @@ clojure-syntax = { path = "crates/clojure-syntax" }
 clojure-reader = { path = "crates/clojure-reader" }
 clojure-value = { path = "crates/clojure-value" }
 clojure-interp = { path = "crates/clojure-interp" }
+clojure-analyzer = { path = "crates/clojure-analyzer" }
+clojure-codegen = { path = "crates/clojure-codegen" }
 
 [profile.release]
 opt-level = 2

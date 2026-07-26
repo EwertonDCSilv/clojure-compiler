@@ -17,13 +17,7 @@ fn main() -> ExitCode {
             print_usage();
             ExitCode::SUCCESS
         }
-        Some("build") => {
-            eprintln!(
-                "`build` (compilação nativa AOT) ainda não implementado.\n\
-                 Ver specs/IMPLEMENTATION_PLAN.md — Fase 5. Use `run` (interpretador) por enquanto."
-            );
-            ExitCode::FAILURE
-        }
+        Some("build") => cmd_build(&args[1..]),
         Some(other) => {
             eprintln!("comando desconhecido: {other}\n");
             print_usage();
@@ -36,9 +30,10 @@ fn print_usage() {
     println!(
         "clojure-native {} — implementação nativa de Clojure (em desenvolvimento)\n\n\
          USO:\n\
-         \x20 clojure-native read <arquivo.clj>   Lê e imprime as forms (dump determinístico)\n\
-         \x20 clojure-native eval <expr>          Avalia uma expressão e imprime o resultado\n\
-         \x20 clojure-native run  <arquivo.clj>   Carrega o arquivo e chama (-main) se existir\n",
+         \x20 clojure-native read  <arquivo.clj>           Lê e imprime as forms (dump determinístico)\n\
+         \x20 clojure-native eval  <expr>                  Avalia uma expressão (interpretador)\n\
+         \x20 clojure-native run   <arquivo.clj> [--main]  Executa via interpretador (script)\n\
+         \x20 clojure-native build <arquivo.clj> [-o out]  Compila para binário nativo (subconjunto)\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -137,6 +132,105 @@ fn cmd_run(args: &[String]) -> ExitCode {
     }
     print!("{}", it.take_output());
     ExitCode::SUCCESS
+}
+
+fn cmd_build(args: &[String]) -> ExitCode {
+    // Parse simples: primeiro não-flag é o arquivo; -o/--output define a saída.
+    let mut path = None;
+    let mut output = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--output" => {
+                output = args.get(i + 1).cloned();
+                i += 2;
+            }
+            other => {
+                if path.is_none() {
+                    path = Some(other.to_string());
+                }
+                i += 1;
+            }
+        }
+    }
+    let Some(path) = path else {
+        eprintln!("uso: clojure-native build <arquivo.clj> [-o saída]");
+        return ExitCode::FAILURE;
+    };
+    let text = match read_file(&path) {
+        Ok(t) => t,
+        Err(c) => return c,
+    };
+    let out_name = output.unwrap_or_else(|| {
+        std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "a".to_string())
+    });
+
+    let mut sm = SourceMap::new();
+    let id = sm.add(path.clone(), text.clone());
+
+    // 1) Reader.
+    let forms = match clojure_reader::read_all(id, &text) {
+        Ok(f) => f,
+        Err(d) => {
+            eprintln!("{}", d.render(&sm));
+            return ExitCode::FAILURE;
+        }
+    };
+    // 2) Analyzer.
+    let program = match clojure_analyzer::analyze(&forms) {
+        Ok(p) => p,
+        Err(d) => {
+            eprintln!("{}", d.render(&sm));
+            return ExitCode::FAILURE;
+        }
+    };
+    // 3) Codegen → objeto.
+    let obj = match clojure_codegen::compile_object(&program) {
+        Ok(o) => o,
+        Err(d) => {
+            eprintln!("{}", d.render(&sm));
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // 4) Escreve objeto + runtime C e linka com `cc`.
+    let tmp = std::env::temp_dir();
+    let obj_path = tmp.join(format!("{out_name}.o"));
+    let rt_path = tmp.join(format!("{out_name}.cljn_runtime.c"));
+    if let Err(e) = std::fs::write(&obj_path, &obj) {
+        eprintln!("erro ao escrever objeto: {e}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(e) = std::fs::write(&rt_path, clojure_codegen::RUNTIME_C) {
+        eprintln!("erro ao escrever runtime: {e}");
+        return ExitCode::FAILURE;
+    }
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let status = std::process::Command::new(&cc)
+        .arg(&obj_path)
+        .arg(&rt_path)
+        .arg("-o")
+        .arg(&out_name)
+        .status();
+    let _ = std::fs::remove_file(&obj_path);
+    let _ = std::fs::remove_file(&rt_path);
+    match status {
+        Ok(s) if s.success() => {
+            println!("binário nativo gerado: {out_name}");
+            ExitCode::SUCCESS
+        }
+        Ok(s) => {
+            eprintln!("linker ({cc}) falhou com status {s}");
+            ExitCode::FAILURE
+        }
+        Err(e) => {
+            eprintln!("falha ao invocar o linker `{cc}`: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn report(e: &clojure_interp::EvalError) {

@@ -15,6 +15,8 @@ clojure-syntax.workspace = true
 clojure-reader.workspace = true
 clojure-value.workspace = true
 clojure-interp.workspace = true
+clojure-analyzer.workspace = true
+clojure-codegen.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"

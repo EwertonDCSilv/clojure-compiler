@@ -1,0 +1,17 @@
+[package]
+name = "clojure-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clojure-analyzer.workspace = true
+clojure-diagnostics.workspace = true
+cranelift-codegen = "0.124"
+cranelift-frontend = "0.124"
+cranelift-module = "0.124"
+cranelift-object = "0.124"
+target-lexicon = "0.13"
+
+[lints.rust]
+unsafe_code = "forbid"

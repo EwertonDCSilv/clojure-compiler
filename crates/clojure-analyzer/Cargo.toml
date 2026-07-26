@@ -1,0 +1,16 @@
+[package]
+name = "clojure-analyzer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clojure-span.workspace = true
+clojure-syntax.workspace = true
+clojure-diagnostics.workspace = true
+
+[dev-dependencies]
+clojure-reader.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

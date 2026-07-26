@@ -8,9 +8,18 @@ Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **
 > local detectado: Java 21 (usável só como *oracle* de teste), clang 20 / LLVM 20;
 > **Rust/Cargo ainda não instalados**. Nada a reaproveitar além do briefing.
 
-Estamos na **Fase 0 — Pesquisa e Especificação**. Nenhum código de produção deve
-ser escrito antes que estas specs estejam aprovadas. Protótipos descartáveis são
-permitidos e devem ser marcados como não-produtivos.
+> **PROGRESSO (2026-07-26).** A implementação já saiu do papel:
+> - **Fase 0** ✅ workspace Cargo + git + toolchain; **protótipo #1 (Cranelift→exe)** validado (portão passou).
+> - **Fase 1 — Reader** ✅ tokenizer/parser, spans, desugar de reader-macros, diagnósticos `arquivo:linha:coluna`.
+> - **Fase 2 — Interpretador de bootstrap** ✅ formas especiais, closures, `recur`, macros base em Rust, primitivas + `core.clj` embutido; roda programas via `clojure-native run`.
+> - **Fase 3+5 (corte vertical)** ✅ analyzer + **codegen Cranelift** → **primeiro binário nativo compilado**: `clojure-native build native.clj -o prog` gera um ELF (sem JVM) que calcula `fib`/`fatorial` recursivos, aritmética, `let` e imprime. Subconjunto compilável documentado; fora dele = diagnóstico, nunca divergência silenciosa.
+> - ~35 testes verdes, incluindo e2e que compilam e executam binários nativos.
+>
+> Próximo: expandir o subconjunto compilável (representação `Value` + GC — Fases 4/8),
+> `loop/recur` e coleções no codegen, e protótipos de backend #2/#3/#11 (Windows).
+
+O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
+descartáveis são permitidos e devem ser marcados como não-produtivos.
 
 ## Como ler estes documentos
 
