@@ -43,6 +43,11 @@ IO-0 é uma dependência arquitetural, não apenas uma conveniência de API. Sem
 capturável não é possível garantir fechamento em `with-open`, restauração de bindings
 ou erros de I/O categorizados.
 
+O snapshot atual satisfaz apenas a parte genérica de unwind de IO-0: `throw` e
+`try`/`catch`/`finally` atravessam frames e executam `finally`. O marco continua aberto
+porque Vars dinâmicas, `binding`, tipos de exceção e `ex-data` ainda não existem no
+caminho compilado.
+
 ## Modelo de valores e ABI
 
 `Bytes` é um valor imutável, compacto e indexado por bytes sem sinal de 0 a 255.

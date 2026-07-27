@@ -42,7 +42,7 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 431 casos: 160 ativos, 239 falhas esperadas e 32 itens pendentes. D inclui
+Ela possui 447 casos: 170 ativos, 245 falhas esperadas e 32 itens pendentes. D inclui
 bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
 e lacunas executáveis de ecossistema, além de um projeto-alvo de API HTTP Hello World
 em Pedestal. A verificação é offline, não depende de JVM e gera relatórios em
@@ -62,7 +62,9 @@ O compilador ainda não é uma implementação completa de Clojure. A execução
 numérica é limitada a fixnums; não há bignums, ratios nem BigDecimal. Literais
 floating-point são reconhecidos pelo reader, mas ainda não chegam ao caminho compilado.
 Também permanecem fora do caminho nativo: macros definidas pelo usuário, sequências
-lazy/infinitas, exceções, namespaces dinâmicos, projetos multi-arquivo e interop Java.
+lazy/infinitas, namespaces dinâmicos, projetos multi-arquivo e interop Java. Exceções
+explícitas já são capturáveis, mas catches tipados e tradução de falhas fatais do
+runtime ainda não estão disponíveis.
 Streams gerais, arquivos, filesystem e readers de runtime também ainda não estão
 implementados.
 

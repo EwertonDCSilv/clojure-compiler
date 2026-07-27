@@ -54,6 +54,10 @@ mais a **política** aplicada (ver seção seguinte).
 | `gen-class` | gera `.class` | não suportado | erro de compilação |
 | `deftype` c/ interfaces Java | suportado | só protocols nativos | erro se lista interface Java |
 | Exceções Java (`catch IOException`) | classes JVM | tipos de exceção nativos | erro/mapeamento; ver Exceções |
+| Dispatch de `catch` | múltiplos catches por classe/hierarquia | um catch-all; classe aceita mas ignorada | `xfail` até existir hierarquia nativa |
+| Falhas do runtime | erros aritméticos/de tipo viram exceções capturáveis | ainda encerram o processo; somente `throw` explícito é capturável | erro fatal catalogado |
+| Multimétodos | hierarquias, preferências e dispatch por qualquer `IFn` | igualdade de valor, `:default` e função explícita | `xfail` para hierarquia/keyword invocável |
+| Transients | edit token, invalidação e API completa | vetor mutável; map/set em caixa, sem invalidação | `xfail` para lifecycle, `disj!` e `pop!` |
 | Threads da JVM (`Thread.`, `Thread/sleep`) | JVM | threads do SO via API nativa | substituição por API nativa |
 | Classpath / JARs / Maven | runtime | não usados no runtime | N/A (só source deps; ver deps) |
 | Carregamento dinâmico de classes | suportado | não suportado | erro |

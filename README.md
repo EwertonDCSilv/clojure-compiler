@@ -34,7 +34,13 @@ compatibility boundaries, implementation plans, and architectural decisions live
 - Strings, lists, keywords, persistent vectors, and hybrid persistent maps and sets.
   Vectors use a 32-way bitmapped trie; small maps/sets promote to a 32-way HAMT.
 - Ordered maps and sets backed by a persistent left-leaning red-black tree.
+- Transient vectors with mutable bulk construction, plus transient map/set wrappers
+  supporting `transient`, `persistent!`, `conj!`, `assoc!`, and `dissoc!`.
 - Records and protocol dispatch through `defrecord`, `defprotocol`, and `extend-type`.
+- Native `throw` and `try`/`catch`/`finally`, including nested unwind and GC-safe
+  lexical captures.
+- Value-based multimethod dispatch through `defmulti` and `defmethod`, with `:default`
+  fallback.
 - A compiled 26-function `clojure.core` subset including `map`, `filter`, `reduce`,
   `range`, `into`, `mapv`, `take`, `drop`, and `comp`.
 - Precise, non-moving, single-threaded mark-sweep GC with generated shadow-stack roots.
@@ -102,8 +108,8 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-The executable compatibility matrix currently contains 431 cases across levels A–E:
-160 active, 239 expected failures, and 32 pending inventory entries. Levels D and E now
+The executable compatibility matrix currently contains 447 cases across levels A–E:
+170 active, 245 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
 target. The matrix also inventories the complete proposed I/O surface as expected
@@ -157,13 +163,19 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
 - This is a Clojure subset, not a drop-in replacement for Clojure/JVM.
 - The reader accepts floating-point literals, but native compiled numeric execution is
   currently fixnum-only. Bignums, ratios, and BigDecimal are not implemented.
-- User-defined macros, lazy/infinite sequences, exceptions, dynamic namespace loading,
-  and multi-file project compilation are not available on the native path.
+- User-defined macros, lazy/infinite sequences, dynamic namespace loading, and
+  multi-file project compilation are not available on the native path.
+- Exception catches are currently catch-all: typed catch hierarchies, multiple catch
+  clauses, `ex-info`, and conversion of fatal runtime faults into catchable values
+  remain incomplete.
+- Multimethod dispatch requires an explicit function and supports equality plus
+  `:default`; hierarchy dispatch through `derive`/`isa?` is not implemented.
 - General stdin, files, filesystem operations, runtime EDN reading, and stream
   redirection are specified but not implemented; current native output is limited to
   the active `print`/`println` baseline.
 - Native compilation targets the host and invokes a system C linker.
 - The GC is single-threaded and non-moving. Rooting is still eager; a planned phase
   will place roots from liveness information at allocation safepoints.
-- CHAMP maps/sets and transients remain future work.
+- CHAMP maps/sets, transient edit tokens, `disj!`, `pop!`, and invalidation after
+  `persistent!` remain future work.
 - Java interop and JVM ecosystem libraries are outside the current native runtime.

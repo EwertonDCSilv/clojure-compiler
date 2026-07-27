@@ -42,6 +42,9 @@ tests/conformance/
 │   ├── macros/
 │   ├── collections/
 │   ├── records-protocols/
+│   ├── exceptions/
+│   ├── multimethods/
+│   ├── collections/transients/
 │   ├── errors/
 │   ├── gc/
 │   └── io/
@@ -58,15 +61,15 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 431 casos:
+O inventário atual contém 447 casos:
 
-- 160 `active`: executados e bloqueantes;
-- 239 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 170 `active`: executados e bloqueantes;
+- 245 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
-O nível D executa bibliotecas puras autocontidas e registra lacunas de macros,
-namespaces, lazy seqs, metadata e exceções. O nível E executa aplicações autônomas de
+O nível D executa bibliotecas puras autocontidas, incluindo recuperação por exceção, e
+registra lacunas de macros, namespaces, lazy seqs e metadata. O nível E executa aplicações autônomas de
 arquivo único e transforma dependências, JARs, Java, carregamento dinâmico e concorrência
 em `xfail` concretos. Projetos que exigem loader/packaging continuam `pending`.
 Entre eles está uma API HTTP Hello World em Pedestal, com `deps.edn`, fonte, requisição

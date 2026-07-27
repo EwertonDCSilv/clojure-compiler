@@ -19,15 +19,15 @@ entra hoje em `clojure-native build` do alvo de compatibilidade.
 
 | Grupo | Itens atuais |
 | --- | --- |
-| Controle | `if`, `do`, `let`, `loop`, `recur`, `fn`, `defn` |
+| Controle | `if`, `do`, `let`, `loop`, `recur`, `fn`, `defn`, `throw`, `try`/`catch`/`finally` |
 | Aritmética | `+`, `-`, `*`, `quot`, `mod`, `inc`, `dec` |
 | Comparação/predicados | `=`, `<`, `<=`, `>`, `>=`, `not`, `nil?`, `empty?` |
 | Sequências | `cons`, `first`, `rest`, `count`, `list` |
-| Coleções | `get`, `nth`, `assoc`, `dissoc`, `contains?`, `keys`, `vals`, `conj` |
+| Coleções | `get`, `nth`, `assoc`, `dissoc`, `contains?`, `keys`, `vals`, `conj`, `transient`, `persistent!`, `conj!`, `assoc!`, `dissoc!` |
 | Strings/IO | `str`, `print`, `println` |
 | Funções | closures, aridades múltiplas/variádicas e `apply` |
 | Macros conhecidas | `when`, `when-not`, `if-not`, `cond`, `and`, `or`, `->`, `->>` |
-| Tipos/dispatch | `defrecord`, `defprotocol`, `extend-type` |
+| Tipos/dispatch | `defrecord`, `defprotocol`, `extend-type`, `defmulti`, `defmethod` |
 
 Isso não implica todas as aridades e coerções de Clojure/JVM. O contrato exato é dado
 pelos casos `active` e `xfail` da suíte de conformidade.
@@ -74,7 +74,7 @@ primitivas e manter no runtime apenas operações que dependem da representaçã
 2. introduzir namespaces e carregamento AOT multi-arquivo;
 3. ativar `clojure.string`, `clojure.set`, `clojure.walk`, `clojure.edn` e um
    `clojure.test` mínimo;
-4. adicionar lazy seqs, exceções, metadata e estado;
+4. adicionar lazy seqs, exceções tipadas, metadata e estado;
 5. avaliar bibliotecas puras dos níveis D–E.
 
 Funções dependentes da JVM (`proxy`, `gen-class`, `bean` e interop Java) permanecem
@@ -83,11 +83,12 @@ fora do runtime nativo.
 ## Recursos ainda não entregues
 
 - `/` com ratios, `rem`, bignums, BigDecimal e ponto flutuante compilado;
-- `try`, `catch`, `finally`, `throw`, `ex-info`;
+- `ex-info`, hierarquia tipada/múltiplos catches e tradução de falhas fatais do runtime;
 - `defmacro` de usuário, syntax-quote executável e `macroexpand`;
 - `lazy-seq`, sequências infinitas e chunked seqs;
 - atoms, Vars dinâmicas, delays e futures;
-- `deftype`, `reify`, `extend-protocol`, multimethods e hierarquias;
+- `deftype`, `reify`, `extend-protocol` e hierarquias de multimétodos;
+- `disj!`, `pop!`, edit tokens e invalidação completa de transients;
 - require dinâmico, classpath/JAR e bibliotecas JVM.
 - streams gerais, arquivos, filesystem, `clojure.edn` em runtime, `cljn.io` e
   `cljn.process` (ver [IO_SPEC](IO_SPEC.md)).

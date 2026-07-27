@@ -1,0 +1,6 @@
+(ns b.multimethods.hierarchy)
+(derive :dog :animal)
+(defmulti speak (fn [value] value))
+(defmethod speak :animal [value] :generic-animal)
+(defn -main [] (println (speak :dog)))
+(-main)

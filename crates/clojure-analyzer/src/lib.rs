@@ -1156,7 +1156,10 @@ impl<'a> Analyzer<'a> {
                     match s.name.as_str() {
                         "catch" => {
                             if catch.is_some() {
-                                return Err(unsupported("try: múltiplos catch não suportados", span));
+                                return Err(unsupported(
+                                    "try: múltiplos catch não suportados",
+                                    span,
+                                ));
                             }
                             if items.len() < 3 {
                                 return Err(unsupported(
@@ -1188,7 +1191,10 @@ impl<'a> Analyzer<'a> {
                 }
             }
             if catch.is_some() || finally.is_some() {
-                return Err(unsupported("try: expressão de corpo após catch/finally", f.span));
+                return Err(unsupported(
+                    "try: expressão de corpo após catch/finally",
+                    f.span,
+                ));
             }
             body.push(f.clone());
         }

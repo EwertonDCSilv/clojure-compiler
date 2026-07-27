@@ -34,7 +34,12 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 - Strings, listas, keywords, vetores persistentes e mapas/sets persistentes híbridos.
   Vetores usam trie bitmap de 32 vias; mapas/sets pequenos promovem para HAMT de 32 vias.
 - Mapas e sets ordenados apoiados em árvore rubro-negra persistente inclinada à esquerda.
+- Vetores transientes com construção mutável em lote, além de wrappers transientes de
+  map/set com `transient`, `persistent!`, `conj!`, `assoc!` e `dissoc!`.
 - Records e dispatch de protocolos com `defrecord`, `defprotocol` e `extend-type`.
+- `throw` e `try`/`catch`/`finally` nativos, incluindo unwind aninhado e capturas
+  léxicas seguras sob GC.
+- Dispatch de multimétodos por valor com `defmulti`, `defmethod` e fallback `:default`.
 - Subconjunto compilado de `clojure.core` com 26 funções, incluindo `map`, `filter`,
   `reduce`, `range`, `into`, `mapv`, `take`, `drop` e `comp`.
 - GC mark-sweep preciso, não móvel e single-thread com shadow stack de roots gerado.
@@ -102,8 +107,8 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-A matriz executável de compatibilidade contém atualmente 431 casos nos níveis A–E:
-160 ativos, 239 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
+A matriz executável de compatibilidade contém atualmente 447 casos nos níveis A–E:
+170 ativos, 245 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
 lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
 World em Pedestal. A matriz também inventaria toda a superfície proposta de I/O como
@@ -157,15 +162,21 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
 - Este é um subconjunto de Clojure, não um substituto direto para Clojure/JVM.
 - O reader aceita literais de ponto flutuante, mas a execução numérica compilada
   nativamente ainda é limitada a fixnums. Bignums, ratios e BigDecimal não existem.
-- Macros definidas pelo usuário, sequências lazy/infinitas, exceções, carregamento
-  dinâmico de namespaces e compilação de projetos com múltiplos arquivos não estão
-  disponíveis no caminho nativo.
+- Macros definidas pelo usuário, sequências lazy/infinitas, carregamento dinâmico de
+  namespaces e compilação de projetos com múltiplos arquivos não estão disponíveis no
+  caminho nativo.
+- Os catches ainda são catch-all: hierarquia tipada, múltiplas cláusulas de catch,
+  `ex-info` e conversão de falhas fatais do runtime em valores capturáveis permanecem
+  incompletos.
+- Multimétodos exigem uma função de dispatch explícita e suportam igualdade mais
+  `:default`; dispatch por hierarquia com `derive`/`isa?` ainda não existe.
 - Stdin geral, arquivos, operações de filesystem, reader EDN em runtime e
   redirecionamento de streams estão especificados, mas não implementados; a saída
   nativa atual limita-se ao baseline ativo de `print`/`println`.
 - A compilação nativa usa o host e invoca um linker C do sistema.
 - O GC é single-thread e não móvel. O rooting ainda é eager; uma fase planejada usará
   liveness para posicionar roots nos safepoints de alocação.
-- Mapas/sets CHAMP e transients continuam como trabalho futuro.
+- Mapas/sets CHAMP, edit tokens de transients, `disj!`, `pop!` e invalidação depois de
+  `persistent!` continuam como trabalho futuro.
 - A interoperabilidade Java e bibliotecas do ecossistema JVM estão fora do runtime
   nativo atual.

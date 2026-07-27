@@ -1,0 +1,11 @@
+id = "b.collections_transients.disj_bang"
+level = "B"
+area = "semantics/collections/transients"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The initial transient subset implements conj!, assoc!, and dissoc!; disj! and pop! remain unavailable."
+tracking = "specs/RUNTIME_SPEC.md#coleções-persistentes"

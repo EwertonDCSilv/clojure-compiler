@@ -1,0 +1,11 @@
+id = "d.errors.typed_exception_api"
+level = "D"
+area = "pure-libraries/errors"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Reusable error APIs still cannot select among multiple catches by native exception type."
+tracking = "specs/COMPATIBILITY_SPEC.md"

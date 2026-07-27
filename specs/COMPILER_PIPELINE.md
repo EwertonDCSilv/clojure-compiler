@@ -100,8 +100,9 @@ incluem forms malformadas, símbolo/primitiva indisponível, `recur` inválido e
 linker.
 
 O runtime nativo atualmente encerra o programa com mensagem para erro de tipo, aridade,
-overflow, divisão ou índice. Exceções capturáveis e stack traces de fonte permanecem
-futuros; consulte [RUNTIME_SPEC.md](RUNTIME_SPEC.md#erros).
+overflow, divisão ou índice. Valores lançados explicitamente já atravessam
+`try`/`catch`/`finally`; catches tipados, tradução desses erros fatais e stack traces de
+fonte permanecem futuros. Consulte [RUNTIME_SPEC.md](RUNTIME_SPEC.md#erros).
 
 ## Evolução planejada
 

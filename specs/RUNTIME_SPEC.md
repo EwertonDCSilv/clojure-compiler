@@ -37,7 +37,8 @@ O runtime atual possui tags para:
 
 Símbolos são necessários durante leitura/análise, mas não são objetos de primeira classe
 do runtime compilado atual. Metadata em valores compilados, Vars dinâmicas, atoms,
-delays e exceções também permanecem futuros.
+delays e objetos de exceção com tipo/`ex-data` também permanecem futuros. Valores
+lançados explicitamente são mantidos como roots enquanto atravessam handlers nativos.
 
 ## Igualdade e hash
 
@@ -61,11 +62,16 @@ delays e exceções também permanecem futuros.
 | Record | nome nominal + mapa persistente de campos | ✅ |
 | Queue | duas sequências | futuro |
 | Sorted map/set | árvore LLRB persistente | ✅ |
-| Transients | edição controlada | futuro |
+| Transients | vetor com buffer mutável; map/set em caixa sobre valor persistente | ✅ parcial |
 | CHAMP | evolução do HAMT para localidade/iteração | futuro |
 
 Mapas e sets promovem automaticamente da representação pequena para HAMT. As operações
 persistentes retornam novos roots e preservam os caminhos não alterados.
+
+O subconjunto transient implementa `transient`, `persistent!`, `conj!`, `assoc!` e
+`dissoc!`. Vetores usam mutação real e crescimento amortizado; mapas e sets atualizam
+uma caixa com o novo valor persistente. Ainda faltam edit tokens, invalidação depois de
+`persistent!`, `disj!`, `pop!` e mutação in-place nos nós HAMT.
 
 ## Modelo de funções
 
@@ -97,8 +103,14 @@ O subconjunto atual implementa:
 - lookup por `(method_id, type_key(primeiro-argumento))`;
 - tabela de métodos mantida como root permanente do GC.
 
-Impls inline em `defrecord`, `extend-protocol`, `deftype`, `reify`, multimethods,
-hierarquias e devirtualização continuam futuros.
+Impls inline em `defrecord`, `extend-protocol`, `deftype`, `reify`, hierarquias e
+devirtualização continuam futuros.
+
+O runtime também implementa `defmulti`/`defmethod`: a função de dispatch recebe os
+argumentos originais, o resultado é comparado estruturalmente com os valores registrados
+e `:default` é usado como fallback. A função de dispatch precisa ser uma `fn` explícita;
+keywords invocáveis, preferências, hierarquias `derive`/`isa?` e cache de hierarquia
+ainda não estão disponíveis.
 
 ## Sequences
 
@@ -129,10 +141,14 @@ somente ao redor de operações que podem alocar.
 
 ## Erros
 
-O runtime atual reporta erros de tipo, aridade, overflow, divisão por zero e índices
-inválidos como diagnósticos fatais do programa nativo. Uma hierarquia capturável de
-exceções com `throw`, `try/catch/finally`, `ex-info` e stack trace de fonte ainda não
-foi implementada.
+`throw` e `try`/`catch`/`finally` já são capturáveis no caminho nativo. O unwind
+restaura shadow stack e estado do GC, suporta nesting e executa `finally` nos caminhos
+normal e capturado. O snapshot aceita uma única cláusula catch-all: o símbolo de classe
+é sintaticamente aceito, mas ainda não participa do dispatch.
+
+Erros de tipo, aridade, overflow, divisão por zero e índices inválidos continuam
+diagnósticos fatais e não são convertidos em valores capturáveis. Hierarquia de
+exceções, `ex-info`/`ex-data` e stack trace de fonte também permanecem futuros.
 
 ## I/O e recursos externos
 
@@ -143,8 +159,8 @@ filesystem, exceções de I/O ou reader em runtime.
 O contrato futuro está em [IO_SPEC](IO_SPEC.md): handles abertos serão objetos GC
 ligados a um registro explícito de recursos externos; buffers e syscalls permanecerão
 atrás da ABI C; `close!` removerá o registro. Finalizers não serão requisito de
-correção. Exceções capturáveis, Vars dinâmicas e `binding` são dependências bloqueantes,
-não capacidades atuais.
+correção. A base genérica de unwind já existe; tipos de exceção de I/O, `ex-data`, Vars
+dinâmicas e `binding` continuam dependências bloqueantes.
 
 ## Estado futuro
 
@@ -153,7 +169,7 @@ O modelo arquitetural preserva espaço para:
 - números de precisão arbitrária e ponto flutuante;
 - metadata e Vars;
 - lazy seqs;
-- exceções capturáveis;
+- exceções tipadas, `ex-data` e stack traces de fonte;
 - atoms, volatiles e delays;
 - namespaces e carregamento AOT multi-arquivo;
 - threads e um coletor apropriado a concorrência.

@@ -1,0 +1,12 @@
+(ns b.multimethods.numeric-multi-argument)
+(defmulti parity (fn [number] (mod number 2)))
+(defmethod parity 0 [number] :even)
+(defmethod parity 1 [number] :odd)
+(defmulti calculate (fn [request operand] (get request :operation)))
+(defmethod calculate :add [request operand] (+ (get request :value) operand))
+(defmethod calculate :multiply [request operand] (* (get request :value) operand))
+(defn -main []
+(println (parity 10) (parity 7))
+(println (calculate {:operation :add :value 10} 5)
+(calculate {:operation :multiply :value 10} 5)))
+(-main)
