@@ -1,0 +1,11 @@
+id = "b.exceptions.runtime_fault_catch"
+level = "B"
+area = "semantics/exceptions"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Fatal runtime faults such as division by zero are not yet converted into catchable native exception values."
+tracking = "specs/RUNTIME_SPEC.md#erros"

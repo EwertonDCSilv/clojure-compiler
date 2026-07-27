@@ -1,0 +1,10 @@
+(ns b.multimethods.structural-dispatch)
+(defmulti route (fn [request] [(get request :kind) (get request :version)]))
+(defmethod route [:invoice 1] [request] :invoice-v1)
+(defmethod route [:invoice 2] [request] :invoice-v2)
+(defmethod route :default [request] :fallback)
+(defn -main []
+(println (route {:kind :invoice :version 1})
+(route {:kind :invoice :version 2})
+(route {:kind :other :version 9})))
+(-main)

@@ -1,0 +1,11 @@
+id = "b.collections_transients.bulk_build_gc_stress"
+level = "B"
+area = "semantics/collections/transients"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = true
+reason = "Implemented by the current analyzer, code generator, and runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"

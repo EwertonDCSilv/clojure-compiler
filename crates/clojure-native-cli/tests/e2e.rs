@@ -293,6 +293,127 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_associative_indexed_dispatch() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0008: assoc variádico (dobra sobre AssocOne), nth aridade 2/3 com
+    // not-found e fallback sequencial, e capability dispatch para tipo sem tag
+    // embutida (Set) via extend-type com nomes reservados.
+    let src = r#"(ns ai.core)
+(defrecord Pt [x y])
+(extend-type Set
+  Assoc (-assoc [s k v] (conj s k))
+  Indexed (-nth [s i] (+ i 1000))
+          (-nth-not-found [s i nf] (if (< i 3) (+ i 2000) nf)))
+(defn -main []
+  (println (assoc {} :a 1 :b 2 :c 3))
+  (println (assoc {:a 1} :a 9 :d 4))
+  (let [m {:a 1}] (println (count (assoc m :a 9)) (count (assoc m :z 9))))
+  (println (assoc [10 20 30] 1 99 3 40))
+  (println (assoc nil :k :v))
+  (println (assoc (->Pt 1 2) :x 10))
+  (println (nth [10 20 30] 1) (nth (list :a :b :c) 2))
+  (println (nth [1 2 3] 9 :nao) (nth (list) 0 :vazio) (nth nil 5 :nnf) (nth nil 3))
+  (println (nth [] 0 false) (nth [] 0 (list :h)))
+  (println (assoc #{1 2} 3 :x))
+  (println (nth #{1 2 3} 5) (nth #{} 1 :cnf) (nth #{} 9 :cnf)))
+(-main)"#;
+    let expected = "{:a 1, :b 2, :c 3}\n{:a 9, :d 4}\n1 2\n[10 99 30 40]\n{:k :v}\n\
+#Pt{:x 10, :y 2}\n20 :c\n:nao :vazio :nnf nil\nfalse (:h)\n#{1 2 3}\n1005 2001 :cnf\n";
+    assert_eq!(build_and_run("cljn_e2e_ai", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_ai_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
+fn compiles_transients() {
+    if !have_cc() {
+        return;
+    }
+    // transient/persistent!/conj!/assoc!/dissoc!: construção em lote mutável.
+    // Vetor transiente usa buffer mutável (conj! O(1)); mapa/set via caixa.
+    let src = r#"(ns tr.core)
+(defn bvec [n] (loop [i 0 t (transient [])] (if (< i n) (recur (+ i 1) (conj! t i)) (persistent! t))))
+(defn bmap [n] (loop [i 0 t (transient {})] (if (< i n) (recur (+ i 1) (assoc! t i (* i i))) (persistent! t))))
+(defn bset [n] (loop [i 0 t (transient #{})] (if (< i n) (recur (+ i 1) (conj! t (mod i 100))) (persistent! t))))
+(defn -main []
+  (let [v (bvec 1000)] (println (count v) (nth v 0) (nth v 999) (get v 500)))
+  (let [t (assoc! (transient [10 20 30]) 1 99)] (println (persistent! (conj! t 40))))
+  (let [m (bmap 500)] (println (count m) (get m 20) (get m 999)))
+  (println (persistent! (dissoc! (transient {:a 1 :b 2 :c 3}) :b)))
+  (let [s (bset 500)] (println (count s) (contains? s 42) (contains? s 200))))
+(-main)"#;
+    let expected = "1000 0 999 500\n[10 99 30 40]\n500 400 nil\n{:a 1, :c 3}\n100 true false\n";
+    assert_eq!(build_and_run("cljn_e2e_trans", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_trans_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
+fn compiles_multimethods() {
+    if !have_cc() {
+        return;
+    }
+    // defmulti/defmethod: dispatch por (dispatch-fn args), casado por = sobre o
+    // valor. Cobre keyword, número, multi-argumento e :default.
+    let src = r#"(ns mm.core)
+(defmulti area (fn [s] (get s :shape)))
+(defmethod area :circle [s] (* 3 (* (get s :r) (get s :r))))
+(defmethod area :square [s] (* (get s :side) (get s :side)))
+(defmethod area :default [s] (str "?" (get s :shape)))
+(defmulti classify (fn [n] (mod n 2)))
+(defmethod classify 0 [n] "par")
+(defmethod classify 1 [n] "impar")
+(defmulti combine (fn [a b] (get a :op)))
+(defmethod combine :add [a b] (+ (get a :v) b))
+(defmethod combine :mul [a b] (* (get a :v) b))
+(defn -main []
+  (println (area {:shape :circle :r 10}) (area {:shape :square :side 5}))
+  (println (classify 4) (classify 7))
+  (println (combine {:op :add :v 10} 5) (combine {:op :mul :v 10} 5))
+  (println (area {:shape :triangle})))
+(-main)"#;
+    let expected = "300 25\npar impar\n15 50\n?:triangle\n";
+    assert_eq!(build_and_run("cljn_e2e_multi", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_multi_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
+fn compiles_try_catch_finally() {
+    if !have_cc() {
+        return;
+    }
+    // try/catch/finally + throw: catch-all liga o valor lançado; finally sempre
+    // roda; captura léxica no corpo/catch; try aninhado propaga ao handler externo.
+    let src = r#"(ns tc.core)
+(defn safe-div [a b]
+  (try (if (= b 0) (throw "div0") (quot a b))
+       (catch Exception e (str "erro: " e))))
+(defn -main []
+  (println (safe-div 10 2) (safe-div 10 0))
+  (println (try 42 (finally (println "fin"))))
+  (println (try (throw "boom") (catch T e (str "peguei: " e)) (finally (println "fin2"))))
+  (println (try (throw 99) (catch E e (+ e 1))))
+  (println (try (try (throw "in") (finally (println "inf"))) (catch E e (str "out: " e))))
+  (let [base 100] (println (try (throw base) (catch E e (+ e base))))))
+(-main)"#;
+    let expected = "5 erro: div0\nfin\n42\nfin2\npeguei: boom\n100\ninf\nout: in\n200\n";
+    assert_eq!(build_and_run("cljn_e2e_try", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_try_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_sorted_collections() {
     if !have_cc() {
         return;

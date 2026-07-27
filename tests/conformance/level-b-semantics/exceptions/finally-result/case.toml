@@ -1,0 +1,11 @@
+id = "b.exceptions.finally_result"
+level = "B"
+area = "semantics/exceptions"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented by the current analyzer, code generator, and runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"

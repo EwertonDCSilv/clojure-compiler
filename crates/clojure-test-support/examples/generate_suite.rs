@@ -434,6 +434,20 @@ fn build_xfail(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_xfail_reason(
+    area: &'static str,
+    slug: &'static str,
+    body: &'static str,
+    desired: &'static str,
+    reason: &'static str,
+    tracking: &'static str,
+) -> Fixture {
+    let mut value = build_xfail(area, slug, body, desired, tracking);
+    value.reason = reason;
+    value
+}
+
 fn native_build_xfail(
     area: &'static str,
     slug: &'static str,
@@ -1463,6 +1477,222 @@ fn fixtures() -> Vec<Fixture> {
         build_expected_diff("records-protocols", "record", "(ns b.record)\n(defrecord Point [x y])\n(defn -main [] (let [p (->Point 3 4)] (println p (:x p) (assoc p :x 9) (= p (->Point 3 4)))))\n(-main)\n", "#Point{:x 3, :y 4} 3 #Point{:x 9, :y 4} true\n", "Native record printing omits the namespace qualifier that Clojure/JVM includes."),
         build("records-protocols", "protocol-record", "(ns b.proto)\n(defprotocol Shape (area [this]))\n(defrecord Rect [w h])\n(extend-type Rect Shape (area [this] (* (:w this) (:h this))))\n(defn -main [] (println (area (->Rect 3 4)) (area (->Rect 0 9))))\n(-main)\n", "12 0\n"),
         build("records-protocols", "extend-list", "(ns b.proto-list)\n(defprotocol Sized (size-of [this]))\n(extend-type List Sized (size-of [this] (count this)))\n(defn -main [] (println (size-of (list)) (size-of (list 1 2 3))))\n(-main)\n", "0 3\n"),
+        // Level B — native exceptions.
+        build(
+            "exceptions",
+            "try-catch-value",
+            "(ns b.exceptions.try-catch)\n\
+             (defn -main []\n\
+               (println (try (throw :boom) (catch Exception error error)))\n\
+               (println (try 42 (catch Exception error :unexpected))))\n\
+             (-main)\n",
+            ":boom\n42\n",
+        ),
+        build(
+            "exceptions",
+            "finally-result",
+            "(ns b.exceptions.finally-result)\n\
+             (defn -main []\n\
+               (println (try 42 (finally (println :finally-normal))))\n\
+               (println (try (throw 7)\n\
+                             (catch Exception error (+ error 1))\n\
+                             (finally (println :finally-caught)))))\n\
+             (-main)\n",
+            ":finally-normal\n42\n:finally-caught\n8\n",
+        ),
+        build_gc(
+            "exceptions",
+            "nested-unwind-gc-stress",
+            "(ns b.exceptions.nested-unwind)\n\
+             (defn -main []\n\
+               (let [prefix \"caught:\"]\n\
+                 (println\n\
+                   (try\n\
+                     (try (throw (str prefix \"value\"))\n\
+                          (finally (println :inner-finally)))\n\
+                     (catch Exception error (str error \"!\"))\n\
+                     (finally (println :outer-finally))))))\n\
+             (-main)\n",
+            ":inner-finally\n:outer-finally\ncaught:value!\n",
+        ),
+        build_xfail_reason(
+            "exceptions",
+            "typed-multiple-catches",
+            "(ns b.exceptions.typed-catches)\n\
+             (defn -main []\n\
+               (println\n\
+                 (try (throw :boom)\n\
+                      (catch ArithmeticException error :arithmetic)\n\
+                      (catch Exception error :generic))))\n\
+             (-main)\n",
+            ":generic\n",
+            "The native subset currently accepts one catch-all clause and does not dispatch catches by exception class.",
+            "specs/RUNTIME_SPEC.md#erros",
+        ),
+        build_xfail_reason(
+            "exceptions",
+            "runtime-fault-catch",
+            "(ns b.exceptions.runtime-fault)\n\
+             (defn -main []\n\
+               (println (try (quot 1 0) (catch Exception error :caught))))\n\
+             (-main)\n",
+            ":caught\n",
+            "Fatal runtime faults such as division by zero are not yet converted into catchable native exception values.",
+            "specs/RUNTIME_SPEC.md#erros",
+        ),
+        // Level B — multimethod dispatch by value.
+        build(
+            "multimethods",
+            "keyword-and-default-dispatch",
+            "(ns b.multimethods.keyword-default)\n\
+             (defmulti describe (fn [value] (get value :kind)))\n\
+             (defmethod describe :circle [value] (str \"circle:\" (get value :radius)))\n\
+             (defmethod describe :square [value] (str \"square:\" (get value :side)))\n\
+             (defmethod describe :default [value] (str \"unknown:\" (get value :kind)))\n\
+             (defn -main []\n\
+               (println (describe {:kind :circle :radius 3}))\n\
+               (println (describe {:kind :square :side 4}))\n\
+               (println (describe {:kind :triangle})))\n\
+             (-main)\n",
+            "circle:3\nsquare:4\nunknown::triangle\n",
+        ),
+        build(
+            "multimethods",
+            "numeric-and-multi-argument-dispatch",
+            "(ns b.multimethods.numeric-multi-argument)\n\
+             (defmulti parity (fn [number] (mod number 2)))\n\
+             (defmethod parity 0 [number] :even)\n\
+             (defmethod parity 1 [number] :odd)\n\
+             (defmulti calculate (fn [request operand] (get request :operation)))\n\
+             (defmethod calculate :add [request operand] (+ (get request :value) operand))\n\
+             (defmethod calculate :multiply [request operand] (* (get request :value) operand))\n\
+             (defn -main []\n\
+               (println (parity 10) (parity 7))\n\
+               (println (calculate {:operation :add :value 10} 5)\n\
+                        (calculate {:operation :multiply :value 10} 5)))\n\
+             (-main)\n",
+            ":even :odd\n15 50\n",
+        ),
+        build_gc(
+            "multimethods",
+            "structural-dispatch-gc-stress",
+            "(ns b.multimethods.structural-dispatch)\n\
+             (defmulti route (fn [request] [(get request :kind) (get request :version)]))\n\
+             (defmethod route [:invoice 1] [request] :invoice-v1)\n\
+             (defmethod route [:invoice 2] [request] :invoice-v2)\n\
+             (defmethod route :default [request] :fallback)\n\
+             (defn -main []\n\
+               (println (route {:kind :invoice :version 1})\n\
+                        (route {:kind :invoice :version 2})\n\
+                        (route {:kind :other :version 9})))\n\
+             (-main)\n",
+            ":invoice-v1 :invoice-v2 :fallback\n",
+        ),
+        build_xfail_reason(
+            "multimethods",
+            "keyword-dispatch-function",
+            "(ns b.multimethods.keyword-dispatch)\n\
+             (defmulti describe :kind)\n\
+             (defmethod describe :value [item] :matched)\n\
+             (defn -main [] (println (describe {:kind :value})))\n\
+             (-main)\n",
+            ":matched\n",
+            "The current analyzer requires an explicit fn as the multimethod dispatch function; invokable keywords are not supported.",
+            "specs/LANGUAGE_SCOPE.md#abstrações",
+        ),
+        build_xfail_reason(
+            "multimethods",
+            "hierarchy-dispatch",
+            "(ns b.multimethods.hierarchy)\n\
+             (derive :dog :animal)\n\
+             (defmulti speak (fn [value] value))\n\
+             (defmethod speak :animal [value] :generic-animal)\n\
+             (defn -main [] (println (speak :dog)))\n\
+             (-main)\n",
+            ":generic-animal\n",
+            "Multimethod hierarchy dispatch through derive and isa? is not implemented; only equality and :default fallback are available.",
+            "specs/LANGUAGE_SCOPE.md#abstrações",
+        ),
+        // Level B — transient collection construction.
+        build(
+            "collections/transients",
+            "vector-operations",
+            "(ns b.transients.vector)\n\
+             (defn -main []\n\
+               (let [value (transient [10 20 30])\n\
+                     value (assoc! value 1 99)\n\
+                     value (conj! value 40)]\n\
+                 (println (count value) (nth value 1) (get value 3))\n\
+                 (println (persistent! value)))\n\
+               (println (persistent! (transient []))))\n\
+             (-main)\n",
+            "4 99 40\n[10 99 30 40]\n[]\n",
+        ),
+        build(
+            "collections/transients",
+            "map-and-set-operations",
+            "(ns b.transients.map-set)\n\
+             (defn -main []\n\
+               (let [value (transient {:a 1 :b 2})\n\
+                     value (assoc! value :c 3)\n\
+                     value (dissoc! value :b)]\n\
+                 (println (count value) (get value :c) (contains? value :b))\n\
+                 (println (persistent! value)))\n\
+               (let [value (conj! (conj! (transient #{1}) 2) 3)]\n\
+                 (println (count value) (contains? value 2) (persistent! value))))\n\
+             (-main)\n",
+            "2 3 false\n{:a 1, :c 3}\n3 true #{1 2 3}\n",
+        ),
+        build_gc(
+            "collections/transients",
+            "bulk-build-gc-stress",
+            "(ns b.transients.bulk)\n\
+             (defn build-vector [limit]\n\
+               (loop [index 0 value (transient [])]\n\
+                 (if (< index limit)\n\
+                   (recur (inc index) (conj! value (* index index)))\n\
+                   (persistent! value))))\n\
+             (defn build-map [limit]\n\
+               (loop [index 0 value (transient {})]\n\
+                 (if (< index limit)\n\
+                   (recur (inc index) (assoc! value index (inc index)))\n\
+                   (persistent! value))))\n\
+             (defn -main []\n\
+               (let [vector-value (build-vector 128)\n\
+                     map-value (build-map 96)]\n\
+                 (println (count vector-value) (nth vector-value 127))\n\
+                 (println (count map-value) (get map-value 95))))\n\
+             (-main)\n",
+            "128 16129\n96 96\n",
+        ),
+        build_xfail_reason(
+            "collections/transients",
+            "use-after-persistent",
+            "(ns b.transients.use-after-persistent)\n\
+             (defn -main []\n\
+               (println\n\
+                 (try\n\
+                   (let [value (transient [])]\n\
+                     (persistent! value)\n\
+                     (conj! value 1)\n\
+                     :unexpected)\n\
+                   (catch Exception error :caught))))\n\
+             (-main)\n",
+            ":caught\n",
+            "Transient edit ownership is not invalidated after persistent!, so use-after-persistent does not yet raise the Clojure error.",
+            "specs/RUNTIME_SPEC.md#coleções-persistentes",
+        ),
+        build_xfail_reason(
+            "collections/transients",
+            "disj-bang",
+            "(ns b.transients.disj)\n\
+             (defn -main []\n\
+               (println (persistent! (disj! (transient #{1 2}) 1))))\n\
+             (-main)\n",
+            "#{2}\n",
+            "The initial transient subset implements conj!, assoc!, and dissoc!; disj! and pop! remain unavailable.",
+            "specs/RUNTIME_SPEC.md#coleções-persistentes",
+        ),
         // Level B — errors.
         build_error("unresolved-symbol", "(ns b.err)\n(defn -main [] (println missing))\n(-main)\n", "E0101"),
         build_error("bad-call-arity", "(ns b.err)\n(defn f [x] x)\n(defn -main [] (println (f 1 2)))\n(-main)\n", "E0103"),
@@ -2020,7 +2250,7 @@ fn fixtures() -> Vec<Fixture> {
         ),
     ]);
 
-    // Level D — executable gaps in otherwise pure Clojure libraries.
+    // Level D — executable gaps plus exception recovery at a library boundary.
     cases.extend([
         higher_level_xfail(
             'D',
@@ -2075,15 +2305,35 @@ fn fixtures() -> Vec<Fixture> {
         higher_level_xfail(
             'D',
             "errors",
+            "typed-exception-api",
+            "pure-libraries/errors",
+            "(ns d.typed-exception-api)\n\
+             (defn classify-failure [value]\n\
+               (try (throw value)\n\
+                    (catch ArithmeticException error :arithmetic)\n\
+                    (catch Exception error :generic)))\n\
+             (defn -main [] (println (classify-failure :boom)))\n\
+             (-main)\n",
+            ":generic\n",
+            "equal",
+            "Reusable error APIs still cannot select among multiple catches by native exception type.",
+        ),
+        higher_level_build(
+            'D',
+            "errors",
             "exception-api",
             "pure-libraries/errors",
             "(ns d.exception-api)\n\
+             (defn require-positive [value]\n\
+               (if (pos? value) value (throw :not-positive)))\n\
              (defn -main []\n\
-               (println (try (quot 1 0) (catch Exception error :caught))))\n\
+               (println (require-positive 7))\n\
+               (println (try (require-positive 0)\n\
+                             (catch Exception error [:caught error])\n\
+                             (finally (println :validated)))))\n\
              (-main)\n",
-            ":caught\n",
-            "equal",
-            "Catchable language exceptions are not implemented on the native path.",
+            "7\n:validated\n[:caught :not-positive]\n",
+            true,
         ),
     ]);
 

@@ -11,7 +11,7 @@
 //! int/bool/nil/string; primitivas `+ - * quot mod inc dec = < <= > >= not nil?
 //! empty? cons first rest count list str println print`.
 
-use clojure_analyzer::{Ast, Callee, FnMethod, Prim, Program};
+use clojure_analyzer::{Ast, Callee, Dispatch, FnMethod, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlags, Value as CValue};
@@ -152,7 +152,8 @@ struct Runtime {
     map_alloc: FuncId,        // (n)->map
     map_set: FuncId,          // (map,i,k,v)->void
     p_get: FuncId,            // (coll,key)->v
-    p_nth: FuncId,            // (coll,i)->v
+    p_nth: FuncId,            // (coll,i)->v   (nth aridade 2)
+    p_nth_or: FuncId,         // (coll,i,nf)->v (nth aridade 3)
     p_assoc: FuncId,          // (coll,k,v)->coll
     p_dissoc: FuncId,         // (map,k)->map
     p_contains: FuncId,       // (coll,key)->bool
@@ -163,6 +164,15 @@ struct Runtime {
     sorted_set_empty: FuncId, // ()->sorted-set
     sorted_assoc: FuncId,     // (smap,k,v)->smap
     compare: FuncId,          // (a,b)->fixnum(-1/0/1)
+    try_: FuncId,             // (body_fn,catch_fn|nil,finally_fn|nil)->v
+    throw_: FuncId,           // (v)->! (longjmp)
+    multi_register: FuncId,   // (mid,dispatch_fn)->void
+    multi_call: FuncId,       // (mid,argc,argv)->v
+    transient: FuncId,        // (coll)->transient
+    persistent_bang: FuncId,  // (t)->coll
+    conj_bang: FuncId,        // (t,x)->t
+    assoc_bang: FuncId,       // (t,k,v)->t
+    dissoc_bang: FuncId,      // (t,k)->t
     make_record: FuncId,      // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
@@ -462,6 +472,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         map_set: quaternary_void(m, "cljn_map_set"),
         p_get: bin(m, "cljn_get"),
         p_nth: bin(m, "cljn_nth"),
+        p_nth_or: ternary(m, "cljn_nth_or"),
         p_assoc: ternary(m, "cljn_assoc"),
         p_dissoc: bin(m, "cljn_map_dissoc"),
         p_contains: bin(m, "cljn_contains"),
@@ -482,6 +493,15 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         },
         sorted_assoc: ternary(m, "cljn_sorted_assoc"),
         compare: bin(m, "cljn_compare"),
+        try_: ternary(m, "cljn_try"),
+        throw_: una(m, "cljn_throw"),
+        multi_register: bin_void(m, "cljn_multi_register"),
+        multi_call: ternary(m, "cljn_multi_call"),
+        transient: una(m, "cljn_transient"),
+        persistent_bang: una(m, "cljn_persistent_bang"),
+        conj_bang: bin(m, "cljn_conj_bang"),
+        assoc_bang: ternary(m, "cljn_assoc_bang"),
+        dissoc_bang: bin(m, "cljn_dissoc_bang"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -547,6 +567,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Compare
             | Prim::Println
             | Prim::Print
+            | Prim::Throw // diverge; resultado nunca materializa
     )
 }
 
@@ -651,7 +672,7 @@ impl<'a> FnGen<'a> {
                 _ => Heap,
             },
             Ast::CallValue { .. } | Ast::Apply { .. } => Heap,
-            Ast::RegisterMethod { .. } => Imm, // devolve nil
+            Ast::RegisterMethod { .. } | Ast::RegisterMulti { .. } => Imm, // devolve nil
         }
     }
 
@@ -738,7 +759,8 @@ impl<'a> FnGen<'a> {
             | Ast::Bool(_)
             | Ast::Nil
             | Ast::Recur(_)
-            | Ast::RegisterMethod { .. } => false,
+            | Ast::RegisterMethod { .. }
+            | Ast::RegisterMulti { .. } => false,
             Ast::Do(stmts) => stmts.last().is_some_and(|s| self.expr_pushes(s, extra)),
             Ast::Let { slots, body } => {
                 let mut e = extra.clone();
@@ -877,7 +899,7 @@ impl<'a> FnGen<'a> {
         mut self,
         methods: &[FnMethod],
         local_count: u32,
-        dispatch: Option<i64>,
+        dispatch: Dispatch,
     ) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
@@ -891,11 +913,21 @@ impl<'a> FnGen<'a> {
         let argc_v = block_vals[1];
         let argv_v = block_vals[2];
 
-        // Função-despacho de protocolo: encaminha argc/argv para a impl.
-        if let Some(mid) = dispatch {
-            self.gen_dispatch(mid, argc_v, argv_v);
-            self.builder.finalize();
-            return Ok(());
+        // Função-despacho (protocolo por tipo, ou multimethod por dispatch-fn).
+        match dispatch {
+            Dispatch::Protocol(mid) => {
+                self.gen_dispatch(mid, argc_v, argv_v);
+                self.builder.finalize();
+                return Ok(());
+            }
+            Dispatch::Multi(mid) => {
+                let mid_v = self.builder.ins().iconst(types::I64, mid);
+                let r = self.call3(self.rt.multi_call, mid_v, argc_v, argv_v);
+                self.builder.ins().return_(&[r]);
+                self.builder.finalize();
+                return Ok(());
+            }
+            Dispatch::None => {}
         }
 
         self.enter_frame(local_count);
@@ -1183,6 +1215,16 @@ impl<'a> FnGen<'a> {
                 self.gc_popn(2);
                 Flow::Val(self.konst(NIL)) // nil imediato: não empurra
             }
+            Ast::RegisterMulti {
+                method_id,
+                dispatch_fn,
+            } => {
+                let df = self.spill_arg(dispatch_fn)?; // +1
+                let mid_v = self.builder.ins().iconst(types::I64, *method_id);
+                self.call_void(self.rt.multi_register, &[mid_v, df]);
+                self.gc_popn(1);
+                Flow::Val(self.konst(NIL))
+            }
             Ast::Capture(i) => {
                 let self_v = self.builder.use_var(self.self_var.expect("self"));
                 let idx = self.builder.ins().iconst(types::I64, *i as i64);
@@ -1315,6 +1357,28 @@ impl<'a> FnGen<'a> {
             self.call_void4(self.rt.map_set, m, idx, *kv, *vv);
         }
         Ok(m)
+    }
+
+    /// `assoc` variádico (ADR-0008): avalia TODOS os args antes da dobra e então
+    /// dobra os pares da esquerda p/ direita sobre AssocOne (`cljn_assoc`),
+    /// mantendo o acumulador rooteado a cada passo. args = [coll, k, v, k, v...].
+    fn gen_assoc(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(args.len());
+        for a in args {
+            vals.push(self.spill_arg(a)?); // todos rooteados antes da dobra
+        }
+        let mut acc = vals[0];
+        self.gc_push_val(acc); // root do acumulador (topo)
+        let mut i = 1;
+        while i + 1 < vals.len() {
+            acc = self.call3(self.rt.p_assoc, acc, vals[i], vals[i + 1]);
+            self.gc_popn(1); // remove acc antigo
+            self.gc_push_val(acc); // novo acc
+            i += 2;
+        }
+        self.gc_popn(1); // acc
+        self.gc_popn(args.len()); // vals
+        Ok(acc)
     }
 
     /// Materializa uma keyword a partir do blob de string (sem empurrar).
@@ -1882,8 +1946,14 @@ impl<'a> FnGen<'a> {
             Prim::Count => self.una(self.rt.count, args),
             // coleções
             Prim::Get => self.bin(self.rt.p_get, args),
-            Prim::Nth => self.bin(self.rt.p_nth, args),
-            Prim::Assoc => self.tern(self.rt.p_assoc, args),
+            Prim::Nth => {
+                if args.len() == 2 {
+                    self.bin(self.rt.p_nth, args)
+                } else {
+                    self.tern(self.rt.p_nth_or, args) // aridade 3: not-found
+                }
+            }
+            Prim::Assoc => self.gen_assoc(args),
             Prim::Dissoc => self.bin(self.rt.p_dissoc, args),
             Prim::Contains => self.bin(self.rt.p_contains, args),
             Prim::Keys => self.una(self.rt.p_keys, args),
@@ -1908,6 +1978,13 @@ impl<'a> FnGen<'a> {
                 self.gen_sorted_map(&pairs)
             }
             Prim::Compare => self.bin(self.rt.compare, args),
+            Prim::Throw => self.una(self.rt.throw_, args), // noreturn (longjmp)
+            Prim::Try => self.tern(self.rt.try_, args),
+            Prim::Transient => self.una(self.rt.transient, args),
+            Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
+            Prim::ConjBang => self.bin(self.rt.conj_bang, args),
+            Prim::AssocBang => self.tern(self.rt.assoc_bang, args),
+            Prim::DissocBang => self.bin(self.rt.dissoc_bang, args),
         }
     }
 

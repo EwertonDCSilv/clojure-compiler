@@ -1,0 +1,10 @@
+(ns b.multimethods.keyword-default)
+(defmulti describe (fn [value] (get value :kind)))
+(defmethod describe :circle [value] (str "circle:" (get value :radius)))
+(defmethod describe :square [value] (str "square:" (get value :side)))
+(defmethod describe :default [value] (str "unknown:" (get value :kind)))
+(defn -main []
+(println (describe {:kind :circle :radius 3}))
+(println (describe {:kind :square :side 4}))
+(println (describe {:kind :triangle})))
+(-main)

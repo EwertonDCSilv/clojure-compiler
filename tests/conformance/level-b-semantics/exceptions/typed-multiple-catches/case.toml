@@ -1,0 +1,11 @@
+id = "b.exceptions.typed_multiple_catches"
+level = "B"
+area = "semantics/exceptions"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The native subset currently accepts one catch-all clause and does not dispatch catches by exception class."
+tracking = "specs/RUNTIME_SPEC.md#erros"

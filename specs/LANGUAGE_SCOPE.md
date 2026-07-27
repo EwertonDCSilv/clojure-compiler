@@ -67,7 +67,7 @@ Define **precisamente** o subconjunto suportado. Legenda das colunas:
 | `set!` (de Var dinâmica/campo) | | ✅ | | MVP só para `set!` de Var dinâmica em `binding` |
 | `loop*`/`recur` | ✅ | | | recur em tail-position de fn/loop |
 | `throw` | ✅ | | | lança valor de exceção nativo |
-| `try`/`catch`/`finally` | ✅ | | | catch por tipo do runtime, não classe Java |
+| `try`/`catch`/`finally` | ✅ | | | snapshot atual: um catch-all; tipos nativos são o alvo |
 | `new` / `.` / `..` interop | | | ✅ | sem equivalente nativo → erro claro (Compat) |
 | `monitor-enter`/`monitor-exit` | | | ✅ | sem modelo de lock de objeto no MVP |
 | `case*` | ✅ | | | `case` como forma otimizada (const dispatch) |
@@ -135,7 +135,7 @@ Define **precisamente** o subconjunto suportado. Legenda das colunas:
 | Chunked seq | | ✅ | | otimização de throughput |
 | Queue (`PersistentQueue`) | | ✅ | | |
 | Sorted map / set (red-black) | | ✅ | | |
-| Transients | | ✅ | | otimização de construção em massa |
+| Transients | | ✅ | | subconjunto executável antecipado; edit tokens completos depois |
 
 ---
 
@@ -148,7 +148,7 @@ Define **precisamente** o subconjunto suportado. Legenda das colunas:
 | `deftype` | | ✅ | | sem interfaces Java |
 | `reify` | | ✅ | | |
 | Metadata em valores | ✅ | | | maps/vectors/symbols/collections |
-| Multimethods (`defmulti`/`defmethod`) | | ✅ | | hierarquias `derive`/`isa?` depois |
+| Multimethods (`defmulti`/`defmethod`) | | ✅ | | dispatch por igualdade já executável; hierarquias depois |
 | Hierarquias (`derive`,`isa?`,`parents`) | | ✅ | | |
 | Interfaces Java equivalentes | | | ✅ | não existem; usar protocols |
 
@@ -216,3 +216,8 @@ transients, chunked seqs, STM/agents/core.async, `future`/`promise`,
 Cada item acima que alguém tente usar deve produzir **erro de compilação diagnosticável**
 (arquivo:linha:coluna + sugestão), nunca comportamento silencioso divergente — ver
 política em [COMPATIBILITY_SPEC.md](COMPATIBILITY_SPEC.md).
+
+O snapshot executável antecipou dois itens originalmente classificados como pós-MVP:
+multimétodos por igualdade de valor e transients básicos. A classificação histórica das
+colunas é preservada; o suporte e suas lacunas exatas são definidos pelos casos
+`active`/`xfail` da suíte de conformidade.

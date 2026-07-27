@@ -6,7 +6,7 @@ nome do produto e do binário é `clojure-native`; o repositório se chama
 
 ## Estado executável
 
-Em 2026-07-26, o workspace já possui um corte vertical funcional:
+Em 2026-07-27, o workspace já possui um corte vertical funcional:
 
 - Reader com spans, reader macros e diagnósticos com arquivo, linha e coluna.
 - Interpretador de bootstrap para `eval`, `run` e infraestrutura de macros.
@@ -21,6 +21,11 @@ Em 2026-07-26, o workspace já possui um corte vertical funcional:
   compacta e promovem para HAMT de 32 vias.
 - `defrecord`, `defprotocol` e `extend-type`, com dispatch para records e tipos
   embutidos.
+- `throw` e `try`/`catch`/`finally` nativos com unwind aninhado e restauração da
+  shadow stack.
+- `defmulti`/`defmethod` com dispatch por igualdade de valor e fallback `:default`.
+- Transients para vetores, mapas e sets por meio de `transient`, `persistent!`,
+  `conj!`, `assoc!` e `dissoc!`.
 - `clojure.core` compilável com 26 funções pré-carregadas em todo `build`.
 - Fast paths nativos verificados para `+`, `-`, `*`, `quot`, `mod`, `inc`, `dec`,
   `<`, `<=`, `>` e `>=`; igualdade estrutural permanece no runtime.
@@ -30,7 +35,7 @@ Em 2026-07-26, o workspace já possui um corte vertical funcional:
   caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
-[`tests/conformance/`](../tests/conformance) possui 431 casos: 160 ativos, 239 falhas
+[`tests/conformance/`](../tests/conformance) possui 447 casos: 170 ativos, 245 falhas
 esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
@@ -45,8 +50,9 @@ medição estão na [ADR-0006](adr/0006-codegen-optimization.md).
 As specs descrevem tanto o que existe quanto o alvo futuro; marcações de fase e
 `[FUTURO]` não devem ser lidas como funcionalidade entregue. O caminho nativo ainda não
 oferece bignums, ratios, ponto flutuante compilado, macros definidas pelo usuário,
-lazy-seq, exceções, namespaces dinâmicos, projetos multi-arquivo ou interop Java. O
-gate geral de I/O também permanece proposto: somente `print`/`println` estão ativos.
+lazy-seq, namespaces dinâmicos, projetos multi-arquivo ou interop Java. Exceções ainda
+não têm hierarquia tipada e multimétodos ainda não usam hierarquias. O gate geral de
+I/O também permanece proposto: somente `print`/`println` estão ativos.
 
 ## Como ler estes documentos
 
@@ -61,10 +67,12 @@ Ordem sugerida:
 7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — GC, roots e ownership.
 8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — biblioteca entregue e alvo.
 9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
-10. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
-11. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-12. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-13. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+10. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
+    `assoc` persistente e `nth` genérico.
+11. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+12. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+13. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+14. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 
@@ -83,6 +91,8 @@ Documentos operacionais:
 - [0006](adr/0006-codegen-optimization.md) — fast paths de fixnum, roots e opt-level.
 - [0007](adr/0007-native-io-and-runtime-reader.md) — I/O atrás da ABI C e reader de
   runtime em Clojure (proposta).
+- [0008](adr/0008-associative-indexed-dispatch.md) — capabilities com fast paths para
+  `assoc` persistente e `nth` genérico (proposta).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -97,7 +107,8 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
 | Otimização | fast paths inteiros e stores diretos de roots | safepoints e otimização do IR |
-| Coleções | lista, trie vetorial, HAMT e sorted map/set por LLRB | CHAMP e transients |
+| Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
+| Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | `print`/`println` diretos no stdout | streams dinâmicos, arquivos, filesystem e readers conforme IO_SPEC |
 | Plataforma | compilação e link para o host | matriz multiplataforma ampliada |
 

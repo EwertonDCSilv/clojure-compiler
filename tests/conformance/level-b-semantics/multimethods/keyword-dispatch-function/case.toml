@@ -1,0 +1,11 @@
+id = "b.multimethods.keyword_dispatch_function"
+level = "B"
+area = "semantics/multimethods"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The current analyzer requires an explicit fn as the multimethod dispatch function; invokable keywords are not supported."
+tracking = "specs/LANGUAGE_SCOPE.md#abstrações"

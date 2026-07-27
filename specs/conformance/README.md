@@ -6,10 +6,24 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **431 cases** — 160 active, 239 expected failures, and 32 pending.
+Current inventory: **447 cases** — 170 active, 245 expected failures, and 32 pending.
 The I/O inventory is intentionally dominated by `xfail`: only the explicit
 `print`/`println` baseline is active, so these counts do not claim that the proposed
 I/O gate is delivered.
+
+The latest native-language catalog adds executable groups for exceptions,
+multimethods, and transients:
+
+- exceptions: explicit thrown values, normal/caught `finally`, nested unwind, lexical
+  capture, and GC stress are active; typed multiple catches and catchable runtime
+  faults remain `xfail`;
+- multimethods: keyword, numeric, multi-argument, structural, and `:default` dispatch
+  are active; invokable-keyword dispatch and `derive`/`isa?` hierarchies remain
+  `xfail`;
+- transients: vector, map, and set construction plus bulk GC stress are active;
+  `disj!`/`pop!`, edit tokens, and invalidation after `persistent!` remain `xfail`;
+- the level-D exception library case is active and exercises recovery at an API
+  boundary.
 
 ## Run it
 

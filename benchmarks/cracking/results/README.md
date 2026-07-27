@@ -2,13 +2,18 @@
 
 Arquivo: [`extreme.csv`](extreme.csv)
 
-Execução realizada em 2026-07-27 com:
+Medições nativas atualizadas em 2026-07-27 com:
 
 ```bash
-benchmarks/cracking/compare-clojure.sh --scale 25 --opt-level none \
+benchmarks/cracking/run.sh --scale 25 --opt-level none \
   --compiler target/release/clojure-native \
-  --csv benchmarks/cracking/results/extreme.csv
+  --csv /tmp/clojure-compiler-cracking-native.csv
 ```
+
+As colunas `clojure_*`, `clojure_version` e `clojure_checksum` foram preservadas sem
+alteração da rodada comparativa anterior. As colunas nativas foram substituídas pela
+nova execução; `wall_speedup_vs_clojure`, `cpu_speedup_vs_clojure` e
+`rss_ratio_clojure_over_native` foram então recalculadas.
 
 ## Ambiente
 
@@ -29,22 +34,22 @@ benchmarks/cracking/compare-clojure.sh --scale 25 --opt-level none \
 ## Resumo desta execução
 
 - 60 casos comparados, 60 com status `OK` e checksums idênticos.
-- O nativo teve menor tempo de parede em 46 casos; Clojure/JVM em 12; houve 2 empates.
-- Mediana de `wall_speedup_vs_clojure`: 2,081× a favor do nativo.
-- Tempos de parede acumulados: nativo 17,87 s; Clojure/JVM 24,96 s.
-- Tempos de CPU acumulados: nativo 17,68 s; Clojure/JVM 53,88 s.
+- O nativo teve menor tempo de parede em 45 casos; Clojure/JVM em 15.
+- Mediana de `wall_speedup_vs_clojure`: 2,133× a favor do nativo.
+- Tempos de parede acumulados: nativo 17,74 s; Clojure/JVM preservado 24,96 s.
+- Tempos de CPU acumulados: nativo 17,51 s; Clojure/JVM preservado 53,88 s.
 - Mediana de `cpu_speedup_vs_clojure`: 4,542× a favor do nativo.
 - O nativo apresentou RSS menor em 59 dos 60 casos.
-- Mediana de `rss_ratio_clojure_over_native`: 19,906×.
-- Maior RSS nativo: 232.196 KiB em
+- Mediana de `rss_ratio_clojure_over_native`: 20,259×.
+- Maior RSS nativo: 232.324 KiB em
   `07-object-oriented-design/06-record-updates.clj`.
 - Maior RSS Clojure/JVM: 525.512 KiB em
   `06-math-and-logic/05-integer-square-root.clj`.
-- Compilação acumulada: 7.246 ms no nativo e 33.114 ms no Clojure/JVM AOT.
+- Compilação acumulada: 7.689 ms no nativo e 33.114 ms preservados no Clojure/JVM AOT.
 
-Em relação ao CSV de referência versionado anterior, o tempo acumulado do nativo caiu
-17,95%, enquanto o do Clojure/JVM subiu 7,59%. A rodada indica melhora do nativo nesta
-máquina, mas não isola causalidade sem uma série de repetições.
+Em relação à medição nativa imediatamente anterior, o tempo acumulado de parede caiu
+0,73% e o de CPU caiu 0,96%. É uma variação pequena e não isola causalidade sem uma
+série de repetições.
 
 ## Como ler a comparação
 
@@ -54,10 +59,10 @@ máquina, mas não isola causalidade sem uma série de repetições.
 - Nas três colunas, valores maiores que `1` favorecem o nativo; valores menores que `1`
   favorecem Clojure/JVM.
 
-Os dois caminhos são compilados antes da execução medida: o binário pelo
-`clojure-compiler` e o namespace JVM por AOT. Os custos aparecem separadamente em
-`native_compile_wall_ms` e `clojure_compile_wall_ms`. A medição de execução inclui a
-inicialização de cada processo, inclusive a JVM.
+Os dois caminhos foram compilados antes de suas respectivas execuções medidas: o
+binário pelo `clojure-compiler` e o namespace JVM por AOT. Nesta atualização somente o
+nativo foi recompilado e executado. Os custos aparecem separadamente em
+`native_compile_wall_ms` e `clojure_compile_wall_ms`.
 
 Os valores são uma fotografia desta máquina; frequência dinâmica, carga do sistema,
 toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estatísticas,
@@ -65,7 +70,7 @@ repita as medições no mesmo ambiente e compare distribuições, não apenas um
 
 O compilador release foi reconstruído imediatamente antes da rodada. O `runtime.c`
 medido tinha SHA-256
-`b9cd80d252c5763722b7d860bebc0e688ec9413bf60d714b08c0054b7bdaa958`.
+`6db9ae1c5f2cdfecdfc8ea827795a9e857e4de438fa9bd31cec733a43a3bd1e4`.
 
 ## Validação do fast path de multiplicação
 

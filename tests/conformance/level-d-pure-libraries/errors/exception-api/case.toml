@@ -1,11 +1,11 @@
 id = "d.errors.exception_api"
 level = "D"
 area = "pure-libraries/errors"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "equal"
 timeout_ms = 10000
-gc_stress = false
-reason = "Catchable language exceptions are not implemented on the native path."
+gc_stress = true
+reason = "This self-contained pure-library slice is executable on the current native path."
 tracking = "specs/COMPATIBILITY_SPEC.md"

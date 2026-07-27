@@ -1,0 +1,11 @@
+id = "b.collections_transients.use_after_persistent"
+level = "B"
+area = "semantics/collections/transients"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Transient edit ownership is not invalidated after persistent!, so use-after-persistent does not yet raise the Clojure error."
+tracking = "specs/RUNTIME_SPEC.md#coleções-persistentes"

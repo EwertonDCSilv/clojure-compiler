@@ -58,14 +58,16 @@ vira um backedge nativo e não cresce a pilha.
 - Set: array-set pequeno que promove para a representação HAMT.
 - Mapa/set ordenado: árvore LLRB persistente.
 - Record: nome nominal e campos com semântica associativa.
+- Transient: buffer mutável para vetor e caixa sobre o valor persistente para map/set.
 
-As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP e
-transients continuam planejados.
+As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP,
+edit tokens e transients com mutação in-place em nós de map/set continuam planejados.
 
 ## Runtime e GC
 
-O runtime C embutido fornece alocação, coleções, strings, impressão, dispatch de
-protocolos e slow paths. O coletor é mark-sweep preciso, não móvel e single-thread.
+O runtime C embutido fornece alocação, coleções, strings, impressão, exceções,
+dispatch de protocolos/multimétodos e slow paths. O coletor é mark-sweep preciso, não
+móvel e single-thread.
 
 Streams gerais, arquivos e readers de runtime ainda são alvo futuro. A fronteira
 proposta mantém handles e buffers atrás da ABI C, conforme

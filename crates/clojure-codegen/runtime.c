@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <setjmp.h>
 
 typedef intptr_t Value;
 
@@ -36,7 +37,7 @@ typedef intptr_t Value;
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
-       T_TNODE = 14, T_SMAP = 15, T_SSET = 16 };
+       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18 };
 
 typedef struct Obj {
     uint8_t type;
@@ -66,6 +67,11 @@ typedef struct { Obj h; uint32_t hash; int64_t n; Value pairs[]; } MColl; /* 2n 
  * sorted-set guarda val==key. Ordem por cljn_compare (ordem total de Clojure). */
 typedef struct { Obj h; Value key; Value val; Value left; Value right; int64_t red; } TNode;
 typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET */
+/* Transients (mutação em lote). Vetor transiente = buffer mutável crescente
+ * (conj! O(1) amortizado); mapa/set transiente = caixa mutável sobre o valor
+ * persistente (semântica correta; persistent! O(1)). */
+typedef struct { Obj h; int64_t len; int64_t cap; Value *items; } TVec; /* T_TVEC */
+typedef struct { Obj h; Value inner; } TBox;                            /* T_TBOX */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
  * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
@@ -109,6 +115,11 @@ static void gc_collect(void);
 
 static void *xalloc(size_t n) {
     void *p = malloc(n);
+    if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
+    return p;
+}
+static void *xrealloc(void *old, size_t n) {
+    void *p = realloc(old, n);
     if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
     return p;
 }
@@ -177,6 +188,12 @@ static void gc_mark(Value v) {
         } else if (o->type == T_SMAP || o->type == T_SSET) {
             gc_mark(((Sorted *)v)->root);
             return;
+        } else if (o->type == T_TVEC) {
+            TVec *tv = (TVec *)v;
+            for (int64_t i = 0; i < tv->len; i++) gc_mark(tv->items[i]);
+            return;
+        } else if (o->type == T_TBOX) {
+            v = ((TBox *)v)->inner; /* itera o valor interno */
         } else if (o->type == T_TNODE) {
             TNode *nd = (TNode *)v;
             gc_mark(nd->key);
@@ -213,15 +230,20 @@ static void gc_sweep(void) {
         } else {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
+            if (o->type == T_TVEC) free(((TVec *)o)->items);
             free(o);
         }
     }
 }
 
 static void gc_mark_method_table(void); /* fwd */
+static void gc_mark_exceptions(void);   /* fwd */
+static void gc_mark_multi(void);        /* fwd */
 static void gc_collect(void) {
     for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
     gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
+    gc_mark_exceptions();   /* valor de exceção em voo */
+    gc_mark_multi();        /* funções de dispatch de multimethods + :default */
     gc_sweep();
     alloc_since_gc = 0;
 }
@@ -1176,6 +1198,8 @@ Value cljn_get(Value coll, Value key) {
         case T_HSET: return (node_get(((HMap *)coll)->root, 0, cljn_hash(key), key) != MNOTFOUND) ? key : NIL;
         case T_SMAP: return cljn_sorted_get(coll, key);
         case T_SSET: return (tn_get(((Sorted *)coll)->root, key) != MNOTFOUND) ? key : NIL;
+        case T_TVEC: { TVec *tv = (TVec *)coll; if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < tv->len) return tv->items[i]; } return NIL; }
+        case T_TBOX: return cljn_get(((TBox *)coll)->inner, key);
         default: return NIL;
     }
 }
@@ -1186,6 +1210,8 @@ Value cljn_contains(Value coll, Value key) {
         case T_SET: case T_HSET: return cljn_set_contains(coll, key);
         case T_SMAP: case T_SSET: return cljn_sorted_contains(coll, key);
         case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
+        case T_TBOX: return cljn_contains(((TBox *)coll)->inner, key);
+        case T_TVEC: { TVec *tv = (TVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < tv->len); }
         default: return FALSEV;
     }
 }
@@ -1211,6 +1237,17 @@ Value cljn_conj(Value coll, Value x) {
             return coll;
     }
 }
+/* ADR-0008: operações internas de core em espaço de IDs reservado (negativo),
+ * separado dos protocolos/multimethods do programa (mids positivos). Built-ins
+ * têm precedência; tipos sem tag embutida registram capabilities por type_key. */
+#define CORE_ASSOC_ONE ((Value)(-1))
+#define CORE_NTH ((Value)(-2))
+#define CORE_NTH_OR ((Value)(-3))
+static Value call_fn2(Value f, Value a, Value b);        /* fwd */
+static Value call_fn3(Value f, Value a, Value b, Value c); /* fwd */
+
+/* AssocOne: atualização unitária persistente. nil→array-map; built-in por tag;
+ * senão capability registrada por type_key; senão erro. */
 Value cljn_assoc(Value coll, Value k, Value v) {
     switch (obj_type(coll)) {
         case T_RECORD: {
@@ -1226,19 +1263,140 @@ Value cljn_assoc(Value coll, Value k, Value v) {
         case T_VEC: return cljn_vec_assoc(coll, k, v);
         default:
             if (coll == NIL) { Value m = cljn_map_alloc(0); return cljn_map_assoc(m, k, v); }
-            die("assoc: coleção não suportada");
+            /* capability por tipo nominal (sem tag embutida) */
+            {
+                Value impl = cljn_lookup_method(CORE_ASSOC_ONE, cljn_type_key(coll));
+                if (impl != NIL) return call_fn3(impl, coll, k, v);
+            }
+            die("assoc: receptor sem suporte");
             return coll;
     }
 }
-Value cljn_nth(Value coll, Value idx) {
-    int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
-    if (i < 0) die("nth: índice inválido");
+/* Núcleo indexado embutido: devolve o elemento, ou MNOTFOUND se fora dos limites,
+ * ou MNODEKEY se o tipo não é indexado embutido (para o caller decidir). */
+static Value nth_builtin(Value coll, int64_t i) {
+    if (coll == EMPTY) return MNOTFOUND; /* sequência vazia: sempre fora dos limites */
     switch (obj_type(coll)) {
-        case T_VEC: { PVec *v = (PVec *)coll; if (i < v->count) return pv_nth(v, i); break; }
-        case T_CONS: { Value c = coll; while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail; if (obj_type(c) == T_CONS) return ((Cons *)c)->head; break; }
+        case T_VEC: { PVec *v = (PVec *)coll; return (i >= 0 && i < v->count) ? pv_nth(v, i) : MNOTFOUND; }
+        case T_TVEC: { TVec *tv = (TVec *)coll; return (i >= 0 && i < tv->len) ? tv->items[i] : MNOTFOUND; }
+        case T_CONS: {
+            if (i < 0) return MNOTFOUND;
+            Value c = coll;
+            while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail;
+            return (obj_type(c) == T_CONS) ? ((Cons *)c)->head : MNOTFOUND;
+        }
     }
-    die("nth: índice fora dos limites");
+    return MNODEKEY; /* não indexado embutido */
+}
+/* nth aridade 2: índice fora dos limites lança; tipo sem suporte lança. */
+Value cljn_nth(Value coll, Value idx) {
+    if (!IS_FIX(idx)) die("nth: índice deve ser inteiro");
+    if (coll == NIL) return NIL;
+    int64_t i = FIX(idx);
+    Value r = nth_builtin(coll, i);
+    if (r != MNODEKEY) { if (r == MNOTFOUND) die("nth: índice fora dos limites"); return r; }
+    Value impl = cljn_lookup_method(CORE_NTH, cljn_type_key(coll));
+    if (impl != NIL) return call_fn2(impl, coll, idx);
+    die("nth: receptor não indexado nem sequencial");
     return NIL;
+}
+/* nth aridade 3: só o limite é absorvido por not-found; tipo/índice inválido lança. */
+Value cljn_nth_or(Value coll, Value idx, Value nf) {
+    if (!IS_FIX(idx)) die("nth: índice deve ser inteiro");
+    if (coll == NIL) return nf;
+    int64_t i = FIX(idx);
+    Value r = nth_builtin(coll, i);
+    if (r != MNODEKEY) return (r == MNOTFOUND) ? nf : r;
+    Value impl = cljn_lookup_method(CORE_NTH_OR, cljn_type_key(coll));
+    if (impl != NIL) return call_fn3(impl, coll, idx, nf);
+    die("nth: receptor não indexado nem sequencial");
+    return nf;
+}
+
+/* ---------- transients (mutação em lote) ---------- */
+Value cljn_transient(Value coll) {
+    if (obj_type(coll) == T_VEC) {
+        PVec *v = (PVec *)coll;
+        cljn_gc_push(coll); /* rooteia durante o obj_alloc */
+        TVec *tv = (TVec *)obj_alloc(sizeof(TVec), T_TVEC);
+        cljn_gc_popn(1);
+        int64_t n = v->count;
+        int64_t cap = n < 8 ? 8 : n;
+        tv->items = (Value *)xalloc((size_t)cap * sizeof(Value));
+        tv->len = n; tv->cap = cap;
+        v = (PVec *)coll; /* revalida (não-móvel) */
+        for (int64_t i = 0; i < n; i++) tv->items[i] = pv_nth(v, i);
+        return (Value)tv;
+    }
+    /* mapas/sets: caixa mutável sobre o valor persistente */
+    cljn_gc_push(coll);
+    TBox *b = (TBox *)obj_alloc(sizeof(TBox), T_TBOX);
+    cljn_gc_popn(1);
+    b->inner = coll;
+    return (Value)b;
+}
+static void tvec_grow(TVec *tv) {
+    if (tv->len < tv->cap) return;
+    int64_t ncap = tv->cap * 2;
+    tv->items = (Value *)xrealloc(tv->items, (size_t)ncap * sizeof(Value));
+    tv->cap = ncap;
+}
+Value cljn_conj_bang(Value t, Value x) {
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        tvec_grow(tv); /* realloc: sem obj_alloc, sem GC no meio */
+        tv->items[tv->len++] = x;
+        return t;
+    }
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_conj(b->inner, x); /* b rooteado pelo caller; inner idem */
+        return t;
+    }
+    die("conj!: não é um transient");
+    return t;
+}
+Value cljn_assoc_bang(Value t, Value k, Value v) {
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        if (!IS_FIX(k)) die("assoc!: índice de vetor deve ser inteiro");
+        int64_t i = FIX(k);
+        if (i >= 0 && i < tv->len) { tv->items[i] = v; return t; }
+        if (i == tv->len) { tvec_grow(tv); tv->items[tv->len++] = v; return t; }
+        die("assoc!: índice fora dos limites");
+    }
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_assoc(b->inner, k, v);
+        return t;
+    }
+    die("assoc!: não é um transient");
+    return t;
+}
+Value cljn_dissoc_bang(Value t, Value k) {
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_map_dissoc(b->inner, k);
+        return t;
+    }
+    die("dissoc!: requer um mapa transiente");
+    return t;
+}
+Value cljn_persistent_bang(Value t) {
+    if (obj_type(t) == T_TBOX) return ((TBox *)t)->inner;
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        Value acc = cljn_vec_empty();
+        cljn_gc_push(acc); /* acc rooteado; t rooteado pelo caller */
+        for (int64_t i = 0; i < tv->len; i++) {
+            acc = cljn_vec_conj(acc, ((TVec *)t)->items[i]);
+            gc_stack[gc_sp - 1] = acc;
+        }
+        cljn_gc_popn(1);
+        return acc;
+    }
+    die("persistent!: não é um transient");
+    return t;
 }
 
 /* ---------- aritmética ---------- */
@@ -1413,6 +1571,8 @@ Value cljn_count(Value v) {
         case T_MAP: return MK_FIX(((Map *)v)->n);
         case T_HMAP: return MK_FIX(((HMap *)v)->count);
         case T_SMAP: case T_SSET: return MK_FIX(((Sorted *)v)->count);
+        case T_TVEC: return MK_FIX(((TVec *)v)->len);
+        case T_TBOX: return cljn_count(((TBox *)v)->inner);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
     long n = 0;
@@ -1567,6 +1727,125 @@ Value cljn_str_concat(Value a, Value b) {
 }
 void cljn_print_space(void) { fputc(' ', stdout); }
 void cljn_print_newline(void) { fputc('\n', stdout); }
+
+/* ---------- exceções: try/catch/finally + throw ----------
+ * setjmp/longjmp ficam INTEIRAMENTE dentro de cljn_try (função C): nenhum código
+ * gerado pelo Cranelift atravessa o setjmp. As closures corpo/catch/finally são
+ * invocadas pela ABI uniforme. `throw` desenrola até o handler mais próximo,
+ * restaurando shadow-stack e gc_disabled (evita corrupção/leak em unwind). */
+typedef Value (*FnCode)(Value, int64_t, Value *);
+static Value call_fn0(Value f) {
+    return ((FnCode)((Fn *)f)->code)(f, 0, &gc_stack[gc_sp]);
+}
+static Value call_fn1(Value f, Value a) {
+    gc_stack[gc_sp++] = a; /* arg no topo; argv aponta pra ele (rooteado) */
+    Value r = ((FnCode)((Fn *)f)->code)(f, 1, &gc_stack[gc_sp - 1]);
+    gc_sp--;
+    return r;
+}
+static Value call_fn2(Value f, Value a, Value b) {
+    gc_stack[gc_sp] = a; gc_stack[gc_sp + 1] = b; gc_sp += 2;
+    Value r = ((FnCode)((Fn *)f)->code)(f, 2, &gc_stack[gc_sp - 2]);
+    gc_sp -= 2;
+    return r;
+}
+static Value call_fn3(Value f, Value a, Value b, Value c) {
+    gc_stack[gc_sp] = a; gc_stack[gc_sp + 1] = b; gc_stack[gc_sp + 2] = c; gc_sp += 3;
+    Value r = ((FnCode)((Fn *)f)->code)(f, 3, &gc_stack[gc_sp - 3]);
+    gc_sp -= 3;
+    return r;
+}
+typedef struct Handler {
+    jmp_buf env;
+    struct Handler *prev;
+    size_t saved_sp;
+    int saved_gc_disabled;
+} Handler;
+static Handler *handler_top = NULL;
+static Value exception_value = NIL;
+
+Value cljn_throw(Value v) {
+    exception_value = v;
+    if (handler_top == NULL) {
+        SB b; sb_init(&b); write_val(&b, v, 0);
+        fputs("exceção não capturada: ", stderr);
+        fwrite(b.p, 1, b.len, stderr); fputc('\n', stderr);
+        free(b.p);
+        exit(1);
+    }
+    longjmp(handler_top->env, 1);
+}
+
+Value cljn_try(Value body, Value catch, Value finally) {
+    Handler h;
+    h.prev = handler_top;
+    h.saved_sp = gc_sp;
+    h.saved_gc_disabled = gc_disabled;
+    Value result;
+    if (setjmp(h.env) == 0) {
+        handler_top = &h;
+        result = call_fn0(body);
+        handler_top = h.prev; /* caminho normal: desempilha o handler */
+    } else {
+        handler_top = h.prev;           /* exceções em catch/finally vão ao externo */
+        gc_sp = h.saved_sp;             /* desenrola temporários do corpo */
+        gc_disabled = h.saved_gc_disabled;
+        Value ex = exception_value;
+        if (catch == NIL) {
+            if (finally != NIL) call_fn0(finally);
+            return cljn_throw(ex);      /* sem catch: roda finally e repropaga */
+        }
+        result = call_fn1(catch, ex);   /* catch pode lançar → handler externo */
+    }
+    if (finally != NIL) {
+        gc_stack[gc_sp++] = result;     /* rooteia o resultado durante o finally */
+        call_fn0(finally);
+        gc_sp--;
+    }
+    return result;
+}
+static void gc_mark_exceptions(void) { gc_mark(exception_value); }
+
+/* ---------- multimethods (defmulti/defmethod) ----------
+ * Reusa a method_table (chave = valor de dispatch, casada por cljn_equal_raw).
+ * A função de dispatch de cada multimethod fica num registro próprio por mid. */
+typedef struct MultiEntry { int64_t mid; Value fn; struct MultiEntry *next; } MultiEntry;
+static MultiEntry *multi_table = NULL;
+static Value cljn_default_kw = 0; /* keyword :default cacheada (root) */
+
+void cljn_multi_register(Value mid, Value fn) {
+    MultiEntry *e = xalloc(sizeof(MultiEntry));
+    e->mid = (int64_t)mid; e->fn = fn; e->next = multi_table; multi_table = e;
+}
+static Value multi_dispatch_fn(int64_t mid) {
+    for (MultiEntry *e = multi_table; e; e = e->next) if (e->mid == mid) return e->fn;
+    return NIL;
+}
+Value cljn_multi_call(Value mid, Value argc, Value argv_) {
+    int64_t n = (int64_t)argc;
+    Value *argv = (Value *)argv_;
+    Value df = multi_dispatch_fn((int64_t)mid);
+    if (obj_type(df) != T_FN) { fprintf(stderr, "erro: multimethod sem função de dispatch\n"); exit(1); }
+    Value dv = ((FnCode)((Fn *)df)->code)(df, n, argv);
+    gc_stack[gc_sp++] = dv; /* rooteia dv durante lookup e alloc de :default */
+    Value impl = cljn_lookup_method(mid, dv);
+    if (impl == NIL) {
+        if (cljn_default_kw == 0) cljn_default_kw = cljn_kw("default", 7);
+        impl = cljn_lookup_method(mid, cljn_default_kw);
+    }
+    gc_sp--;
+    if (obj_type(impl) != T_FN) {
+        fputs("erro: sem método de multimethod para o valor de dispatch: ", stderr);
+        SB b; sb_init(&b); write_val(&b, dv, 0); fwrite(b.p, 1, b.len, stderr); free(b.p);
+        fputc('\n', stderr);
+        exit(1);
+    }
+    return ((FnCode)((Fn *)impl)->code)(impl, n, argv);
+}
+static void gc_mark_multi(void) {
+    for (MultiEntry *e = multi_table; e; e = e->next) gc_mark(e->fn);
+    if (cljn_default_kw) gc_mark(cljn_default_kw);
+}
 
 /* Introspecção para testes. */
 long cljn_gc_live_objects(void) { long n=0; for (Obj*o=all_objs;o;o=o->next_all) n++; return n; }

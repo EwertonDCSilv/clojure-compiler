@@ -1,0 +1,5 @@
+(ns b.multimethods.keyword-dispatch)
+(defmulti describe :kind)
+(defmethod describe :value [item] :matched)
+(defn -main [] (println (describe {:kind :value})))
+(-main)

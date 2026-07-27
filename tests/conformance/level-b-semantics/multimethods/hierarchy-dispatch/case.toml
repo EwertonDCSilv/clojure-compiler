@@ -1,0 +1,11 @@
+id = "b.multimethods.hierarchy_dispatch"
+level = "B"
+area = "semantics/multimethods"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Multimethod hierarchy dispatch through derive and isa? is not implemented; only equality and :default fallback are available."
+tracking = "specs/LANGUAGE_SCOPE.md#abstrações"
