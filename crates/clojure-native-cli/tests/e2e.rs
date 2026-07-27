@@ -258,6 +258,42 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_sorted_collections() {
+    if !have_cc() {
+        return;
+    }
+    // Coleções ordenadas (árvore LLRB): iteração crescente é determinística,
+    // independente da ordem de inserção. Cobre get/contains/assoc/dissoc/seq/=.
+    let src = r#"(ns so.core)
+(defn build [s i n] (if (> i n) s (recur (conj s (mod (* i 7) 101)) (+ i 1) n)))
+(defn -main []
+  (let [s (sorted-set 5 3 8 1 9 2)]
+    (println s (count s) (first s) (rest s))
+    (println (contains? s 8) (contains? s 7) (get s 3) (get s 99)))
+  (let [m (sorted-map 3 :c 1 :a 2 :b)]
+    (println m (keys m) (vals m))
+    (println (assoc m 0 :z))
+    (println (dissoc m 2) (count (dissoc m 2))))
+  (let [big (build (sorted-set) 1 100)]
+    (println (count big) (first big) (reduce + 0 big) (apply max big)))
+  (println (compare 3 5) (compare 5 3) (compare 4 4))
+  (println (= (sorted-set 1 2 3) #{3 2 1}) (= (sorted-map 1 10 2 20) {2 20 1 10})))
+(-main)"#;
+    let expected = "#{1 2 3 5 8 9} 6 1 (2 3 5 8 9)\ntrue false 3 nil\n\
+{1 :a, 2 :b, 3 :c} (1 2 3) (:a :b :c)\n\
+{0 :z, 1 :a, 2 :b, 3 :c}\n\
+{1 :a, 3 :c} 2\n\
+100 1 5050 100\n\
+-1 1 0\n\
+true true\n";
+    assert_eq!(build_and_run("cljn_e2e_sorted", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_sorted_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_records() {
     if !have_cc() {
         return;

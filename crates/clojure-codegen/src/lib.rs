@@ -159,6 +159,10 @@ struct Runtime {
     p_keys: FuncId,      // (map)->list
     p_vals: FuncId,      // (map)->list
     p_conj: FuncId,      // (coll,x)->coll
+    sorted_map_empty: FuncId, // ()->sorted-map
+    sorted_set_empty: FuncId, // ()->sorted-set
+    sorted_assoc: FuncId,     // (smap,k,v)->smap
+    compare: FuncId,          // (a,b)->fixnum(-1/0/1)
     make_record: FuncId, // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
@@ -464,6 +468,20 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         p_keys: una(m, "cljn_map_keys"),
         p_vals: una(m, "cljn_map_vals"),
         p_conj: bin(m, "cljn_conj"),
+        sorted_map_empty: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_sorted_map_empty", Linkage::Import, &s)
+                .unwrap()
+        },
+        sorted_set_empty: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_sorted_set_empty", Linkage::Import, &s)
+                .unwrap()
+        },
+        sorted_assoc: ternary(m, "cljn_sorted_assoc"),
+        compare: bin(m, "cljn_compare"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -993,6 +1011,43 @@ impl<'a> FnGen<'a> {
             self.gc_push_val(acc);
         }
         self.gc_popn(items.len() + 1); // itens + acc
+        Ok(acc)
+    }
+
+    /// sorted-set: parte do vazio e `conj` (genérico, dispatcha p/ árvore) cada
+    /// item, rooteando o acumulador durante as alocações da LLRB.
+    fn gen_sorted_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(items.len());
+        for it in items {
+            vals.push(self.expr_val(it)?); // n temps
+        }
+        let mut acc = self.call0(self.rt.sorted_set_empty);
+        self.gc_push_val(acc); // acc temp
+        for iv in &vals {
+            acc = self.call2(self.rt.p_conj, acc, *iv);
+            self.gc_popn(1);
+            self.gc_push_val(acc);
+        }
+        self.gc_popn(items.len() + 1); // itens + acc
+        Ok(acc)
+    }
+
+    /// sorted-map: parte do vazio e `assoc` cada par (k v), rooteando o acumulador.
+    fn gen_sorted_map(&mut self, pairs: &[(Ast, Ast)]) -> Result<CValue, Diagnostic> {
+        let mut kvs = Vec::with_capacity(pairs.len());
+        for (k, v) in pairs {
+            let kv = self.expr_val(k)?;
+            let vv = self.expr_val(v)?;
+            kvs.push((kv, vv)); // 2 temps por par
+        }
+        let mut acc = self.call0(self.rt.sorted_map_empty);
+        self.gc_push_val(acc); // acc temp
+        for (kv, vv) in &kvs {
+            acc = self.call3(self.rt.sorted_assoc, acc, *kv, *vv);
+            self.gc_popn(1);
+            self.gc_push_val(acc);
+        }
+        self.gc_popn(pairs.len() * 2 + 1); // pares + acc
         Ok(acc)
     }
 
@@ -1569,6 +1624,15 @@ impl<'a> FnGen<'a> {
                     .collect();
                 self.gen_map(&pairs)
             }
+            Prim::SortedSet => self.gen_sorted_set(args),
+            Prim::SortedMap => {
+                let pairs: Vec<(Ast, Ast)> = args
+                    .chunks_exact(2)
+                    .map(|c| (c[0].clone(), c[1].clone()))
+                    .collect();
+                self.gen_sorted_map(&pairs)
+            }
+            Prim::Compare => self.bin(self.rt.compare, args),
         }
     }
 

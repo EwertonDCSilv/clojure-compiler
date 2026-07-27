@@ -121,6 +121,9 @@ pub enum Prim {
     Vector,
     HashMap,
     HashSet,
+    SortedMap,
+    SortedSet,
+    Compare,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -1054,6 +1057,9 @@ fn prim_of(name: &str) -> Option<Prim> {
         "hash-map" => Prim::HashMap,
         "hash-set" => Prim::HashSet,
         "set" => Prim::HashSet,
+        "sorted-map" => Prim::SortedMap,
+        "sorted-set" => Prim::SortedSet,
+        "compare" => Prim::Compare,
         _ => return None,
     })
 }
@@ -1087,6 +1093,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Nth
         | Prim::Dissoc
         | Prim::Contains
+        | Prim::Compare
         | Prim::Conj => 2,
         Prim::Assoc => 3,
         Prim::Str
@@ -1094,6 +1101,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Vector
         | Prim::HashMap
         | Prim::HashSet
+        | Prim::SortedMap
+        | Prim::SortedSet
         | Prim::Println
         | Prim::Print => return None,
     })
@@ -1121,9 +1130,10 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Count
         | Prim::Keys
         | Prim::Vals => n == 1,
-        Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => n == 2,
-        Prim::HashMap => n & 1 == 0,
-        Prim::List | Prim::Str | Prim::Println | Prim::Print | Prim::Vector | Prim::HashSet => true,
+        Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
+        Prim::HashMap | Prim::SortedMap => n & 1 == 0,
+        Prim::List | Prim::Str | Prim::Println | Prim::Print | Prim::Vector | Prim::HashSet
+        | Prim::SortedSet => true,
     };
     if ok {
         Ok(())
