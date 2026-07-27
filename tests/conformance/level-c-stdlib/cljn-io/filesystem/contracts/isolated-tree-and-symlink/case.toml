@@ -1,0 +1,16 @@
+id = "c.cljn_io.filesystem.isolated_tree_and_symlink"
+level = "C"
+area = "stdlib/cljn-io/filesystem"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = true
+reason = "Recursive operations and symlink policy require an exact isolated filesystem oracle."
+tracking = "specs/IO_SPEC.md#filesystem-and-recursive-safety"
+namespace = "cljn.io"
+[run]
+platforms = ["linux"]
+setup_symlinks = [{ path = "source/link", target = "a.txt" }]
+expected_symlinks = [{ path = "copy/link", target = "a.txt" }]

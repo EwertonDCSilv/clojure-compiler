@@ -27,6 +27,12 @@ Cada risco liga-se a decisões/fases relevantes.
 | R20 | Panics do Rust vazando como "erros" da linguagem | Média | Médio | fuzz/asserts | fronteira captura panic → "internal compiler error"; nunca como exceção normal |
 | R21 | Sandbox de macro insuficiente (I/O/rede em build-time) | Média | Médio | auditoria de FFI/IO no interp | negar por padrão; permitir só caminhos do projeto declarados |
 | R22 | Oracle manual indisponível ou atualizado sem controle | Baixa | Médio | revisão de `oracle --check` | fixar Clojure 1.12.5; manter snapshots/checksums; CI nativa não depende da JVM |
+| R23 | Leak de file descriptor/handle em erro ou GC | Média | Alto | registro de recursos não vazio ao fim do caso | fechamento explícito, `with-open` reverso, auditoria do registro e sanitizers (ADR-0007) |
+| R24 | Corrida de symlink entre validação e operação | Média | Alto | testes adversariais no diretório isolado | não seguir links recursivamente; preferir operações relativas a descritor; nunca prometer atomicidade de árvore |
+| R25 | Remoção recursiva atinge caminho fora do alvo | Baixa | Crítico | fixtures com `..`, raiz e symlinks | recusar raiz, validar paths, não seguir symlinks e executar conformidade em temporário |
+| R26 | UTF-8 inválido é aceito, truncado ou substituído silenciosamente | Média | Alto | fixtures binárias com sequências partidas entre buffers | decoder incremental estrito e erro `:invalid-encoding` |
+| R27 | I/O bloqueante trava indefinidamente o programa/teste | Média | Médio | timeout por caso e pipes que não encerram | timeouts externos no runner; documentar semântica bloqueante; cancelamento fica fora do gate |
+| R28 | Escrita parcial/EINTR perde ou duplica bytes | Média | Alto | fault injection e contadores de bytes | loop até conclusão, erro categorizado e comparação binária exata |
 
 ## Política de `unsafe` (start_spec §25)
 

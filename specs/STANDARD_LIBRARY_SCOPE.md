@@ -60,6 +60,11 @@ caso separado de aridade inválida.
 
 As pastas pending tornam o escopo futuro auditável, mas não contam como suporte.
 
+O inventário de I/O amplia essa regra: `clojure.core`, `clojure.edn`, `cljn.io` e
+`cljn.process` possuem casos `xfail` normais, de limite e de erro conforme
+[IO_SPEC](IO_SPEC.md). Esses casos tornam o contrato auditável, mas não promovem os
+namespaces nem as funções a suporte atual.
+
 ## Alvo progressivo
 
 O objetivo é mover para Clojure tudo que possa ser expresso eficientemente sobre as
@@ -84,6 +89,8 @@ fora do runtime nativo.
 - atoms, Vars dinâmicas, delays e futures;
 - `deftype`, `reify`, `extend-protocol`, multimethods e hierarquias;
 - require dinâmico, classpath/JAR e bibliotecas JVM.
+- streams gerais, arquivos, filesystem, `clojure.edn` em runtime, `cljn.io` e
+  `cljn.process` (ver [IO_SPEC](IO_SPEC.md)).
 
 Uma função só deve sair desta lista quando houver implementação e caso de conformidade
 ativo.

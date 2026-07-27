@@ -1,0 +1,11 @@
+id = "b.io_binary.roundtrip_zero_and_ff"
+level = "B"
+area = "semantics/io/binary"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The feature has a defined Clojure result but no current native execution path."
+tracking = "specs/IO_SPEC.md"

@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fs;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::io::{self, Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -76,6 +76,32 @@ pub enum Oracle {
     NotApplicable,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SymlinkFixture {
+    pub path: String,
+    pub target: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunConfig {
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub stdin: Option<String>,
+    #[serde(default)]
+    pub expected_exit: i32,
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    #[serde(default)]
+    pub setup_symlinks: Vec<SymlinkFixture>,
+    #[serde(default)]
+    pub expected_symlinks: Vec<SymlinkFixture>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaseManifest {
@@ -92,6 +118,8 @@ pub struct CaseManifest {
     pub tracking: String,
     #[serde(default)]
     pub namespace: Option<String>,
+    #[serde(default)]
+    pub run: RunConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -146,6 +174,7 @@ pub enum ResultKind {
     Pass,
     ExpectedFailure,
     Pending,
+    Skipped,
     Fail,
     UnexpectedPass,
 }
@@ -170,6 +199,7 @@ pub struct Summary {
     pub pending: usize,
     pub passed: usize,
     pub expected_failures: usize,
+    pub skipped: usize,
     pub failed: usize,
     pub unexpected_passes: usize,
     pub duration_ms: u128,
@@ -187,9 +217,16 @@ pub struct VerifyReport {
 #[derive(Clone, Debug)]
 struct ProcessOutput {
     status: ExitStatus,
-    stdout: String,
-    stderr: String,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
     timed_out: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SnapshotEntry {
+    Directory,
+    File(Vec<u8>),
+    Symlink(PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -316,6 +353,53 @@ fn validate_manifest(root: &Path, directory: &Path, manifest: &CaseManifest) -> 
     if manifest.timeout_ms == 0 {
         return fail("timeout_ms must be greater than zero");
     }
+    if !(0..=255).contains(&manifest.run.expected_exit) {
+        return fail("run.expected_exit must be between 0 and 255");
+    }
+    for platform in &manifest.run.platforms {
+        if !matches!(platform.as_str(), "linux" | "macos" | "windows") {
+            return fail("run.platforms accepts only linux, macos, or windows");
+        }
+    }
+    for argument in &manifest.run.args {
+        if argument.contains('\0') {
+            return fail("run.args cannot contain NUL");
+        }
+    }
+    for (name, value) in &manifest.run.env {
+        if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+            return fail("run.env names must be non-empty and values cannot contain NUL");
+        }
+    }
+    if manifest.target != Target::BuildRun && manifest.run != RunConfig::default() {
+        return fail("the [run] table is valid only for build-run cases");
+    }
+    if let Some(stdin) = &manifest.run.stdin {
+        let stdin_path = safe_join(directory, stdin)
+            .map_err(|message| format!("{}: {message}", directory.join("case.toml").display()))?;
+        if !stdin_path.is_file() {
+            return fail("run.stdin must name a file inside the case directory");
+        }
+    }
+    for symlink in manifest
+        .run
+        .setup_symlinks
+        .iter()
+        .chain(&manifest.run.expected_symlinks)
+    {
+        validate_relative_path(&symlink.path).map_err(|message| {
+            format!(
+                "{}: invalid symlink path: {message}",
+                directory.join("case.toml").display()
+            )
+        })?;
+        validate_relative_path(&symlink.target).map_err(|message| {
+            format!(
+                "{}: invalid symlink target: {message}",
+                directory.join("case.toml").display()
+            )
+        })?;
+    }
     let relative = directory.strip_prefix(root).map_err(|_| {
         format!(
             "{}: case is outside conformance root {}",
@@ -344,17 +428,55 @@ fn validate_manifest(root: &Path, directory: &Path, manifest: &CaseManifest) -> 
         return fail("project cases are pending until a project execution path exists");
     }
     if manifest.status != CaseStatus::Pending {
-        let expected = match manifest.target {
-            Target::Reader => "expected.edn",
-            Target::BuildRun => "expected.stdout",
-            Target::BuildError => "expected.stderr",
-            Target::Project => unreachable!(),
-        };
-        if !directory.join(expected).is_file() {
-            return fail(&format!("{expected} is required for this executable case"));
+        match manifest.target {
+            Target::Reader if !directory.join("expected.edn").is_file() => {
+                return fail("expected.edn is required for this executable case");
+            }
+            Target::BuildError if !directory.join("expected.stderr").is_file() => {
+                return fail("expected.stderr is required for this executable case");
+            }
+            Target::BuildRun => {
+                let text = directory.join("expected.stdout").is_file();
+                let binary = directory.join("expected.stdout.bin").is_file();
+                if text == binary {
+                    return fail(
+                        "build-run requires exactly one of expected.stdout or expected.stdout.bin",
+                    );
+                }
+                if directory.join("expected.stderr").is_file()
+                    && directory.join("expected.stderr.bin").is_file()
+                {
+                    return fail(
+                        "build-run accepts at most one of expected.stderr or expected.stderr.bin",
+                    );
+                }
+            }
+            _ => {}
         }
     }
     Ok(())
+}
+
+fn validate_relative_path(value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("path must not be empty".to_string());
+    }
+    let path = Path::new(value);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(format!(
+            "`{value}` must contain only relative path components"
+        ));
+    }
+    Ok(())
+}
+
+fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, String> {
+    validate_relative_path(relative)?;
+    Ok(base.join(relative))
 }
 
 pub fn list_cases(root: &Path, filters: &Filters) -> Result<Vec<Case>, String> {
@@ -414,7 +536,7 @@ pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
     summary.duration_ms = started.elapsed().as_millis();
     let success = summary.failed == 0 && summary.unexpected_passes == 0;
     let report = VerifyReport {
-        schema_version: 1,
+        schema_version: 2,
         checksum,
         success,
         summary,
@@ -435,6 +557,21 @@ fn execute_case(case: &Case, compiler: &Path) -> CaseReport {
             result: ResultKind::Pending,
             duration_ms: 0,
             message: case.manifest.reason.clone(),
+            error_category: None,
+        };
+    }
+    if !platform_matches(&case.manifest.run.platforms) {
+        return CaseReport {
+            id: case.manifest.id.clone(),
+            level: case.manifest.level,
+            area: case.manifest.area.clone(),
+            status: case.manifest.status,
+            result: ResultKind::Skipped,
+            duration_ms: 0,
+            message: format!(
+                "case is restricted to platforms: {}",
+                case.manifest.run.platforms.join(", ")
+            ),
             error_category: None,
         };
     }
@@ -469,6 +606,13 @@ fn execute_case(case: &Case, compiler: &Path) -> CaseReport {
     }
 }
 
+fn platform_matches(platforms: &[String]) -> bool {
+    platforms.is_empty()
+        || platforms
+            .iter()
+            .any(|platform| platform == std::env::consts::OS)
+}
+
 fn execute_target(case: &Case, compiler: &Path) -> MatchResult {
     let timeout = Duration::from_millis(case.manifest.timeout_ms);
     match case.manifest.target {
@@ -496,11 +640,21 @@ fn execute_reader(case: &Case, compiler: &Path, timeout: Duration) -> MatchResul
         return MatchResult::Mismatch("reader timed out".to_string(), Some("timeout".to_string()));
     }
     if !output.status.success() {
+        let stderr = output_text(&output.stderr);
         return MatchResult::Mismatch(
-            format!("reader failed: {}", normalize_text(&output.stderr, case)),
-            error_category(&output.stderr),
+            format!("reader failed: {}", normalize_text(&stderr, case)),
+            error_category(&stderr),
         );
     }
+    let stdout = match std::str::from_utf8(&output.stdout) {
+        Ok(value) => value,
+        Err(error) => {
+            return MatchResult::Mismatch(
+                format!("reader stdout is not valid UTF-8: {error}"),
+                Some("runner-error".to_string()),
+            );
+        }
+    };
     let expected = match fs::read_to_string(case.directory.join("expected.edn")) {
         Ok(value) => value,
         Err(error) => {
@@ -510,13 +664,13 @@ fn execute_reader(case: &Case, compiler: &Path, timeout: Duration) -> MatchResul
             );
         }
     };
-    match structurally_equal(&expected, &output.stdout) {
+    match structurally_equal(&expected, stdout) {
         Ok(true) => MatchResult::Match("reader forms match structurally".to_string()),
         Ok(false) => MatchResult::Mismatch(
             format!(
                 "reader mismatch\nexpected:\n{}\nactual:\n{}",
                 normalize_newlines(&expected),
-                normalize_newlines(&output.stdout)
+                normalize_newlines(stdout)
             ),
             Some("output-mismatch".to_string()),
         ),
@@ -548,20 +702,36 @@ fn execute_build_run(case: &Case, compiler: &Path, timeout: Duration) -> MatchRe
         return MatchResult::Mismatch("build timed out".to_string(), Some("timeout".to_string()));
     }
     if !build_output.status.success() {
+        let stderr = output_text(&build_output.stderr);
         return MatchResult::Mismatch(
-            format!(
-                "build failed: {}",
-                normalize_text(&build_output.stderr, case)
-            ),
-            error_category(&build_output.stderr),
+            format!("build failed: {}", normalize_text(&stderr, case)),
+            error_category(&stderr),
         );
     }
 
+    let work_directory = temporary.path().join("work");
+    if let Err(error) = prepare_work_directory(case, &work_directory) {
+        return MatchResult::Mismatch(error, Some("fixture-error".to_string()));
+    }
     let mut run = Command::new(&executable);
+    run.args(&case.manifest.run.args)
+        .envs(&case.manifest.run.env)
+        .current_dir(&work_directory);
     if case.manifest.gc_stress {
         run.env("CLJN_GC_STRESS", "1");
     }
-    let run_output = match run_process(&mut run, timeout) {
+    let stdin = match case.manifest.run.stdin.as_deref() {
+        Some(relative) => match safe_join(&case.directory, relative).and_then(|path| {
+            fs::read(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))
+        }) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                return MatchResult::Mismatch(error, Some("fixture-error".to_string()));
+            }
+        },
+        None => None,
+    };
+    let run_output = match run_process_with_stdin(&mut run, timeout, stdin.as_deref()) {
         Ok(output) => output,
         Err(error) => {
             return MatchResult::Mismatch(error, Some("runner-error".to_string()));
@@ -570,45 +740,241 @@ fn execute_build_run(case: &Case, compiler: &Path, timeout: Duration) -> MatchRe
     if run_output.timed_out {
         return MatchResult::Mismatch("program timed out".to_string(), Some("timeout".to_string()));
     }
-    if !run_output.status.success() {
+    let actual_exit = run_output.status.code();
+    if actual_exit != Some(case.manifest.run.expected_exit) {
+        let stderr = output_text(&run_output.stderr);
         return MatchResult::Mismatch(
             format!(
-                "program failed: {}",
-                normalize_text(&run_output.stderr, case)
+                "exit status mismatch: expected {}, got {:?}; stderr: {}",
+                case.manifest.run.expected_exit,
+                actual_exit,
+                normalize_text(&stderr, case)
             ),
-            error_category(&run_output.stderr),
+            error_category(&stderr),
         );
     }
 
-    let expected_stdout = match fs::read_to_string(case.directory.join("expected.stdout")) {
-        Ok(value) => normalize_newlines(&value),
-        Err(error) => {
-            return MatchResult::Mismatch(
-                format!("cannot read expected.stdout: {error}"),
-                Some("fixture-error".to_string()),
-            );
+    if let Err(error) = compare_stream(
+        case,
+        "stdout",
+        "expected.stdout",
+        "expected.stdout.bin",
+        &run_output.stdout,
+        true,
+    ) {
+        return MatchResult::Mismatch(error, Some("output-mismatch".to_string()));
+    }
+    if let Err(error) = compare_stream(
+        case,
+        "stderr",
+        "expected.stderr",
+        "expected.stderr.bin",
+        &run_output.stderr,
+        false,
+    ) {
+        let stderr = output_text(&run_output.stderr);
+        return MatchResult::Mismatch(error, error_category(&stderr));
+    }
+    if let Err(error) = compare_work_directory(case, &work_directory) {
+        return MatchResult::Mismatch(error, Some("filesystem-mismatch".to_string()));
+    }
+    MatchResult::Match("native process contract matches".to_string())
+}
+
+fn compare_stream(
+    case: &Case,
+    label: &str,
+    text_name: &str,
+    binary_name: &str,
+    actual: &[u8],
+    required: bool,
+) -> Result<(), String> {
+    let text_path = case.directory.join(text_name);
+    let binary_path = case.directory.join(binary_name);
+    if binary_path.is_file() {
+        let expected = fs::read(&binary_path)
+            .map_err(|error| format!("cannot read {}: {error}", binary_path.display()))?;
+        if expected != actual {
+            return Err(format!(
+                "{label} binary mismatch: expected {} bytes, got {} bytes",
+                expected.len(),
+                actual.len()
+            ));
         }
+        return Ok(());
+    }
+    if !text_path.is_file() {
+        if !required && actual.is_empty() {
+            return Ok(());
+        }
+        return Err(format!("missing {}", text_path.display()));
+    }
+    let expected = fs::read_to_string(&text_path)
+        .map_err(|error| format!("cannot read {}: {error}", text_path.display()))?;
+    let actual = std::str::from_utf8(actual)
+        .map_err(|error| format!("{label} is not valid UTF-8: {error}"))?;
+    let expected = normalize_newlines(&expected);
+    let actual = normalize_newlines(actual);
+    if expected != actual {
+        return Err(format!(
+            "{label} mismatch\nexpected:\n{expected}\nactual:\n{actual}"
+        ));
+    }
+    Ok(())
+}
+
+fn prepare_work_directory(case: &Case, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination)
+        .map_err(|error| format!("cannot create {}: {error}", destination.display()))?;
+    let before = case.directory.join("work.before");
+    if before.exists() {
+        if !before.is_dir() {
+            return Err("work.before must be a directory".to_string());
+        }
+        copy_directory_contents(&before, destination)?;
+    }
+    for symlink in &case.manifest.run.setup_symlinks {
+        create_fixture_symlink(destination, symlink)?;
+    }
+    Ok(())
+}
+
+fn copy_directory_contents(source: &Path, destination: &Path) -> Result<(), String> {
+    let mut entries = fs::read_dir(source)
+        .map_err(|error| format!("cannot read {}: {error}", source.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let metadata = fs::symlink_metadata(&source_path)
+            .map_err(|error| format!("cannot inspect {}: {error}", source_path.display()))?;
+        if metadata.file_type().is_symlink() {
+            let target = fs::read_link(&source_path)
+                .map_err(|error| format!("cannot read link {}: {error}", source_path.display()))?;
+            create_symlink(&target, &destination_path)?;
+        } else if metadata.is_dir() {
+            fs::create_dir_all(&destination_path).map_err(|error| {
+                format!("cannot create {}: {error}", destination_path.display())
+            })?;
+            copy_directory_contents(&source_path, &destination_path)?;
+        } else if metadata.is_file() {
+            fs::copy(&source_path, &destination_path).map_err(|error| {
+                format!(
+                    "cannot copy {} to {}: {error}",
+                    source_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        } else {
+            return Err(format!(
+                "unsupported fixture file type: {}",
+                source_path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn create_fixture_symlink(root: &Path, fixture: &SymlinkFixture) -> Result<(), String> {
+    let link = safe_join(root, &fixture.path)?;
+    let target = PathBuf::from(&fixture.target);
+    fs::create_dir_all(link.parent().expect("validated symlink parent"))
+        .map_err(|error| format!("cannot create symlink parent: {error}"))?;
+    create_symlink(&target, &link)
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, link: &Path) -> Result<(), String> {
+    std::os::unix::fs::symlink(target, link)
+        .map_err(|error| format!("cannot create symlink {}: {error}", link.display()))
+}
+
+#[cfg(not(unix))]
+fn create_symlink(_target: &Path, link: &Path) -> Result<(), String> {
+    Err(format!(
+        "symlink fixtures are not supported on this host: {}",
+        link.display()
+    ))
+}
+
+fn compare_work_directory(case: &Case, actual_root: &Path) -> Result<(), String> {
+    let expected_root = case.directory.join("work.after");
+    if !expected_root.exists() && case.manifest.run.expected_symlinks.is_empty() {
+        return Ok(());
+    }
+    if expected_root.exists() && !expected_root.is_dir() {
+        return Err("work.after must be a directory".to_string());
+    }
+    let actual = snapshot_directory(actual_root)?;
+    let mut expected = if expected_root.exists() {
+        snapshot_directory(&expected_root)?
+    } else {
+        BTreeMap::new()
     };
-    let actual_stdout = normalize_newlines(&run_output.stdout);
-    if expected_stdout != actual_stdout {
-        return MatchResult::Mismatch(
-            format!("stdout mismatch\nexpected:\n{expected_stdout}\nactual:\n{actual_stdout}"),
-            Some("output-mismatch".to_string()),
+    for symlink in &case.manifest.run.expected_symlinks {
+        expected.insert(
+            PathBuf::from(&symlink.path),
+            SnapshotEntry::Symlink(PathBuf::from(&symlink.target)),
         );
     }
-    let expected_stderr_path = case.directory.join("expected.stderr");
-    let expected_stderr = fs::read_to_string(&expected_stderr_path).unwrap_or_default();
-    if normalize_newlines(&expected_stderr) != normalize_newlines(&run_output.stderr) {
-        return MatchResult::Mismatch(
-            format!(
-                "stderr mismatch\nexpected:\n{}\nactual:\n{}",
-                normalize_newlines(&expected_stderr),
-                normalize_newlines(&run_output.stderr)
-            ),
-            error_category(&run_output.stderr),
-        );
+    if actual != expected {
+        let actual_paths = actual
+            .keys()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        let expected_paths = expected
+            .keys()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "work directory mismatch; expected paths={expected_paths:?}, actual paths={actual_paths:?}"
+        ));
     }
-    MatchResult::Match("native output matches".to_string())
+    Ok(())
+}
+
+fn snapshot_directory(root: &Path) -> Result<BTreeMap<PathBuf, SnapshotEntry>, String> {
+    let mut snapshot = BTreeMap::new();
+    collect_snapshot(root, root, &mut snapshot)?;
+    Ok(snapshot)
+}
+
+fn collect_snapshot(
+    root: &Path,
+    directory: &Path,
+    snapshot: &mut BTreeMap<PathBuf, SnapshotEntry>,
+) -> Result<(), String> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| format!("{} escaped {}", path.display(), root.display()))?
+            .to_path_buf();
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if metadata.file_type().is_symlink() {
+            let target = fs::read_link(&path)
+                .map_err(|error| format!("cannot read link {}: {error}", path.display()))?;
+            snapshot.insert(relative, SnapshotEntry::Symlink(target));
+        } else if metadata.is_dir() {
+            snapshot.insert(relative, SnapshotEntry::Directory);
+            collect_snapshot(root, &path, snapshot)?;
+        } else if metadata.is_file() {
+            let contents = fs::read(&path)
+                .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+            snapshot.insert(relative, SnapshotEntry::File(contents));
+        } else {
+            return Err(format!("unsupported file type: {}", path.display()));
+        }
+    }
+    Ok(())
 }
 
 fn execute_build_error(case: &Case, compiler: &Path, timeout: Duration) -> MatchResult {
@@ -649,7 +1015,8 @@ fn execute_build_error(case: &Case, compiler: &Path, timeout: Duration) -> Match
             );
         }
     };
-    let actual = normalize_text(&output.stderr, case);
+    let stderr = output_text(&output.stderr);
+    let actual = normalize_text(&stderr, case);
     let missing = expected
         .lines()
         .map(str::trim)
@@ -672,10 +1039,39 @@ fn execute_build_error(case: &Case, compiler: &Path, timeout: Duration) -> Match
 }
 
 fn run_process(command: &mut Command, timeout: Duration) -> Result<ProcessOutput, String> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    run_process_with_stdin(command, timeout, None)
+}
+
+fn run_process_with_stdin(
+    command: &mut Command,
+    timeout: Duration,
+    stdin: Option<&[u8]>,
+) -> Result<ProcessOutput, String> {
+    command
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command
         .spawn()
         .map_err(|error| format!("cannot start {:?}: {error}", command.get_program()))?;
+    let stdin_writer = match stdin {
+        Some(bytes) => {
+            let mut pipe = child
+                .stdin
+                .take()
+                .ok_or_else(|| "cannot open process stdin".to_string())?;
+            let bytes = bytes.to_vec();
+            Some(thread::spawn(move || {
+                pipe.write_all(&bytes)?;
+                pipe.flush()
+            }))
+        }
+        None => None,
+    };
     let stdout = child
         .stdout
         .take()
@@ -710,6 +1106,12 @@ fn run_process(command: &mut Command, timeout: Duration) -> Result<ProcessOutput
         .join()
         .map_err(|_| "stderr reader thread panicked".to_string())?
         .map_err(|error| format!("cannot read process stderr: {error}"))?;
+    if let Some(writer) = stdin_writer {
+        writer
+            .join()
+            .map_err(|_| "stdin writer thread panicked".to_string())?
+            .map_err(|error| format!("cannot write process stdin: {error}"))?;
+    }
     Ok(ProcessOutput {
         status: status.0,
         stdout,
@@ -718,10 +1120,14 @@ fn run_process(command: &mut Command, timeout: Duration) -> Result<ProcessOutput
     })
 }
 
-fn read_pipe(mut pipe: impl Read) -> io::Result<String> {
+fn read_pipe(mut pipe: impl Read) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     pipe.read_to_end(&mut bytes)?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
+}
+
+fn output_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 pub fn normalize_newlines(text: &str) -> String {
@@ -838,6 +1244,7 @@ fn summarize(cases: &[CaseReport]) -> Summary {
         match case.result {
             ResultKind::Pass => summary.passed += 1,
             ResultKind::ExpectedFailure => summary.expected_failures += 1,
+            ResultKind::Skipped => summary.skipped += 1,
             ResultKind::Fail => summary.failed += 1,
             ResultKind::UnexpectedPass => summary.unexpected_passes += 1,
             ResultKind::Pending => {}
@@ -871,6 +1278,7 @@ fn write_report(report_directory: &Path, stem: &str, report: &VerifyReport) -> R
          pending: {}\n\
          passed: {}\n\
          expected failures: {}\n\
+         skipped: {}\n\
          failed: {}\n\
          unexpected passes: {}\n\
          duration_ms: {}\n",
@@ -882,6 +1290,7 @@ fn write_report(report_directory: &Path, stem: &str, report: &VerifyReport) -> R
         summary.pending,
         summary.passed,
         summary.expected_failures,
+        summary.skipped,
         summary.failed,
         summary.unexpected_passes,
         summary.duration_ms
@@ -1048,11 +1457,37 @@ pub fn run_oracle(options: &OracleOptions) -> Result<VerifyReport, String> {
             && matches!(case.manifest.target, Target::Reader | Target::BuildRun)
     }) {
         let case_started = Instant::now();
+        if !platform_matches(&case.manifest.run.platforms) {
+            reports.push(CaseReport {
+                id: case.manifest.id,
+                level: case.manifest.level,
+                area: case.manifest.area,
+                status: case.manifest.status,
+                result: ResultKind::Skipped,
+                duration_ms: 0,
+                message: "case does not target this platform".to_string(),
+                error_category: None,
+            });
+            continue;
+        }
         let oracle_mode = match case.manifest.target {
             Target::Reader => "reader",
             Target::BuildRun => "run",
             _ => unreachable!(),
         };
+        let input = case
+            .directory
+            .join("input.clj")
+            .canonicalize()
+            .map_err(|error| {
+                format!(
+                    "cannot resolve oracle input for {}: {error}",
+                    case.manifest.id
+                )
+            })?;
+        let temporary = TempDir::new().map_err(|error| error.to_string())?;
+        let work_directory = temporary.path().join("work");
+        prepare_work_directory(&case, &work_directory)?;
         let mut command = Command::new(&options.java);
         command
             .arg("-cp")
@@ -1060,10 +1495,20 @@ pub fn run_oracle(options: &OracleOptions) -> Result<VerifyReport, String> {
             .arg("clojure.main")
             .arg(&options.helper)
             .arg(oracle_mode)
-            .arg(case.directory.join("input.clj"));
-        let output = run_process(
+            .arg(input)
+            .args(&case.manifest.run.args)
+            .envs(&case.manifest.run.env)
+            .current_dir(&work_directory);
+        let stdin = match case.manifest.run.stdin.as_deref() {
+            Some(relative) => Some(fs::read(safe_join(&case.directory, relative)?).map_err(
+                |error| format!("cannot read oracle stdin for {}: {error}", case.manifest.id),
+            )?),
+            None => None,
+        };
+        let output = run_process_with_stdin(
             &mut command,
             Duration::from_millis(case.manifest.timeout_ms),
+            stdin.as_deref(),
         )?;
         let (result, message, category) = if output.timed_out {
             (
@@ -1071,14 +1516,32 @@ pub fn run_oracle(options: &OracleOptions) -> Result<VerifyReport, String> {
                 "JVM oracle timed out".to_string(),
                 Some("timeout".to_string()),
             )
-        } else if !output.status.success() {
+        } else if output.status.code() != Some(case.manifest.run.expected_exit) {
+            let stderr = output_text(&output.stderr);
             (
                 ResultKind::Fail,
-                format!(
-                    "JVM oracle failed: {}",
-                    normalize_text(&output.stderr, &case)
-                ),
-                error_category(&output.stderr),
+                format!("JVM oracle failed: {}", normalize_text(&stderr, &case)),
+                error_category(&stderr),
+            )
+        } else if let Err(error) = compare_stream(
+            &case,
+            "stderr",
+            "expected.stderr",
+            "expected.stderr.bin",
+            &output.stderr,
+            false,
+        ) {
+            let stderr = output_text(&output.stderr);
+            (
+                ResultKind::Fail,
+                format!("JVM oracle stderr mismatch: {error}"),
+                error_category(&stderr),
+            )
+        } else if let Err(error) = compare_work_directory(&case, &work_directory) {
+            (
+                ResultKind::Fail,
+                format!("JVM oracle filesystem mismatch: {error}"),
+                Some("filesystem-mismatch".to_string()),
             )
         } else {
             oracle_result(options.mode, &case, &output.stdout)?
@@ -1102,7 +1565,7 @@ pub fn run_oracle(options: &OracleOptions) -> Result<VerifyReport, String> {
     summary.duration_ms = started.elapsed().as_millis();
     let success = summary.failed == 0 && summary.unexpected_passes == 0;
     let report = VerifyReport {
-        schema_version: 1,
+        schema_version: 2,
         checksum: verify_checksums(&options.root)?,
         success,
         summary,
@@ -1125,15 +1588,17 @@ fn verify_oracle_version(options: &OracleOptions) -> Result<(), String> {
         return Err("timed out while checking the Clojure/JVM oracle version".to_string());
     }
     if !output.status.success() {
+        let stderr = output_text(&output.stderr);
         return Err(format!(
             "cannot start the Clojure/JVM oracle: {}",
-            normalize_newlines(&output.stderr)
+            normalize_newlines(&stderr)
         ));
     }
-    if output.stdout.trim() != "1.12.5" {
+    let stdout = output_text(&output.stdout);
+    if stdout.trim() != "1.12.5" {
         return Err(format!(
             "oracle version must be Clojure/JVM 1.12.5, found `{}`",
-            output.stdout.trim()
+            stdout.trim()
         ));
     }
     Ok(())
@@ -1142,10 +1607,13 @@ fn verify_oracle_version(options: &OracleOptions) -> Result<(), String> {
 fn oracle_result(
     mode: OracleMode,
     case: &Case,
-    stdout: &str,
+    stdout: &[u8],
 ) -> Result<(ResultKind, String, Option<String>), String> {
     let expected_path = match case.manifest.target {
         Target::Reader => case.directory.join("expected.edn"),
+        Target::BuildRun if case.directory.join("expected.stdout.bin").is_file() => {
+            case.directory.join("expected.stdout.bin")
+        }
         Target::BuildRun => case.directory.join("expected.stdout"),
         _ => unreachable!(),
     };
@@ -1157,7 +1625,16 @@ fn oracle_result(
                 None,
             ));
         }
-        fs::write(&expected_path, normalize_newlines(stdout))
+        let output = if expected_path.extension().and_then(|value| value.to_str()) == Some("bin") {
+            stdout.to_vec()
+        } else {
+            normalize_newlines(
+                std::str::from_utf8(stdout)
+                    .map_err(|error| format!("JVM oracle stdout is not UTF-8: {error}"))?,
+            )
+            .into_bytes()
+        };
+        fs::write(&expected_path, output)
             .map_err(|error| format!("cannot bless {}: {error}", expected_path.display()))?;
         return Ok((
             ResultKind::Pass,
@@ -1166,12 +1643,25 @@ fn oracle_result(
         ));
     }
 
-    let expected = fs::read_to_string(&expected_path)
+    let expected = fs::read(&expected_path)
         .map_err(|error| format!("cannot read {}: {error}", expected_path.display()))?;
-    let equal = if case.manifest.target == Target::Reader {
-        structurally_equal(&expected, stdout)?
+    let equal = if expected_path.extension().and_then(|value| value.to_str()) == Some("bin") {
+        expected == stdout
+    } else if case.manifest.target == Target::Reader {
+        structurally_equal(
+            std::str::from_utf8(&expected)
+                .map_err(|error| format!("expected reader output is not UTF-8: {error}"))?,
+            std::str::from_utf8(stdout)
+                .map_err(|error| format!("JVM reader output is not UTF-8: {error}"))?,
+        )?
     } else {
-        normalize_newlines(&expected) == normalize_newlines(stdout)
+        normalize_newlines(
+            std::str::from_utf8(&expected)
+                .map_err(|error| format!("expected stdout is not UTF-8: {error}"))?,
+        ) == normalize_newlines(
+            std::str::from_utf8(stdout)
+                .map_err(|error| format!("JVM stdout is not UTF-8: {error}"))?,
+        )
     };
     match (case.manifest.oracle, equal) {
         (Oracle::Equal, true) => Ok((
@@ -1201,13 +1691,14 @@ fn oracle_result(
 pub fn human_summary(report: &VerifyReport) -> String {
     let summary = &report.summary;
     format!(
-        "{}: {} active, {} xfail, {} pending; {} passed, {} expected failures, {} failed, {} unexpected passes ({} ms)",
+        "{}: {} active, {} xfail, {} pending; {} passed, {} expected failures, {} skipped, {} failed, {} unexpected passes ({} ms)",
         if report.success { "PASS" } else { "FAIL" },
         summary.active,
         summary.xfail,
         summary.pending,
         summary.passed,
         summary.expected_failures,
+        summary.skipped,
         summary.failed,
         summary.unexpected_passes,
         summary.duration_ms
@@ -1332,6 +1823,78 @@ mod tests {
     }
 
     #[test]
+    fn validates_process_contract_schema_and_rejects_unsafe_paths() {
+        let temp = TempDir::new().expect("temp");
+        let directory = temp.path().join("level-a-syntax/literals/process");
+        write(
+            &directory.join("case.toml"),
+            &(manifest_with_id("a.test.process", "active", "build-run")
+                + "[run]\n\
+                   args = [\"one\", \"two\"]\n\
+                   stdin = \"stdin.bin\"\n\
+                   expected_exit = 7\n\
+                   platforms = [\"linux\"]\n\
+                   setup_symlinks = [{ path = \"link\", target = \"target\" }]\n\
+                   expected_symlinks = [{ path = \"link\", target = \"target\" }]\n\
+                   [run.env]\n\
+                   IO_TEST = \"yes\"\n"),
+        );
+        write(&directory.join("input.clj"), "1\n");
+        write(&directory.join("expected.stdout.bin"), "");
+        write(&directory.join("stdin.bin"), "payload");
+        let cases = discover_cases(temp.path()).expect("valid process contract");
+        assert_eq!(cases[0].manifest.run.args, ["one", "two"]);
+        assert_eq!(cases[0].manifest.run.expected_exit, 7);
+        assert_eq!(
+            cases[0].manifest.run.env.get("IO_TEST"),
+            Some(&"yes".into())
+        );
+
+        let invalid = TempDir::new().expect("temp");
+        let directory = invalid.path().join("level-a-syntax/literals/process");
+        write(
+            &directory.join("case.toml"),
+            &(manifest_with_id("a.test.process", "pending", "build-run")
+                + "[run]\nstdin = \"../outside\"\n"),
+        );
+        write(&directory.join("input.clj"), "1\n");
+        assert!(discover_cases(invalid.path())
+            .expect_err("unsafe stdin path")
+            .contains("relative path components"));
+    }
+
+    #[test]
+    fn compares_binary_stream_expectations() {
+        let temp = TempDir::new().expect("temp");
+        let directory = temp.path().join("level-a-syntax/literals/binary");
+        write(
+            &directory.join("case.toml"),
+            &manifest_with_id("a.test.binary", "active", "build-run"),
+        );
+        write(&directory.join("input.clj"), "1\n");
+        fs::write(directory.join("expected.stdout.bin"), [0_u8, 255, 10]).expect("binary fixture");
+        let case = discover_cases(temp.path()).expect("discover").remove(0);
+        assert!(compare_stream(
+            &case,
+            "stdout",
+            "expected.stdout",
+            "expected.stdout.bin",
+            &[0, 255, 10],
+            true,
+        )
+        .is_ok());
+        assert!(compare_stream(
+            &case,
+            "stdout",
+            "expected.stdout",
+            "expected.stdout.bin",
+            &[0, 10],
+            true,
+        )
+        .is_err());
+    }
+
+    #[test]
     fn filters_by_level_area_status_and_namespace() {
         let case = Case {
             manifest: CaseManifest {
@@ -1347,6 +1910,7 @@ mod tests {
                 reason: "test".into(),
                 tracking: "test".into(),
                 namespace: Some("clojure.core".into()),
+                run: RunConfig::default(),
             },
             directory: PathBuf::new(),
         };
@@ -1427,6 +1991,53 @@ mod tests {
     }
 
     #[test]
+    fn tracked_io_gate_has_three_scenarios_per_native_api() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let cases = discover_cases(&root).expect("discover tracked conformance suite");
+        let mut scenarios = BTreeMap::<String, HashSet<String>>::new();
+        for case in cases.iter().filter(|case| {
+            case.manifest.namespace.as_deref() == Some("cljn.io")
+                && case.manifest.id != "c.cljn_io.filesystem.isolated_tree_and_symlink"
+        }) {
+            assert_eq!(case.manifest.status, CaseStatus::Xfail);
+            assert_eq!(case.manifest.oracle, Oracle::NotApplicable);
+            assert_eq!(case.manifest.run.platforms, ["linux"]);
+            let (api, scenario) = case
+                .manifest
+                .id
+                .rsplit_once('.')
+                .expect("I/O case id has scenario suffix");
+            scenarios
+                .entry(api.to_string())
+                .or_default()
+                .insert(scenario.to_string());
+        }
+        assert_eq!(scenarios.len(), 51);
+        let expected = HashSet::from([
+            "normal".to_string(),
+            "boundary".to_string(),
+            "error".to_string(),
+        ]);
+        assert!(scenarios.values().all(|actual| actual == &expected));
+
+        let active_output = cases
+            .iter()
+            .filter(|case| {
+                case.manifest.level == Level::B
+                    && case.manifest.area == "semantics/io/output"
+                    && case.manifest.status == CaseStatus::Active
+            })
+            .count();
+        assert_eq!(active_output, 6);
+
+        let process_cases = cases
+            .iter()
+            .filter(|case| case.manifest.namespace.as_deref() == Some("cljn.process"))
+            .count();
+        assert_eq!(process_cases, 9);
+    }
+
+    #[test]
     fn normalizes_newline_styles() {
         assert_eq!(normalize_newlines("a\r\nb\rc\n"), "a\nb\nc\n");
     }
@@ -1489,6 +2100,82 @@ mod tests {
         assert!(!output.status.success());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn build_run_applies_stdin_args_env_exit_and_filesystem_contract() {
+        let temp = TempDir::new().expect("temp");
+        let root = temp.path().join("suite");
+        let directory = root.join("level-a-syntax/literals/process");
+        write(
+            &directory.join("case.toml"),
+            &(manifest_with_id("a.test.process", "active", "build-run")
+                + "[run]\n\
+                   args = [\"argument\"]\n\
+                   stdin = \"stdin.txt\"\n\
+                   expected_exit = 7\n\
+                   platforms = [\"linux\"]\n\
+                   [run.env]\n\
+                   IO_TEST = \"environment\"\n"),
+        );
+        write(&directory.join("input.clj"), "ignored\n");
+        write(
+            &directory.join("expected.stdout"),
+            "argument|environment|payload\n",
+        );
+        write(&directory.join("stdin.txt"), "payload\n");
+        write(&directory.join("work.before/seed.txt"), "seed\n");
+        write(&directory.join("work.after/seed.txt"), "seed\n");
+        write(&directory.join("work.after/result.txt"), "seed\n");
+        update_checksums(&root).expect("checksums");
+
+        let compiler = temp.path().join("fake-compiler");
+        executable(
+            &compiler,
+            r#"#!/bin/sh
+shift 2
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then output="$2"; break; fi
+  shift
+done
+printf '#!/bin/sh\nprintf "%%s|%%s|" "$1" "$IO_TEST"\ncat\ncp seed.txt result.txt\nexit 7\n' > "$output"
+chmod +x "$output"
+"#,
+        );
+        let report = verify(&VerifyOptions {
+            root,
+            compiler,
+            report_directory: temp.path().join("reports"),
+            jobs: 1,
+            filters: Filters::default(),
+        })
+        .expect("verify process fixture");
+        assert!(report.success, "{:?}", report.cases);
+        assert_eq!(report.summary.passed, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_setup_and_expected_snapshot_are_declarative() {
+        let temp = TempDir::new().expect("temp");
+        let directory = temp.path().join("level-a-syntax/literals/symlink");
+        write(
+            &directory.join("case.toml"),
+            &(manifest_with_id("a.test.symlink", "active", "build-run")
+                + "[run]\n\
+                   platforms = [\"linux\"]\n\
+                   setup_symlinks = [{ path = \"link\", target = \"target.txt\" }]\n\
+                   expected_symlinks = [{ path = \"link\", target = \"target.txt\" }]\n"),
+        );
+        write(&directory.join("input.clj"), "1\n");
+        write(&directory.join("expected.stdout"), "");
+        write(&directory.join("work.before/target.txt"), "target\n");
+        write(&directory.join("work.after/target.txt"), "target\n");
+        let case = discover_cases(temp.path()).expect("discover").remove(0);
+        let work = temp.path().join("work");
+        prepare_work_directory(&case, &work).expect("prepare");
+        compare_work_directory(&case, &work).expect("snapshot");
+    }
+
     #[test]
     fn status_transitions_are_counted() {
         let cases = vec![
@@ -1496,14 +2183,16 @@ mod tests {
             report(CaseStatus::Xfail, ResultKind::ExpectedFailure),
             report(CaseStatus::Xfail, ResultKind::UnexpectedPass),
             report(CaseStatus::Pending, ResultKind::Pending),
+            report(CaseStatus::Active, ResultKind::Skipped),
         ];
         let summary = summarize(&cases);
-        assert_eq!(summary.active, 1);
+        assert_eq!(summary.active, 2);
         assert_eq!(summary.xfail, 2);
         assert_eq!(summary.pending, 1);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.expected_failures, 1);
         assert_eq!(summary.unexpected_passes, 1);
+        assert_eq!(summary.skipped, 1);
     }
 
     #[cfg(unix)]

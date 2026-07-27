@@ -32,6 +32,7 @@ O runtime atual possui tags para:
 - array-map e HAMT, incluindo nós e colisões;
 - array-set e HAMT set;
 - record;
+- sorted map/set e nós LLRB;
 - tipos internos usados pelo runtime.
 
 Símbolos são necessários durante leitura/análise, mas não são objetos de primeira classe
@@ -59,7 +60,7 @@ delays e exceções também permanecem futuros.
 | Set grande | HAMT de 32 vias | ✅ |
 | Record | nome nominal + mapa persistente de campos | ✅ |
 | Queue | duas sequências | futuro |
-| Sorted map/set | árvore balanceada | futuro |
+| Sorted map/set | árvore LLRB persistente | ✅ |
 | Transients | edição controlada | futuro |
 | CHAMP | evolução do HAMT para localidade/iteração | futuro |
 
@@ -133,6 +134,18 @@ inválidos como diagnósticos fatais do programa nativo. Uma hierarquia capturá
 exceções com `throw`, `try/catch/finally`, `ex-info` e stack trace de fonte ainda não
 foi implementada.
 
+## I/O e recursos externos
+
+O runtime executável atual oferece somente a saída direta usada por `print` e
+`println`. Ele ainda não possui handles gerais, stdin, redirecionamento, arquivos,
+filesystem, exceções de I/O ou reader em runtime.
+
+O contrato futuro está em [IO_SPEC](IO_SPEC.md): handles abertos serão objetos GC
+ligados a um registro explícito de recursos externos; buffers e syscalls permanecerão
+atrás da ABI C; `close!` removerá o registro. Finalizers não serão requisito de
+correção. Exceções capturáveis, Vars dinâmicas e `binding` são dependências bloqueantes,
+não capacidades atuais.
+
 ## Estado futuro
 
 O modelo arquitetural preserva espaço para:
@@ -144,6 +157,8 @@ O modelo arquitetural preserva espaço para:
 - atoms, volatiles e delays;
 - namespaces e carregamento AOT multi-arquivo;
 - threads e um coletor apropriado a concorrência.
+- streams, arquivos, filesystem, `Bytes`, `Path` e readers de runtime conforme
+  [IO_SPEC](IO_SPEC.md).
 
 Esses itens não devem ser tratados como recursos disponíveis até aparecerem como casos
 `active` na suíte de conformidade.

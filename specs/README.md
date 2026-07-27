@@ -29,8 +29,9 @@ Em 2026-07-26, o workspace já possui um corte vertical funcional:
 - Operações diretas na shadow stack substituem `gc_push`, `gc_popn` e `gc_set` no
   caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
 
-A suíte Rust possui 107 testes. A matriz em [`tests/conformance/`](../tests/conformance)
-possui 206 casos: 154 ativos, 20 falhas esperadas e 32 itens pendentes. Os níveis D e E
+O workspace possui uma suíte Rust bloqueante. A matriz em
+[`tests/conformance/`](../tests/conformance) possui 431 casos: 160 ativos, 239 falhas
+esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
 arquivo.
@@ -44,7 +45,8 @@ medição estão na [ADR-0006](adr/0006-codegen-optimization.md).
 As specs descrevem tanto o que existe quanto o alvo futuro; marcações de fase e
 `[FUTURO]` não devem ser lidas como funcionalidade entregue. O caminho nativo ainda não
 oferece bignums, ratios, ponto flutuante compilado, macros definidas pelo usuário,
-lazy-seq, exceções, namespaces dinâmicos, projetos multi-arquivo ou interop Java.
+lazy-seq, exceções, namespaces dinâmicos, projetos multi-arquivo ou interop Java. O
+gate geral de I/O também permanece proposto: somente `print`/`println` estão ativos.
 
 ## Como ler estes documentos
 
@@ -58,10 +60,11 @@ Ordem sugerida:
 6. [RUNTIME_SPEC.md](RUNTIME_SPEC.md) — implementação atual e modelo futuro do runtime.
 7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — GC, roots e ownership.
 8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — biblioteca entregue e alvo.
-9. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
-10. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-11. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-12. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
+10. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+11. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+12. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+13. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 
@@ -78,6 +81,8 @@ Documentos operacionais:
 - [0004](adr/0004-macro-execution.md) — interpretador de bootstrap para macros.
 - [0005](adr/0005-bootstrap-strategy.md) — primitivas + core progressivo em Clojure.
 - [0006](adr/0006-codegen-optimization.md) — fast paths de fixnum, roots e opt-level.
+- [0007](adr/0007-native-io-and-runtime-reader.md) — I/O atrás da ABI C e reader de
+  runtime em Clojure (proposta).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -92,7 +97,8 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
 | Otimização | fast paths inteiros e stores diretos de roots | safepoints e otimização do IR |
-| Coleções | lista, trie vetorial, array-map/set com promoção HAMT | CHAMP, sorted e transients |
+| Coleções | lista, trie vetorial, HAMT e sorted map/set por LLRB | CHAMP e transients |
+| I/O | `print`/`println` diretos no stdout | streams dinâmicos, arquivos, filesystem e readers conforme IO_SPEC |
 | Plataforma | compilação e link para o host | matriz multiplataforma ampliada |
 
 ## Convenções

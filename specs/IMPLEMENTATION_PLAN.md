@@ -77,6 +77,14 @@ Legenda de dependência: "→ Fase N" = depende da fase N.
 - **4.1 Valores + coleções essenciais** — *Crates:* `clojure-value`, `clojure-persistent`. *Impl:* `Value` final, `Str`, `PersistentList/Cons`, `PersistentVector` (trie), `ArrayMap`, `HashMap` (HAMT), `HashSet`, `=`/`hash`/`compare`, `seq`/`first`/`rest`, metadata. *Testes:* **property** (leis + vs. modelo) + fuzz. *Aceite:* `conformance/collections` (subconjunto) verde.
 - **4.2 GC** — *Crates:* `clojure-gc`. *Deps:* 4.1. *Impl:* heap, `Gc<T>`, mark-sweep não-móvel, shadow-stack roots, `alloc`/`collect`, safepoints em alocação. *Testes:* stress/ciclos/retenção + **Miri**. *Risco:* precisão de roots (todo vivo alcançável). *Aceite:* `(def xs (lazy-seq (cons 1 xs)))` e `(reduce + (take 1e6 (range)))` sem vazar/estourar (via interp).
 - **4.3 Runtime nativo** — *Crates:* `clojure-runtime`, `clojure-core-native`. *Impl:* Vars/namespaces registry, fn objects + trampolim de aridade (ABI C), exceções nativas + `try/catch/finally`, atoms/volatile/delay, dynamic binding, IO (`println`/`pr`/`str`), stack de frames lógicos p/ traces. *Testes:* unit + differential. *Aceite:* interp usa o runtime real (não mais `Rc` ad-hoc) para valores/coleções.
+- **4.4 Gate completo de I/O `[FUTURO]`** — *Deps:* exceções capturáveis, Vars
+  dinâmicas e valores de runtime de 4.3. *Impl:* seguir os marcos IO-0–IO-5 de
+  [IO_SPEC](IO_SPEC.md): handles/buffers/syscalls atrás da ABI C, `cljn.io`,
+  `cljn.process`, streams dinâmicos, arquivos/filesystem e readers de runtime.
+  *Testes:* matriz isolada com stdin/argv/env, bytes, `work.before/after`, symlinks,
+  GC stress e sanitizers. *Riscos:* R23–R28. *Aceite:* todos os casos de I/O ativos,
+  zero handles vazados e streaming em blocos. A [ADR-0007](adr/0007-native-io-and-runtime-reader.md)
+  registra a fronteira; o item ainda não está entregue.
 
 ---
 

@@ -11,8 +11,9 @@
               (prn form))
             (recur)))))))
 
-(let [[mode path] *command-line-args*]
-  (case mode
-    "reader" (read-all path)
-    "run" (load-file path)
-    (throw (ex-info "unknown oracle mode" {:mode mode}))))
+(let [[mode path & program-args] *command-line-args*]
+  (binding [*command-line-args* (seq program-args)]
+    (case mode
+      "reader" (read-all path)
+      "run" (load-file path)
+      (throw (ex-info "unknown oracle mode" {:mode mode})))))

@@ -6,7 +6,10 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **206 cases** — 154 active, 20 expected failures, and 32 pending.
+Current inventory: **431 cases** — 160 active, 239 expected failures, and 32 pending.
+The I/O inventory is intentionally dominated by `xfail`: only the explicit
+`print`/`println` baseline is active, so these counts do not claim that the proposed
+I/O gate is delivered.
 
 ## Run it
 
@@ -31,8 +34,8 @@ run concurrently. The machine-readable report is
 | Level | Directory | Policy |
 | --- | --- | --- |
 | A | `level-a-syntax` | Reader syntax, trivia, metadata, macros, and diagnostics |
-| B | `level-b-semantics` | Native execution, errors, records/protocols, and GC stress |
-| C | `level-c-stdlib` | Current compiled `clojure.core`; documented namespaces remain visible |
+| B | `level-b-semantics` | Native execution, errors, records/protocols, GC stress, and process I/O |
+| C | `level-c-stdlib` | Current compiled `clojure.core` plus the planned core/EDN/`cljn.*` I/O inventory |
 | D | `level-d-pure-libraries` | Executable single-file pure libraries, concrete gaps, and pending multi-file projects |
 | E | `level-e-ecosystem` | Standalone native applications, executable ecosystem gaps, and pending integrated projects, including a Pedestal Hello World API |
 
@@ -54,9 +57,12 @@ Every case is self-contained:
 case-name/
 ├── case.toml
 ├── input.clj
-├── expected.stdout
-├── expected.stderr
-└── expected.edn
+├── expected.stdout      # or expected.stdout.bin
+├── expected.stderr      # or expected.stderr.bin
+├── expected.edn
+├── stdin.bin
+├── work.before/
+└── work.after/
 ```
 
 Only the expectation appropriate to the target is required. `case.toml` has the
@@ -75,6 +81,15 @@ gc_stress = false
 reason = "Implemented by the current native path."
 tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"
 namespace = "clojure.core" # optional filter metadata
+
+[run] # optional; build-run only
+args = ["first", "ação"]
+env = { APP_MODE = "test" }
+stdin = "stdin.bin"
+expected_exit = 0
+platforms = ["linux"]
+setup_symlinks = [{ path = "link", target = "target.txt" }]
+expected_symlinks = [{ path = "copy/link", target = "target.txt" }]
 ```
 
 Allowed values are:
@@ -86,7 +101,14 @@ Allowed values are:
 
 Reader results use structural comparison: map and set order does not affect equality.
 Build-error expectations are stable diagnostic fragments/categories, so temporary
-paths do not make fixtures platform-specific. Line endings are normalized.
+paths do not make fixtures platform-specific. Text line endings are normalized.
+Binary streams are compared byte for byte.
+
+Every `build-run` executes in a fresh temporary working directory. `work.before/` is
+copied into it before launch; when `work.after/` exists, its entries, file bytes,
+directories, and declared symlink targets must match exactly. Fixture paths must be
+relative normal components: absolute paths and `..` are rejected before execution.
+A platform mismatch is reported as skipped rather than passed.
 
 ## Checksums
 
@@ -122,8 +144,13 @@ differences are never overwritten from the JVM.
 
 ## Acceptance gate
 
-CI runs `scripts/conformance.sh verify` without a JVM. The gate requires all active
+CI runs `scripts/conformance.sh verify` without a JVM. The general gate requires all active
 cases to pass, every xfail to remain an expected failure, no unexpected pass, and an
 exact checksum inventory. Unit tests in `clojure-test-support` cover discovery, strict
 TOML parsing, path/newline normalization, process timeouts, structural collection
-comparison, error categories, checksums, filters, and state accounting.
+comparison, binary streams, stdin/argv/env/exit status, filesystem snapshots,
+declarative symlinks, error categories, checksums, filters, and state accounting.
+
+The stronger I/O acceptance criteria—zero leaked handles, buffering, GC stress,
+sanitizers, recursive safety, and differential runtime reading—are defined in
+[`IO_SPEC.md`](../IO_SPEC.md).

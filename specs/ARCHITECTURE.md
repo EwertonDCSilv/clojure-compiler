@@ -69,11 +69,17 @@ O runtime fornece:
 - alocação e GC mark-sweep;
 - strings, cons, vetores, maps, sets e records;
 - closures, aridade, `apply` e dispatch de protocolos;
-- operações de coleção e IO;
+- operações de coleção e o baseline de stdout por `print`/`println`;
 - slow paths de tipo, overflow e divisão.
 
 Fast paths numéricos e operações da shadow stack são gerados diretamente sempre que
 possível.
+
+O gate proposto em [IO_SPEC](IO_SPEC.md) preserva essa fronteira: handles, buffers e
+syscalls ficarão atrás da ABI C, enquanto opções, macros de lifecycle e readers
+derivados serão implementados em Clojure. A [ADR-0007](adr/0007-native-io-and-runtime-reader.md)
+registra as alternativas. Essa arquitetura ainda não é uma capacidade executável,
+exceto pelo baseline de saída.
 
 ## Persistência e memória
 
@@ -94,6 +100,8 @@ workspace:
 - `clojure-macroexpander`: macros de usuário em build-time;
 - `clojure-loader` e `clojure-project`: namespaces e projetos multi-arquivo;
 - `clojure-ffi`: interop C;
+- primitivas ABI para streams, arquivos e filesystem descritas em
+  [IO_SPEC](IO_SPEC.md);
 - crates Rust separados para GC, runtime e coleções persistentes;
 - backend C alternativo e linker dedicado.
 
@@ -106,3 +114,6 @@ O build atual gera objeto e executável para o host suportado por Cranelift e pe
 compilador C disponível. Linux x86_64 é o ambiente exercitado no repositório. Windows,
 macOS, ARM64 e cross-compilation permanecem metas de matriz; não são afirmados como
 plataformas validadas até existirem jobs e fixtures ativos.
+
+O gate de I/O é ainda mais estreito: Linux x86_64 é sua primeira plataforma
+bloqueante, com operação síncrona, bloqueante e UTF-8 estrito.

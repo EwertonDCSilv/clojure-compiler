@@ -1,0 +1,12 @@
+id = "c.clojure_core.newline.error"
+level = "C"
+area = "stdlib/clojure-core/io"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+tracking = "specs/IO_SPEC.md"
+namespace = "clojure.core"

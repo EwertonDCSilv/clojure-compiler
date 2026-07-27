@@ -35,7 +35,8 @@ typedef intptr_t Value;
 #define FIXNUM_MAX (((intptr_t)1 << 62) - 1)
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
-       T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13 };
+       T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
+       T_TNODE = 14, T_SMAP = 15, T_SSET = 16 };
 
 typedef struct Obj {
     uint8_t type;
@@ -60,6 +61,11 @@ typedef struct { Obj h; uint32_t bitmap; Value arr[]; } MNode; /* 2*popcount slo
 typedef struct { Obj h; uint32_t hash; int64_t n; Value pairs[]; } MColl; /* 2n */
 #define MNODEKEY ((Value)26)  /* imediato reservado: "este slot guarda um sub-nó" */
 #define MNOTFOUND ((Value)42) /* sentinela interno de "não encontrado" */
+/* Coleções ordenadas: árvore left-leaning red-black (LLRB) persistente.
+ * TNode = nó (chave, valor, filhos, cor). Sorted = wrapper (count + raiz).
+ * sorted-set guarda val==key. Ordem por cljn_compare (ordem total de Clojure). */
+typedef struct { Obj h; Value key; Value val; Value left; Value right; int64_t red; } TNode;
+typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
  * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
@@ -168,6 +174,15 @@ static void gc_mark(Value v) {
         } else if (o->type == T_HMAP || o->type == T_HSET) {
             gc_mark(((HMap *)v)->root);
             return;
+        } else if (o->type == T_SMAP || o->type == T_SSET) {
+            gc_mark(((Sorted *)v)->root);
+            return;
+        } else if (o->type == T_TNODE) {
+            TNode *nd = (TNode *)v;
+            gc_mark(nd->key);
+            gc_mark(nd->val);
+            gc_mark(nd->left);
+            v = nd->right; /* itera o filho direito */
         } else if (o->type == T_MNODE) {
             MNode *nd = (MNode *)v;
             int slots = 2 * __builtin_popcount(nd->bitmap);
@@ -281,6 +296,7 @@ Value cljn_collect_rest(Value argc, Value argv, Value nfixed) {
 /* apply: empurra os elementos de `coll` no topo do shadow-stack (após os
  * `fixed_argc` já empurrados) e devolve o argc total (raw). `coll` está rooteado. */
 static int64_t hnode_push_keys(Value node); /* fwd (spread sobre T_HSET) */
+static int64_t tn_push_spread(Value node, int entries); /* fwd (spread sobre sorted) */
 Value cljn_spread_args(Value fixed_argc, Value coll) {
     int64_t extra = 0;
     int t = obj_type(coll);
@@ -292,6 +308,8 @@ Value cljn_spread_args(Value fixed_argc, Value coll) {
         for (int64_t i = 0; i < v->len; i++) { cljn_gc_push(v->items[i]); extra++; }
     } else if (t == T_HSET) {
         extra = hnode_push_keys(((HMap *)coll)->root);
+    } else if (t == T_SSET || t == T_SMAP) {
+        extra = tn_push_spread(((Sorted *)coll)->root, t == T_SMAP);
     } else {
         Value c = coll;
         while (c != EMPTY && c != NIL && obj_type(c) == T_CONS) {
@@ -311,6 +329,15 @@ static Value node_get(Value node, uint32_t shift, uint32_t hash, Value key); /* 
 static Value node_assoc(Value node, uint32_t shift, uint32_t hash, Value key, Value val, int *added); /* fwd */
 uint32_t cljn_hash(Value v); /* fwd */
 static void hmap_cons_walk(Value node, int mode); /* fwd */
+Value cljn_sorted_dissoc(Value m, Value k); /* fwd (sorted-map) */
+Value cljn_sorted_get(Value m, Value k); /* fwd */
+Value cljn_sorted_contains(Value m, Value k); /* fwd */
+Value cljn_contains(Value coll, Value key); /* fwd */
+static Value sorted_seq(Value m, int mode); /* fwd (sorted keys/vals/entries) */
+static int tn_all_in(Value node, Value other); /* fwd (igualdade de sorted-set) */
+static int tn_map_subset(Value node, Value other); /* fwd (igualdade de sorted-map) */
+Value cljn_vec_conj(Value vec, Value x); /* fwd */
+Value cljn_vec_empty(void); /* fwd */
 
 /* ---------- keywords ---------- */
 Value cljn_kw(const char *p, long len) {
@@ -651,7 +678,7 @@ static int hnode_all_in(Value node, Value other) {
     if (obj_type(node) == T_MCOLL) {
         MColl *c = (MColl *)node;
         for (int64_t i = 0; i < c->n; i++)
-            if (!cljn_truthy(cljn_set_contains(other, c->pairs[2 * i]))) return 0;
+            if (!cljn_truthy(cljn_contains(other, c->pairs[2 * i]))) return 0;
         return 1;
     }
     MNode *nd = (MNode *)node;
@@ -659,7 +686,7 @@ static int hnode_all_in(Value node, Value other) {
     for (int idx = 0; idx < cnt; idx++) {
         Value k = nd->arr[2 * idx];
         if (k == MNODEKEY) { if (!hnode_all_in(nd->arr[2 * idx + 1], other)) return 0; }
-        else if (!cljn_truthy(cljn_set_contains(other, k))) return 0;
+        else if (!cljn_truthy(cljn_contains(other, k))) return 0;
     }
     return 1;
 }
@@ -729,6 +756,7 @@ Value cljn_map_get(Value map, Value k) {
         Value r = node_get(((HMap *)map)->root, 0, cljn_hash(k), k);
         return r == MNOTFOUND ? NIL : r;
     }
+    if (obj_type(map) == T_SMAP) return cljn_sorted_get(map, k);
     if (obj_type(map) != T_MAP) return NIL;
     Map *m = (Map *)map;
     int64_t i = map_index(m, k);
@@ -736,6 +764,7 @@ Value cljn_map_get(Value map, Value k) {
 }
 Value cljn_map_contains(Value map, Value k) {
     if (obj_type(map) == T_HMAP) return b2v(node_get(((HMap *)map)->root, 0, cljn_hash(k), k) != MNOTFOUND);
+    if (obj_type(map) == T_SMAP) return cljn_sorted_contains(map, k);
     return b2v(obj_type(map) == T_MAP && map_index((Map *)map, k) >= 0);
 }
 Value cljn_map_assoc(Value map, Value k, Value v) {
@@ -769,6 +798,7 @@ Value cljn_map_assoc(Value map, Value k, Value v) {
     return result;
 }
 Value cljn_map_dissoc(Value map, Value k) {
+    if (obj_type(map) == T_SMAP) return cljn_sorted_dissoc(map, k);
     if (obj_type(map) == T_HMAP) {
         HMap *m = (HMap *)map;
         if (node_get(m->root, 0, cljn_hash(k), k) == MNOTFOUND) return map;
@@ -824,6 +854,7 @@ void hmap_dissoc_walk(Value node, Value skip) {
 }
 Value cljn_map_keys(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
+    if (obj_type(map) == T_SMAP) return sorted_seq(map, 0);
     Value acc = EMPTY;
     cljn_gc_push(acc);
     if (obj_type(map) == T_HMAP) {
@@ -857,6 +888,7 @@ static int hmap_node_subset(Value node, Value other) {
 }
 Value cljn_map_vals(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
+    if (obj_type(map) == T_SMAP) return sorted_seq(map, 1);
     Value acc = EMPTY;
     cljn_gc_push(acc);
     if (obj_type(map) == T_HMAP) {
@@ -865,6 +897,202 @@ Value cljn_map_vals(Value map) {
         Map *m = (Map *)map;
         for (int64_t i = m->n - 1; i >= 0; i--) { acc = cljn_cons(m->kv[2 * i + 1], gc_stack[gc_sp - 1]); gc_stack[gc_sp - 1] = acc; }
     }
+    Value r = gc_stack[gc_sp - 1];
+    cljn_gc_popn(1);
+    return r;
+}
+
+/* ---------- coleções ordenadas: árvore LLRB persistente ---------- */
+/* Ordem total sobre o subconjunto suportado: números < strings < keywords < resto.
+ * Dentro de cada classe: fixnum por valor; str/kw lexicográfico. Retorna -1/0/1. */
+static int cmp_bytes(const char *a, size_t la, const char *b, size_t lb) {
+    size_t n = la < lb ? la : lb;
+    int c = memcmp(a, b, n);
+    if (c != 0) return c < 0 ? -1 : 1;
+    return la == lb ? 0 : (la < lb ? -1 : 1);
+}
+static int compare_raw(Value a, Value b) {
+    if (IS_FIX(a) && IS_FIX(b)) { int64_t x = FIX(a), y = FIX(b); return x < y ? -1 : (x > y ? 1 : 0); }
+    /* classe de ordenação: número=0, string=1, keyword=2, outro=3 */
+    int ca = IS_FIX(a) ? 0 : (obj_type(a) == T_STR ? 1 : (obj_type(a) == T_KW ? 2 : 3));
+    int cb = IS_FIX(b) ? 0 : (obj_type(b) == T_STR ? 1 : (obj_type(b) == T_KW ? 2 : 3));
+    if (ca != cb) return ca < cb ? -1 : 1;
+    if (ca == 1 || ca == 2) { Str *x = (Str *)a, *y = (Str *)b; return cmp_bytes(x->data, x->len, y->data, y->len); }
+    /* mesma classe "outro": iguais viram 0, senão desempata por identidade estável */
+    if (cljn_equal_raw(a, b)) return 0;
+    return a < b ? -1 : 1;
+}
+Value cljn_compare(Value a, Value b) { return MK_FIX(compare_raw(a, b)); }
+
+/* Vetor de 2 elementos [k v] (entrada de mapa). gc_disabled: sem coleta no meio. */
+static Value cljn_vec_pair(Value k, Value v) {
+    gc_disabled++;
+    Value e = cljn_vec_empty();
+    e = cljn_vec_conj(e, k);
+    e = cljn_vec_conj(e, v);
+    gc_disabled--;
+    return e;
+}
+
+static int tn_red(Value n) { return n != NIL && ((TNode *)n)->red; }
+static TNode *tn_alloc(Value key, Value val, Value left, Value right, int red) {
+    TNode *n = (TNode *)obj_alloc(sizeof(TNode), T_TNODE);
+    n->key = key; n->val = val; n->left = left; n->right = right; n->red = red;
+    return n;
+}
+static TNode *tn_copy(TNode *o, Value left, Value right) {
+    return tn_alloc(o->key, o->val, left, right, o->red);
+}
+/* rotações/flip da LLRB (assumem gc_disabled ativo: várias alocações) */
+static Value tn_rot_left(TNode *h) {
+    TNode *x = (TNode *)h->right;
+    TNode *nh = tn_alloc(h->key, h->val, h->left, x->left, 1);
+    return (Value)tn_alloc(x->key, x->val, (Value)nh, x->right, h->red);
+}
+static Value tn_rot_right(TNode *h) {
+    TNode *x = (TNode *)h->left;
+    TNode *nh = tn_alloc(h->key, h->val, x->right, h->right, 1);
+    return (Value)tn_alloc(x->key, x->val, x->left, (Value)nh, h->red);
+}
+static Value tn_flip(TNode *h) {
+    TNode *l = (TNode *)h->left, *r = (TNode *)h->right;
+    TNode *nl = tn_alloc(l->key, l->val, l->left, l->right, !l->red);
+    TNode *nr = tn_alloc(r->key, r->val, r->left, r->right, !r->red);
+    return (Value)tn_alloc(h->key, h->val, (Value)nl, (Value)nr, !h->red);
+}
+static Value tn_fixup(Value hv) {
+    TNode *h = (TNode *)hv;
+    if (tn_red(h->right) && !tn_red(h->left)) { hv = tn_rot_left(h); h = (TNode *)hv; }
+    if (tn_red(h->left) && tn_red(((TNode *)h->left)->left)) { hv = tn_rot_right(h); h = (TNode *)hv; }
+    if (tn_red(h->left) && tn_red(h->right)) { hv = tn_flip(h); }
+    return hv;
+}
+/* insere/atualiza (key,val); *added=1 se chave nova. Retorna nova sub-raiz. */
+static Value tn_insert(Value hv, Value key, Value val, int *added) {
+    if (hv == NIL) { *added = 1; return (Value)tn_alloc(key, val, NIL, NIL, 1); }
+    TNode *h = (TNode *)hv;
+    int c = compare_raw(key, h->key);
+    if (c == 0) hv = (Value)tn_copy(h, h->left, h->right), ((TNode *)hv)->val = val;
+    else if (c < 0) hv = (Value)tn_copy(h, tn_insert(h->left, key, val, added), h->right);
+    else hv = (Value)tn_copy(h, h->left, tn_insert(h->right, key, val, added));
+    return tn_fixup(hv);
+}
+static Value tn_get(Value hv, Value key) {
+    while (hv != NIL) {
+        TNode *h = (TNode *)hv;
+        int c = compare_raw(key, h->key);
+        if (c == 0) return h->val;
+        hv = c < 0 ? h->left : h->right;
+    }
+    return MNOTFOUND;
+}
+/* Percorre em ordem DEcrescente (dir→nó→esq) fazendo prepend no acc do topo do
+ * gc_stack; como cada item vai para a cabeça, o resultado final fica CREScente. */
+static void tn_walk_desc(Value hv, int mode /*0=key 1=val 2=entry*/) {
+    if (hv == NIL) return;
+    TNode *h = (TNode *)hv;
+    tn_walk_desc(h->right, mode);
+    Value item;
+    if (mode == 0) item = h->key;
+    else if (mode == 1) item = h->val;
+    else item = cljn_vec_pair(h->key, h->val); /* entrada [k v] */
+    Value acc = cljn_cons(item, gc_stack[gc_sp - 1]);
+    gc_stack[gc_sp - 1] = acc;
+    tn_walk_desc(h->left, mode);
+}
+
+static Value sorted_alloc(int type) {
+    Sorted *s = (Sorted *)obj_alloc(sizeof(Sorted), type);
+    s->count = 0; s->root = NIL;
+    return (Value)s;
+}
+Value cljn_sorted_map_empty(void) { return sorted_alloc(T_SMAP); }
+Value cljn_sorted_set_empty(void) { return sorted_alloc(T_SSET); }
+
+Value cljn_sorted_assoc(Value m, Value k, Value v) {
+    maybe_gc();
+    gc_disabled++;
+    Sorted *o = (Sorted *)m;
+    int added = 0;
+    Value nr = tn_insert(o->root, k, v, &added);
+    /* raiz sempre preta */
+    if (nr != NIL) ((TNode *)nr)->red = 0;
+    Sorted *ns = (Sorted *)obj_alloc(sizeof(Sorted), obj_type(m));
+    ns->count = o->count + added; ns->root = nr;
+    gc_disabled--;
+    return (Value)ns;
+}
+Value cljn_sorted_set_conj(Value s, Value x) { return cljn_sorted_assoc(s, x, x); }
+Value cljn_sorted_get(Value m, Value k) {
+    Value r = tn_get(((Sorted *)m)->root, k);
+    return r == MNOTFOUND ? NIL : r;
+}
+Value cljn_sorted_contains(Value m, Value k) {
+    return b2v(tn_get(((Sorted *)m)->root, k) != MNOTFOUND);
+}
+/* menor chave (first): desce sempre à esquerda */
+Value cljn_sorted_first(Value m) {
+    Value hv = ((Sorted *)m)->root;
+    if (hv == NIL) return NIL;
+    TNode *h = (TNode *)hv;
+    while (h->left != NIL) h = (TNode *)h->left;
+    if (obj_type(m) == T_SSET) return h->key;
+    return cljn_vec_pair(h->key, h->val);
+}
+/* lista ordenada crescente de itens (mode: 0=key 1=val 2=entry) */
+static Value sorted_seq(Value m, int mode) {
+    cljn_gc_push(EMPTY);
+    tn_walk_desc(((Sorted *)m)->root, mode); /* prepend reverso → resulta crescente */
+    Value r = gc_stack[gc_sp - 1];
+    cljn_gc_popn(1);
+    return r;
+}
+/* toda chave da árvore pertence a `other` (set qualquer repr)? */
+static int tn_all_in(Value node, Value other) {
+    if (node == NIL) return 1;
+    TNode *h = (TNode *)node;
+    if (!tn_all_in(h->left, other)) return 0;
+    if (!cljn_truthy(cljn_contains(other, h->key))) return 0;
+    return tn_all_in(h->right, other);
+}
+/* toda entrada (k,v) da árvore presente e igual em `other` (mapa qualquer repr)? */
+static int tn_map_subset(Value node, Value other) {
+    if (node == NIL) return 1;
+    TNode *h = (TNode *)node;
+    if (!tn_map_subset(h->left, other)) return 0;
+    if (!cljn_truthy(cljn_map_contains(other, h->key)) ||
+        !cljn_equal_raw(h->val, cljn_map_get(other, h->key))) return 0;
+    return tn_map_subset(h->right, other);
+}
+/* Empurra itens (crescente) no gc_stack para apply/spread. entries: [k v] p/ mapa. */
+static int64_t tn_push_spread(Value node, int entries) {
+    if (node == NIL) return 0;
+    TNode *h = (TNode *)node;
+    int64_t n = tn_push_spread(h->left, entries);
+    Value item = entries ? cljn_vec_pair(h->key, h->val) : h->key;
+    cljn_gc_push(item);
+    n++;
+    n += tn_push_spread(h->right, entries);
+    return n;
+}
+/* dissoc via rebuild: reinsere todas as entradas exceto `skip` (evita delete LLRB). */
+static void tn_reassoc_walk(Value node, Value skip) {
+    if (node == NIL) return;
+    TNode *h = (TNode *)node;
+    tn_reassoc_walk(h->left, skip);
+    if (!cljn_equal_raw(h->key, skip)) {
+        Value a = cljn_sorted_assoc(gc_stack[gc_sp - 1], h->key, h->val);
+        gc_stack[gc_sp - 1] = a;
+    }
+    tn_reassoc_walk(h->right, skip);
+}
+Value cljn_sorted_dissoc(Value m, Value k) {
+    Sorted *o = (Sorted *)m;
+    if (tn_get(o->root, k) == MNOTFOUND) return m;
+    maybe_gc();
+    Value acc = cljn_sorted_map_empty();
+    cljn_gc_push(acc);
+    tn_reassoc_walk(o->root, k);
     Value r = gc_stack[gc_sp - 1];
     cljn_gc_popn(1);
     return r;
@@ -903,8 +1131,8 @@ Value cljn_type_key(Value v) {
         case T_FN: return MK_FIX(1003);
         case T_KW: return MK_FIX(1004);
         case T_VEC: return MK_FIX(1005);
-        case T_MAP: case T_HMAP: return MK_FIX(1006);
-        case T_SET: case T_HSET: return MK_FIX(1007);
+        case T_MAP: case T_HMAP: case T_SMAP: return MK_FIX(1006);
+        case T_SET: case T_HSET: case T_SSET: return MK_FIX(1007);
         case T_RECORD: return ((Record *)v)->type_name;
     }
     return MK_FIX(1099);
@@ -946,6 +1174,8 @@ Value cljn_get(Value coll, Value key) {
         }
         case T_SET: return set_member((Vec *)coll, key) ? key : NIL;
         case T_HSET: return (node_get(((HMap *)coll)->root, 0, cljn_hash(key), key) != MNOTFOUND) ? key : NIL;
+        case T_SMAP: return cljn_sorted_get(coll, key);
+        case T_SSET: return (tn_get(((Sorted *)coll)->root, key) != MNOTFOUND) ? key : NIL;
         default: return NIL;
     }
 }
@@ -954,6 +1184,7 @@ Value cljn_contains(Value coll, Value key) {
         case T_RECORD: return cljn_map_contains(((Record *)coll)->map, key);
         case T_MAP: case T_HMAP: return cljn_map_contains(coll, key);
         case T_SET: case T_HSET: return cljn_set_contains(coll, key);
+        case T_SMAP: case T_SSET: return cljn_sorted_contains(coll, key);
         case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
         default: return FALSEV;
     }
@@ -962,11 +1193,17 @@ Value cljn_conj(Value coll, Value x) {
     switch (obj_type(coll)) {
         case T_VEC: return cljn_vec_conj(coll, x);
         case T_SET: case T_HSET: return cljn_set_conj(coll, x);
+        case T_SSET: return cljn_sorted_set_conj(coll, x);
         case T_CONS: return cljn_cons(x, coll);
         case T_MAP: case T_HMAP:
             if (obj_type(x) == T_VEC && ((PVec *)x)->count == 2)
                 return cljn_map_assoc(coll, pv_nth((PVec *)x, 0), pv_nth((PVec *)x, 1));
             die("conj em mapa requer [k v]");
+            return coll;
+        case T_SMAP:
+            if (obj_type(x) == T_VEC && ((PVec *)x)->count == 2)
+                return cljn_sorted_assoc(coll, pv_nth((PVec *)x, 0), pv_nth((PVec *)x, 1));
+            die("conj em sorted-map requer [k v]");
             return coll;
         default:
             if (coll == EMPTY || coll == NIL) return cljn_cons(x, EMPTY);
@@ -985,6 +1222,7 @@ Value cljn_assoc(Value coll, Value k, Value v) {
             return rec;
         }
         case T_MAP: case T_HMAP: return cljn_map_assoc(coll, k, v);
+        case T_SMAP: return cljn_sorted_assoc(coll, k, v);
         case T_VEC: return cljn_vec_assoc(coll, k, v);
         default:
             if (coll == NIL) { Value m = cljn_map_alloc(0); return cljn_map_assoc(m, k, v); }
@@ -1062,27 +1300,31 @@ int cljn_equal_raw(Value a, Value b) {
         return 1;
     }
     {
-        int as = (ta == T_SET || ta == T_HSET), bs = (tb == T_SET || tb == T_HSET);
+        int as = (ta == T_SET || ta == T_HSET || ta == T_SSET);
+        int bs = (tb == T_SET || tb == T_HSET || tb == T_SSET);
         if (as && bs) {
-            int64_t ca = (ta == T_HSET) ? ((HMap *)a)->count : ((Vec *)a)->len;
-            int64_t cb = (tb == T_HSET) ? ((HMap *)b)->count : ((Vec *)b)->len;
+            int64_t ca = (ta == T_HSET) ? ((HMap *)a)->count : (ta == T_SSET ? ((Sorted *)a)->count : ((Vec *)a)->len);
+            int64_t cb = (tb == T_HSET) ? ((HMap *)b)->count : (tb == T_SSET ? ((Sorted *)b)->count : ((Vec *)b)->len);
             if (ca != cb) return 0;
             /* toda entrada de `a` presente em `b` (contains dispatcha por repr) */
             if (ta == T_HSET) return hnode_all_in(((HMap *)a)->root, b);
+            if (ta == T_SSET) return tn_all_in(((Sorted *)a)->root, b);
             Vec *x = (Vec *)a;
             for (int64_t i = 0; i < x->len; i++)
-                if (!cljn_truthy(cljn_set_contains(b, x->items[i]))) return 0;
+                if (!cljn_truthy(cljn_contains(b, x->items[i]))) return 0;
             return 1;
         }
     }
     {
-        int am = (ta == T_MAP || ta == T_HMAP), bm = (tb == T_MAP || tb == T_HMAP);
+        int am = (ta == T_MAP || ta == T_HMAP || ta == T_SMAP);
+        int bm = (tb == T_MAP || tb == T_HMAP || tb == T_SMAP);
         if (am && bm) {
-            int64_t ca = (ta == T_HMAP) ? ((HMap *)a)->count : ((Map *)a)->n;
-            int64_t cb = (tb == T_HMAP) ? ((HMap *)b)->count : ((Map *)b)->n;
+            int64_t ca = (ta == T_HMAP) ? ((HMap *)a)->count : (ta == T_SMAP ? ((Sorted *)a)->count : ((Map *)a)->n);
+            int64_t cb = (tb == T_HMAP) ? ((HMap *)b)->count : (tb == T_SMAP ? ((Sorted *)b)->count : ((Map *)b)->n);
             if (ca != cb) return 0;
             /* toda entrada de `a` presente e igual em `b` (dispatch cobre cross-repr) */
             if (ta == T_HMAP) return hmap_node_subset(((HMap *)a)->root, b);
+            if (ta == T_SMAP) return tn_map_subset(((Sorted *)a)->root, b);
             Map *x = (Map *)a;
             for (int64_t i = 0; i < x->n; i++) {
                 Value k = x->kv[2 * i];
@@ -1112,6 +1354,7 @@ Value cljn_emptyp(Value v) {
         case T_VEC: return b2v(((PVec *)v)->count == 0);
         case T_MAP: return b2v(((Map *)v)->n == 0);
         case T_HMAP: return b2v(((HMap *)v)->count == 0);
+        case T_SMAP: case T_SSET: return b2v(((Sorted *)v)->count == 0);
     }
     return FALSEV;
 }
@@ -1128,6 +1371,7 @@ Value cljn_first(Value v) {
             return l == EMPTY ? NIL : ((Cons *)l)->head;
         }
         case T_VEC: { PVec *x = (PVec *)v; return x->count > 0 ? pv_nth(x, 0) : NIL; }
+        case T_SMAP: case T_SSET: return cljn_sorted_first(v);
     }
     die("first: não é uma sequência"); return NIL;
 }
@@ -1139,6 +1383,10 @@ Value cljn_rest(Value v) {
         hmap_cons_walk(((HMap *)v)->root, 0);
         Value l = gc_stack[gc_sp - 1];
         cljn_gc_popn(1);
+        return l == EMPTY ? EMPTY : ((Cons *)l)->tail;
+    }
+    if (obj_type(v) == T_SMAP || obj_type(v) == T_SSET) {
+        Value l = sorted_seq(v, obj_type(v) == T_SSET ? 0 : 2);
         return l == EMPTY ? EMPTY : ((Cons *)l)->tail;
     }
     if (obj_type(v) == T_SET || obj_type(v) == T_VEC) {
@@ -1164,6 +1412,7 @@ Value cljn_count(Value v) {
         case T_VEC: return MK_FIX(((PVec *)v)->count);
         case T_MAP: return MK_FIX(((Map *)v)->n);
         case T_HMAP: return MK_FIX(((HMap *)v)->count);
+        case T_SMAP: case T_SSET: return MK_FIX(((Sorted *)v)->count);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
     long n = 0;
@@ -1230,6 +1479,17 @@ static void sb_write_hset(SB *b, Value node, int for_str, int *first) {
         }
     }
 }
+/* percurso in-order da árvore ordenada para impressão (crescente). */
+static void sb_write_tree(SB *b, Value node, int is_map, int for_str, int *first) {
+    if (node == NIL) return;
+    TNode *h = (TNode *)node;
+    sb_write_tree(b, h->left, is_map, for_str, first);
+    if (!*first) sb_str(b, is_map ? ", " : " ");
+    *first = 0;
+    write_val(b, h->key, for_str);
+    if (is_map) { sb_putc(b, ' '); write_val(b, h->val, for_str); }
+    sb_write_tree(b, h->right, is_map, for_str, first);
+}
 static void write_val(SB *b, Value v, int for_str) {
     if (IS_FIX(v)) { char t[32]; int n=snprintf(t,sizeof t,"%ld",(long)FIX(v)); sb_write(b,t,(size_t)n); return; }
     if (v == NIL) { if (!for_str) sb_str(b,"nil"); return; }
@@ -1268,6 +1528,12 @@ static void write_val(SB *b, Value v, int for_str) {
         }
         case T_HMAP: {
             sb_putc(b,'{'); int first=1; sb_write_hmap(b, ((HMap*)v)->root, for_str, &first); sb_putc(b,'}'); return;
+        }
+        case T_SSET: {
+            sb_str(b,"#{"); int first=1; sb_write_tree(b, ((Sorted*)v)->root, 0, for_str, &first); sb_putc(b,'}'); return;
+        }
+        case T_SMAP: {
+            sb_putc(b,'{'); int first=1; sb_write_tree(b, ((Sorted*)v)->root, 1, for_str, &first); sb_putc(b,'}'); return;
         }
         case T_FN: sb_str(b, "#<fn>"); return;
         case T_RECORD: {

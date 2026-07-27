@@ -1,0 +1,14 @@
+id = "c.cljn_io.byte_input_stream.normal"
+level = "C"
+area = "stdlib/cljn-io/resources"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+tracking = "specs/IO_SPEC.md"
+namespace = "cljn.io"
+[run]
+platforms = ["linux"]

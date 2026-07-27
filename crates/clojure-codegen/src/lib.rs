@@ -144,22 +144,26 @@ struct Runtime {
     collect_rest: FuncId, // (argc,argv,nfixed)->list
     spread_args: FuncId,  // (fixed_argc,coll)->argc_total
     // coleções
-    kw: FuncId,          // (ptr,len)->kw
-    vec_empty: FuncId,   // ()->vec
-    vec_conj: FuncId,    // (vec,x)->vec
-    set_alloc: FuncId,   // (n)->set
-    set_add: FuncId,     // (set,x)->void
-    map_alloc: FuncId,   // (n)->map
-    map_set: FuncId,     // (map,i,k,v)->void
-    p_get: FuncId,       // (coll,key)->v
-    p_nth: FuncId,       // (coll,i)->v
-    p_assoc: FuncId,     // (coll,k,v)->coll
-    p_dissoc: FuncId,    // (map,k)->map
-    p_contains: FuncId,  // (coll,key)->bool
-    p_keys: FuncId,      // (map)->list
-    p_vals: FuncId,      // (map)->list
-    p_conj: FuncId,      // (coll,x)->coll
-    make_record: FuncId, // (type_name,map)->record
+    kw: FuncId,               // (ptr,len)->kw
+    vec_empty: FuncId,        // ()->vec
+    vec_conj: FuncId,         // (vec,x)->vec
+    set_alloc: FuncId,        // (n)->set
+    set_add: FuncId,          // (set,x)->void
+    map_alloc: FuncId,        // (n)->map
+    map_set: FuncId,          // (map,i,k,v)->void
+    p_get: FuncId,            // (coll,key)->v
+    p_nth: FuncId,            // (coll,i)->v
+    p_assoc: FuncId,          // (coll,k,v)->coll
+    p_dissoc: FuncId,         // (map,k)->map
+    p_contains: FuncId,       // (coll,key)->bool
+    p_keys: FuncId,           // (map)->list
+    p_vals: FuncId,           // (map)->list
+    p_conj: FuncId,           // (coll,x)->coll
+    sorted_map_empty: FuncId, // ()->sorted-map
+    sorted_set_empty: FuncId, // ()->sorted-set
+    sorted_assoc: FuncId,     // (smap,k,v)->smap
+    compare: FuncId,          // (a,b)->fixnum(-1/0/1)
+    make_record: FuncId,      // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
     register_method: FuncId, // (mid,key,impl)->void
@@ -464,6 +468,20 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         p_keys: una(m, "cljn_map_keys"),
         p_vals: una(m, "cljn_map_vals"),
         p_conj: bin(m, "cljn_conj"),
+        sorted_map_empty: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_sorted_map_empty", Linkage::Import, &s)
+                .unwrap()
+        },
+        sorted_set_empty: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_sorted_set_empty", Linkage::Import, &s)
+                .unwrap()
+        },
+        sorted_assoc: ternary(m, "cljn_sorted_assoc"),
+        compare: bin(m, "cljn_compare"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -478,6 +496,58 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
 enum Flow {
     Val(CValue),
     Diverged,
+}
+
+/// Classificação estática de valor para rooting em safepoints (ADR-0006 Fases 4-5).
+/// `Imm` = comprovadamente fixnum/imediato (nunca é ponteiro heap → nunca precisa de
+/// root). `Heap` = pode ser ponteiro heap; mantém o rooting eager atual.
+///
+/// A elisão é **sã por construção**: só deixamos de rootear valores que jamais são
+/// ponteiros. Todo valor `Heap` continua sendo rooteado exatamente como antes, então a
+/// precisão do coletor é preservada. Slots de frame não escritos permanecem `NIL`
+/// (imediato) via `cljn_gc_enter`, então locais `Imm` sem store são seguros.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum VKind {
+    Imm,
+    Heap,
+}
+impl VKind {
+    fn join(self, other: VKind) -> VKind {
+        if self == VKind::Imm && other == VKind::Imm {
+            VKind::Imm
+        } else {
+            VKind::Heap
+        }
+    }
+}
+
+/// Uma primitiva cujo resultado é sempre imediato (fixnum, boolean ou nil), qualquer
+/// que seja o caminho (fast path ou slow path do runtime). Aritmética/comparação
+/// devolvem fixnum/boolean; `println`/`print` devolvem nil.
+fn prim_imm_result(p: Prim) -> bool {
+    matches!(
+        p,
+        Prim::Add
+            | Prim::Sub
+            | Prim::Mul
+            | Prim::Quot
+            | Prim::Mod
+            | Prim::Inc
+            | Prim::Dec
+            | Prim::Eq
+            | Prim::Lt
+            | Prim::Le
+            | Prim::Gt
+            | Prim::Ge
+            | Prim::Not
+            | Prim::NilP
+            | Prim::EmptyP
+            | Prim::Contains
+            | Prim::Count
+            | Prim::Compare
+            | Prim::Println
+            | Prim::Print
+    )
 }
 
 /// Alvo de `recur`: bloco-cabeçalho de um loop/fn + variáveis e slots a religar.
@@ -495,6 +565,8 @@ struct FnGen<'a> {
     fn_ids: &'a HashMap<String, (FuncId, usize)>,
     str_data: &'a HashMap<String, (DataId, usize)>,
     vars: HashMap<u32, Variable>,
+    /// Kind estático de cada slot de local em escopo (ADR-0006 Fases 4-5).
+    kinds: HashMap<u32, VKind>,
     recur_targets: Vec<RecurTarget>,
     /// Base do frame no shadow-stack (i64), definida na entrada da função.
     frame_base: Option<Variable>,
@@ -521,6 +593,7 @@ impl<'a> FnGen<'a> {
             fn_ids,
             str_data,
             vars: HashMap::new(),
+            kinds: HashMap::new(),
             recur_targets: Vec::new(),
             frame_base: None,
             self_var: None,
@@ -531,6 +604,174 @@ impl<'a> FnGen<'a> {
         let v = self.builder.declare_var(types::I64);
         self.vars.insert(slot, v);
         v
+    }
+
+    // -- análise de kind estático (ADR-0006 Fases 4-5) ---------------------
+    fn slot_kind(&self, slot: u32, extra: &HashMap<u32, VKind>) -> VKind {
+        extra
+            .get(&slot)
+            .or_else(|| self.kinds.get(&slot))
+            .copied()
+            .unwrap_or(VKind::Heap)
+    }
+
+    /// Kind estático de uma expressão. `extra` sobrepõe `self.kinds` com slots
+    /// introduzidos por `let`/`loop` ainda não vinculados no codegen.
+    fn kind_of(&self, ast: &Ast, extra: &HashMap<u32, VKind>) -> VKind {
+        use VKind::{Heap, Imm};
+        match ast {
+            Ast::Int(_) | Ast::Bool(_) | Ast::Nil => Imm,
+            Ast::Str(_)
+            | Ast::Keyword(_)
+            | Ast::VecLit(_)
+            | Ast::SetLit(_)
+            | Ast::MapLit(_)
+            | Ast::MakeFn { .. }
+            | Ast::FnRef(_)
+            | Ast::MakeRecord { .. }
+            | Ast::Capture(_) => Heap,
+            Ast::Local(s) => self.slot_kind(*s, extra),
+            Ast::Do(stmts) => stmts.last().map(|s| self.kind_of(s, extra)).unwrap_or(Imm),
+            Ast::Let { slots, body } => {
+                let mut e = extra.clone();
+                for (slot, init) in slots {
+                    let k = self.kind_of(init, &e);
+                    e.insert(*slot, k);
+                }
+                self.kind_of(body, &e)
+            }
+            Ast::If(_, t, els) => self.kind_of(t, extra).join(self.kind_of(els, extra)),
+            Ast::Loop { slots, body } => {
+                let e = self.loop_slot_kinds(slots, body, extra);
+                self.kind_of(body, &e)
+            }
+            Ast::Recur(_) => Imm, // diverge; não produz valor
+            Ast::Call { callee, .. } => match callee {
+                Callee::Prim(p) if prim_imm_result(*p) => Imm,
+                _ => Heap,
+            },
+            Ast::CallValue { .. } | Ast::Apply { .. } => Heap,
+            Ast::RegisterMethod { .. } => Imm, // devolve nil
+        }
+    }
+
+    /// Ponto fixo dos kinds dos slots de um `loop`: um slot é `Imm` só se o init e
+    /// todo argumento de `recur` naquela posição forem `Imm`. Monótono (Imm→Heap).
+    fn loop_slot_kinds(
+        &self,
+        slots: &[(u32, Ast)],
+        body: &Ast,
+        extra: &HashMap<u32, VKind>,
+    ) -> HashMap<u32, VKind> {
+        let init_kinds: Vec<VKind> = slots.iter().map(|(_, i)| self.kind_of(i, extra)).collect();
+        let slot_ids: Vec<u32> = slots.iter().map(|(s, _)| *s).collect();
+        let mut e = extra.clone();
+        for (i, slot) in slot_ids.iter().enumerate() {
+            e.insert(*slot, init_kinds[i]);
+        }
+        loop {
+            let mut rec = vec![VKind::Imm; slot_ids.len()];
+            let mut seen = false;
+            self.collect_recur_kinds(body, &e, &mut rec, &mut seen);
+            let mut changed = false;
+            for (i, slot) in slot_ids.iter().enumerate() {
+                let cur = *e.get(slot).unwrap();
+                let nk = if seen {
+                    init_kinds[i].join(rec[i])
+                } else {
+                    init_kinds[i]
+                };
+                if nk != cur {
+                    e.insert(*slot, nk);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break e;
+            }
+        }
+    }
+
+    /// Junta os kinds dos argumentos de cada `recur` que mira o loop atual (não
+    /// desce em loops aninhados). `recur` só ocorre em cauda: basta varrer ramos
+    /// de `if`, corpo de `let` e statements de `do`.
+    fn collect_recur_kinds(
+        &self,
+        ast: &Ast,
+        env: &HashMap<u32, VKind>,
+        rec: &mut [VKind],
+        seen: &mut bool,
+    ) {
+        match ast {
+            Ast::Recur(args) => {
+                *seen = true;
+                for (i, a) in args.iter().enumerate() {
+                    if i < rec.len() {
+                        rec[i] = rec[i].join(self.kind_of(a, env));
+                    }
+                }
+            }
+            Ast::Loop { .. } => {} // recurs internos pertencem ao loop aninhado
+            Ast::If(_, t, e) => {
+                self.collect_recur_kinds(t, env, rec, seen);
+                self.collect_recur_kinds(e, env, rec, seen);
+            }
+            Ast::Let { body, .. } => self.collect_recur_kinds(body, env, rec, seen),
+            Ast::Do(stmts) => {
+                for s in stmts {
+                    self.collect_recur_kinds(s, env, rec, seen);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Se `expr(ast)` deixa um temporário no shadow-stack. É `kind==Heap` para a
+    /// maioria dos nós, **exceto**:
+    /// - `Local`: nunca empurra — imediato não é ponteiro; Local Heap já está
+    ///   rooteado no seu slot de frame (estável enquanto o valor lido é usado);
+    /// - `Do`/`Let`/`Loop`: delegam ao sub-expr que produz o valor.
+    fn expr_pushes(&self, ast: &Ast, extra: &HashMap<u32, VKind>) -> bool {
+        match ast {
+            Ast::Local(_)
+            | Ast::Int(_)
+            | Ast::Bool(_)
+            | Ast::Nil
+            | Ast::Recur(_)
+            | Ast::RegisterMethod { .. } => false,
+            Ast::Do(stmts) => stmts.last().is_some_and(|s| self.expr_pushes(s, extra)),
+            Ast::Let { slots, body } => {
+                let mut e = extra.clone();
+                for (slot, init) in slots {
+                    e.insert(*slot, self.kind_of(init, &e));
+                }
+                self.expr_pushes(body, &e)
+            }
+            Ast::Loop { slots, body } => {
+                let e = self.loop_slot_kinds(slots, body, extra);
+                self.expr_pushes(body, &e)
+            }
+            _ => self.kind_of(ast, extra) == VKind::Heap,
+        }
+    }
+
+    /// Avalia um operando, deixando-o no shadow-stack só se `expr_pushes`. Retorna
+    /// o valor e se foi empurrado (para o consumidor desempilhar 1).
+    fn operand(&mut self, ast: &Ast) -> Result<(CValue, bool), Diagnostic> {
+        let pushed = self.expr_pushes(ast, &HashMap::new());
+        let v = self.expr_val(ast)?;
+        Ok((v, pushed))
+    }
+
+    /// Avalia um argumento de chamada, garantindo que fique no shadow-stack (os
+    /// args de funções são passados por `argv`, um ponteiro para o topo da pilha;
+    /// imediatos precisam ser derramados para manter a região contígua).
+    fn spill_arg(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
+        let (v, pushed) = self.operand(ast)?;
+        if !pushed {
+            self.gc_push_val(v);
+        }
+        Ok(v)
     }
 
     // -- shadow-stack de roots (stores diretos, ADR-0006 Fase 3) ----------
@@ -599,14 +840,23 @@ impl<'a> FnGen<'a> {
         let elem = self.slot_addr(idx);
         self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
     }
-    /// Vincula um local: define a variável Cranelift e espelha no shadow-stack.
+    /// Vincula um local Heap (params): define a variável e espelha no slot de root.
     fn bind_local(&mut self, slot: u32, v: CValue) {
+        self.bind_local_kind(slot, v, VKind::Heap);
+    }
+
+    /// Vincula um local com kind conhecido. `Imm` só atualiza a variável Cranelift
+    /// (o slot de frame permanece `NIL`, imediato seguro — sem store de root).
+    fn bind_local_kind(&mut self, slot: u32, v: CValue, kind: VKind) {
         let var = match self.vars.get(&slot) {
             Some(v) => *v,
             None => self.new_var(slot),
         };
         self.builder.def_var(var, v);
-        self.gc_set_local(slot, v);
+        self.kinds.insert(slot, kind);
+        if kind == VKind::Heap {
+            self.gc_set_local(slot, v);
+        }
     }
 
     /// Entra num frame de GC reservando `local_count` slots; guarda a base.
@@ -770,8 +1020,10 @@ impl<'a> FnGen<'a> {
         self.builder.seal_block(entry);
         self.enter_frame(local_count);
         for a in body {
-            self.expr_val(a)?; // empurra 1 temporário
-            self.gc_popn(1); // descarta resultado de topo
+            let (_, pushed) = self.operand(a)?;
+            if pushed {
+                self.gc_popn(1); // descarta resultado de topo (se Heap)
+            }
         }
         self.leave_frame();
         let zero = self.builder.ins().iconst(types::I32, 0);
@@ -834,27 +1086,21 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Invariante de rooting: na saída `Flow::Val(v)`, `v` foi empurrado no
-    /// shadow-stack exatamente uma vez (é o topo). `Flow::Diverged` já terminou
+    /// Invariante de rooting (ADR-0006 Fases 4-5): na saída `Flow::Val(v)`, `v`
+    /// está no topo do shadow-stack **se e somente se** `expr_pushes(ast)` — isto
+    /// é, valores `Heap` que não sejam um `Local` já rooteado. Imediatos e leituras
+    /// de `Local` não vão à pilha (nunca precisam de novo root). Consumidores usam
+    /// `operand`/`spill_arg`, que sabem se houve push. `Flow::Diverged` já terminou
     /// o bloco (recur/return) deixando o shadow-stack consistente para o alvo.
     fn expr(&mut self, ast: &Ast) -> Result<Flow, Diagnostic> {
         Ok(match ast {
+            // Imediatos (Fase 4): nunca são ponteiros → não vão ao shadow-stack.
             Ast::Int(n) => {
                 let tagged = (*n as i128) << 1 | 1;
-                let v = self.konst(tagged as i64);
-                self.gc_push_val(v);
-                Flow::Val(v)
+                Flow::Val(self.konst(tagged as i64))
             }
-            Ast::Bool(b) => {
-                let v = self.konst(if *b { TRUEV } else { FALSEV });
-                self.gc_push_val(v);
-                Flow::Val(v)
-            }
-            Ast::Nil => {
-                let v = self.konst(NIL);
-                self.gc_push_val(v);
-                Flow::Val(v)
-            }
+            Ast::Bool(b) => Flow::Val(self.konst(if *b { TRUEV } else { FALSEV })),
+            Ast::Nil => Flow::Val(self.konst(NIL)),
             Ast::Str(s) => {
                 let (data_id, len) = self.str_data[s];
                 let gv = self.module.declare_data_in_func(data_id, self.builder.func);
@@ -868,28 +1114,34 @@ impl<'a> FnGen<'a> {
                 let var = *self.vars.get(slot).ok_or_else(|| {
                     Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)"))
                 })?;
-                let v = self.builder.use_var(var);
-                self.gc_push_val(v);
-                Flow::Val(v)
+                // Local nunca precisa de novo root: imediato não é ponteiro, e Local
+                // Heap já está rooteado no seu slot de frame (base+slot), estável
+                // enquanto o valor lido é usado (rebind só em let-init/recur, nunca
+                // no meio de um operando). Consumidores que precisam dele na pilha
+                // (args por argv, coleções) usam `spill_arg`.
+                Flow::Val(self.builder.use_var(var))
             }
             Ast::Do(stmts) => {
                 if stmts.is_empty() {
-                    let v = self.konst(NIL);
-                    self.gc_push_val(v);
-                    return Ok(Flow::Val(v));
+                    return Ok(Flow::Val(self.konst(NIL)));
                 }
                 let last = stmts.len() - 1;
                 for s in &stmts[..last] {
-                    self.expr_val(s)?; // +1 temporário
-                    self.gc_popn(1); // descarta
+                    let (_, pushed) = self.operand(s)?; // descarta valor
+                    if pushed {
+                        self.gc_popn(1);
+                    }
                 }
                 self.expr(&stmts[last])?
             }
             Ast::Let { slots, body } => {
                 for (slot, init) in slots {
-                    let val = self.expr_val(init)?; // +1 temp
-                    self.bind_local(*slot, val); // escreve slot de local
-                    self.gc_popn(1); // remove o temp (já está no slot)
+                    let (val, pushed) = self.operand(init)?;
+                    let kind = self.kind_of(init, &HashMap::new());
+                    self.bind_local_kind(*slot, val, kind); // escreve slot só se Heap
+                    if pushed {
+                        self.gc_popn(1); // remove o temp (já está no slot, se Heap)
+                    }
                 }
                 self.expr(body)?
             }
@@ -898,7 +1150,10 @@ impl<'a> FnGen<'a> {
             Ast::Recur(args) => self.gen_recur(args)?,
             Ast::Call { callee, args } => {
                 let v = self.gen_call(callee, args)?; // net-0; resultado não empurrado
-                self.gc_push_val(v);
+                                                      // Resultado imediato (aritmética/comparação/nil) não precisa de root.
+                if self.kind_of(ast, &HashMap::new()) == VKind::Heap {
+                    self.gc_push_val(v);
+                }
                 Flow::Val(v)
             }
             Ast::CallValue { f, args } => {
@@ -921,14 +1176,12 @@ impl<'a> FnGen<'a> {
                 key,
                 impl_fn,
             } => {
-                let key_v = self.expr_val(key)?; // +1
-                let impl_v = self.expr_val(impl_fn)?; // +1 (MakeFn rooteado)
+                let key_v = self.spill_arg(key)?; // +1 (rooteado durante register)
+                let impl_v = self.spill_arg(impl_fn)?; // +1 (MakeFn rooteado)
                 let mid_v = self.builder.ins().iconst(types::I64, *method_id);
                 self.call_void3(self.rt.register_method, mid_v, key_v, impl_v);
                 self.gc_popn(2);
-                let nil = self.konst(NIL);
-                self.gc_push_val(nil);
-                Flow::Val(nil)
+                Flow::Val(self.konst(NIL)) // nil imediato: não empurra
             }
             Ast::Capture(i) => {
                 let self_v = self.builder.use_var(self.self_var.expect("self"));
@@ -983,7 +1236,7 @@ impl<'a> FnGen<'a> {
     fn gen_vec(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(items.len());
         for it in items {
-            vals.push(self.expr_val(it)?); // n temps
+            vals.push(self.spill_arg(it)?); // n temps (imediatos derramados)
         }
         let mut acc = self.call0(self.rt.vec_empty);
         self.gc_push_val(acc); // acc temp
@@ -996,10 +1249,47 @@ impl<'a> FnGen<'a> {
         Ok(acc)
     }
 
+    /// sorted-set: parte do vazio e `conj` (genérico, dispatcha p/ árvore) cada
+    /// item, rooteando o acumulador durante as alocações da LLRB.
+    fn gen_sorted_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(items.len());
+        for it in items {
+            vals.push(self.spill_arg(it)?); // n temps (imediatos derramados)
+        }
+        let mut acc = self.call0(self.rt.sorted_set_empty);
+        self.gc_push_val(acc); // acc temp
+        for iv in &vals {
+            acc = self.call2(self.rt.p_conj, acc, *iv);
+            self.gc_popn(1);
+            self.gc_push_val(acc);
+        }
+        self.gc_popn(items.len() + 1); // itens + acc
+        Ok(acc)
+    }
+
+    /// sorted-map: parte do vazio e `assoc` cada par (k v), rooteando o acumulador.
+    fn gen_sorted_map(&mut self, pairs: &[(Ast, Ast)]) -> Result<CValue, Diagnostic> {
+        let mut kvs = Vec::with_capacity(pairs.len());
+        for (k, v) in pairs {
+            let kv = self.spill_arg(k)?;
+            let vv = self.spill_arg(v)?;
+            kvs.push((kv, vv)); // 2 temps por par
+        }
+        let mut acc = self.call0(self.rt.sorted_map_empty);
+        self.gc_push_val(acc); // acc temp
+        for (kv, vv) in &kvs {
+            acc = self.call3(self.rt.sorted_assoc, acc, *kv, *vv);
+            self.gc_popn(1);
+            self.gc_push_val(acc);
+        }
+        self.gc_popn(pairs.len() * 2 + 1); // pares + acc
+        Ok(acc)
+    }
+
     fn gen_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(items.len());
         for it in items {
-            vals.push(self.expr_val(it)?);
+            vals.push(self.spill_arg(it)?);
         }
         let n = self.builder.ins().iconst(types::I64, items.len() as i64);
         let s = self.call1(self.rt.set_alloc, n);
@@ -1013,8 +1303,8 @@ impl<'a> FnGen<'a> {
     fn gen_map(&mut self, pairs: &[(Ast, Ast)]) -> Result<CValue, Diagnostic> {
         let mut kvs = Vec::with_capacity(pairs.len() * 2);
         for (k, v) in pairs {
-            let kv = self.expr_val(k)?;
-            let vv = self.expr_val(v)?;
+            let kv = self.spill_arg(k)?;
+            let vv = self.spill_arg(v)?;
             kvs.push((kv, vv)); // 2 temps por par
         }
         let n = self.builder.ins().iconst(types::I64, pairs.len() as i64);
@@ -1064,7 +1354,7 @@ impl<'a> FnGen<'a> {
     ) -> Result<Flow, Diagnostic> {
         let mut cap_vals = Vec::with_capacity(captures.len());
         for c in captures {
-            cap_vals.push(self.expr_val(c)?); // +1 cada (rooteados durante o alloc)
+            cap_vals.push(self.spill_arg(c)?); // +1 cada (rooteados durante o alloc)
         }
         let (id, _) = self.fn_ids[lambda];
         let code = self.func_addr(id);
@@ -1083,9 +1373,9 @@ impl<'a> FnGen<'a> {
 
     /// Chamada indireta de um valor-função (net-0 no shadow-stack).
     fn gen_call_value(&mut self, f: &Ast, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let f_val = self.expr_val(f)?; // +1 (f fica abaixo dos args)
+        let f_val = self.spill_arg(f)?; // +1 (f fica abaixo dos args)
         for a in args {
-            self.expr_val(a)?; // +1 cada
+            self.spill_arg(a)?; // +1 cada (args por argv → sempre na pilha)
         }
         self.call_void(self.rt.check_fn, &[f_val]);
         let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
@@ -1109,11 +1399,11 @@ impl<'a> FnGen<'a> {
 
     /// `(apply f fixed... coll)`: net-0. Empilha f, os fixos, e espalha `coll`.
     fn gen_apply(&mut self, f: &Ast, fixed: &[Ast], coll: &Ast) -> Result<CValue, Diagnostic> {
-        let f_val = self.expr_val(f)?; // shadow: [f]
+        let f_val = self.spill_arg(f)?; // shadow: [f]
         for a in fixed {
-            self.expr_val(a)?; // [f, fixed...]
+            self.spill_arg(a)?; // [f, fixed...]
         }
-        let coll_val = self.expr_val(coll)?; // [f, fixed.., coll]
+        let coll_val = self.spill_arg(coll)?; // [f, fixed.., coll]
         self.gc_popn(1); // remove o temp de coll (spread não aloca; coll SSA segue válido)
         let n_fixed = self.builder.ins().iconst(types::I64, fixed.len() as i64);
         // Empurra os elementos de coll no topo; devolve argc total (fixos + extras).
@@ -1140,10 +1430,25 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_if(&mut self, test: &Ast, then: &Ast, els: &Ast) -> Result<Flow, Diagnostic> {
-        let test_val = self.expr_val(test)?;
-        let truth = self.call1(self.rt.truthy, test_val); // i32
-        self.gc_popn(1); // consome o temp do teste
-        let cond = self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0);
+        let empty = HashMap::new();
+        let merge_kind = self.kind_of(then, &empty).join(self.kind_of(els, &empty));
+        let then_pushes = self.expr_pushes(then, &empty);
+        let els_pushes = self.expr_pushes(els, &empty);
+
+        let (test_val, tpushed) = self.operand(test)?;
+        let cond = if tpushed {
+            let truth = self.call1(self.rt.truthy, test_val); // i32
+            self.gc_popn(1); // consome o temp do teste
+            self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0)
+        } else {
+            // Teste imediato: falsy só se FALSEV ou NIL → compara inline (sem call).
+            let nf = self
+                .builder
+                .ins()
+                .icmp_imm(IntCC::NotEqual, test_val, FALSEV);
+            let nn = self.builder.ins().icmp_imm(IntCC::NotEqual, test_val, NIL);
+            self.builder.ins().band(nf, nn)
+        };
 
         let then_b = self.builder.create_block();
         let else_b = self.builder.create_block();
@@ -1155,6 +1460,11 @@ impl<'a> FnGen<'a> {
         self.builder.switch_to_block(then_b);
         self.builder.seal_block(then_b);
         if let Flow::Val(tv) = self.expr(then)? {
+            // Reconcilia a profundidade da pilha: se o merge é Heap mas este ramo
+            // não empurrou (imediato ou Local), derrama para igualar os ramos.
+            if merge_kind == VKind::Heap && !then_pushes {
+                self.gc_push_val(tv);
+            }
             let m = *merge.get_or_insert_with(|| {
                 let b = self.builder.create_block();
                 self.builder.append_block_param(b, types::I64);
@@ -1166,6 +1476,9 @@ impl<'a> FnGen<'a> {
         self.builder.switch_to_block(else_b);
         self.builder.seal_block(else_b);
         if let Flow::Val(ev) = self.expr(els)? {
+            if merge_kind == VKind::Heap && !els_pushes {
+                self.gc_push_val(ev);
+            }
             let m = *merge.get_or_insert_with(|| {
                 let b = self.builder.create_block();
                 self.builder.append_block_param(b, types::I64);
@@ -1185,11 +1498,17 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_loop(&mut self, slots: &[(u32, Ast)], body: &Ast) -> Result<Flow, Diagnostic> {
+        // Kinds dos slots por ponto fixo: um slot é Imm só se init e todo recur-arg
+        // naquela posição forem Imm. Slots Imm não escrevem root (var apenas).
+        let slot_kinds = self.loop_slot_kinds(slots, body, &HashMap::new());
         let mut slot_ids = Vec::with_capacity(slots.len());
         for (slot, init) in slots {
-            let v0 = self.expr_val(init)?; // +1 temp
-            self.bind_local(*slot, v0); // escreve slot de local + var
-            self.gc_popn(1); // remove temp
+            let (v0, pushed) = self.operand(init)?;
+            let k = *slot_kinds.get(slot).unwrap_or(&VKind::Heap);
+            self.bind_local_kind(*slot, v0, k); // escreve slot só se Heap
+            if pushed {
+                self.gc_popn(1);
+            }
             slot_ids.push(*slot);
         }
         let header = self.builder.create_block();
@@ -1212,15 +1531,20 @@ impl<'a> FnGen<'a> {
             .last()
             .cloned()
             .ok_or_else(|| Diagnostic::error("E0113", "recur sem alvo (bug)"))?;
-        // Avalia todos os argumentos antes de religar (evita clobber). +k temps.
+        // Avalia todos os argumentos antes de religar (evita clobber). Heap → +1.
         let mut vals = Vec::with_capacity(args.len());
+        let mut pushed = 0usize;
         for a in args {
-            vals.push(self.expr_val(a)?);
+            let (v, p) = self.operand(a)?;
+            pushed += p as usize;
+            vals.push(v);
         }
         for (slot, val) in target.slots.iter().zip(vals) {
-            self.bind_local(*slot, val); // atualiza var + shadow slot
+            // Kind do slot fixado pelo loop; um slot Imm nunca recebe arg Heap.
+            let k = *self.kinds.get(slot).unwrap_or(&VKind::Heap);
+            self.bind_local_kind(*slot, val, k);
         }
-        self.gc_popn(args.len()); // remove os k temps
+        self.gc_popn(pushed); // remove só os temps Heap
         self.builder.ins().jump(target.header, &[]);
         Ok(Flow::Diverged)
     }
@@ -1233,9 +1557,9 @@ impl<'a> FnGen<'a> {
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
-                // Empilha os args no shadow-stack; argv aponta para eles.
+                // Empilha os args no shadow-stack; argv aponta para eles (imediatos derramados).
                 for a in args {
-                    self.expr_val(a)?; // +1 cada
+                    self.spill_arg(a)?; // +1 cada
                 }
                 let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
                 let argv_ptr = self.call1(self.rt.argv, argc_v);
@@ -1465,27 +1789,30 @@ impl<'a> FnGen<'a> {
     /// Fold de `+`/`-` com fast path por par.
     fn fold_fix(&mut self, args: &[Ast], add: bool, slow: FuncId) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
+        let mut pushed = 0usize;
         for a in args {
-            vals.push(self.expr_val(a)?);
+            let (v, p) = self.operand(a)?;
+            pushed += p as usize;
+            vals.push(v);
         }
         let mut acc = vals[0];
         for v in &vals[1..] {
             acc = self.gen_fix_arith(acc, *v, add, slow);
         }
-        self.gc_popn(args.len());
+        self.gc_popn(pushed);
         Ok(acc)
     }
     fn fix_cmp2(&mut self, args: &[Ast], cc: IntCC, slow: FuncId) -> Result<CValue, Diagnostic> {
-        let a = self.expr_val(&args[0])?;
-        let b = self.expr_val(&args[1])?;
+        let (a, pa) = self.operand(&args[0])?;
+        let (b, pb) = self.operand(&args[1])?;
         let r = self.gen_fix_cmp(a, b, cc, slow);
-        self.gc_popn(2);
+        self.gc_popn(pa as usize + pb as usize);
         Ok(r)
     }
     fn fix_una(&mut self, args: &[Ast], delta: i64, slow: FuncId) -> Result<CValue, Diagnostic> {
-        let a = self.expr_val(&args[0])?;
+        let (a, pa) = self.operand(&args[0])?;
         let r = self.gen_fix_unop(a, delta, slow);
-        self.gc_popn(1);
+        self.gc_popn(pa as usize);
         Ok(r)
     }
 
@@ -1498,10 +1825,10 @@ impl<'a> FnGen<'a> {
             Prim::Add => self.fold_fix(args, true, self.rt.add),
             Prim::Sub => {
                 if args.len() == 1 {
-                    let v = self.expr_val(&args[0])?; // +1
+                    let (v, pv) = self.operand(&args[0])?;
                     let zero = self.konst(1); // MK_FIX(0) == 1 (imediato, sem root)
                     let r = self.call2(self.rt.sub, zero, v);
-                    self.gc_popn(1);
+                    self.gc_popn(pv as usize);
                     Ok(r)
                 } else {
                     self.fold_fix(args, false, self.rt.sub)
@@ -1509,14 +1836,17 @@ impl<'a> FnGen<'a> {
             }
             Prim::Mul => {
                 let mut vals = Vec::with_capacity(args.len());
+                let mut pushed = 0usize;
                 for a in args {
-                    vals.push(self.expr_val(a)?);
+                    let (v, p) = self.operand(a)?;
+                    pushed += p as usize;
+                    vals.push(v);
                 }
                 let mut acc = vals[0];
                 for v in &vals[1..] {
                     acc = self.gen_fix_mul(acc, *v, self.rt.mul);
                 }
-                self.gc_popn(args.len());
+                self.gc_popn(pushed);
                 Ok(acc)
             }
             // comparações com fast path de fixnum
@@ -1526,17 +1856,17 @@ impl<'a> FnGen<'a> {
             Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge),
             // divisão inteira com fast path de fixnum
             Prim::Quot => {
-                let a = self.expr_val(&args[0])?;
-                let b = self.expr_val(&args[1])?;
+                let (a, pa) = self.operand(&args[0])?;
+                let (b, pb) = self.operand(&args[1])?;
                 let r = self.gen_fix_div(a, b, true, self.rt.quot);
-                self.gc_popn(2);
+                self.gc_popn(pa as usize + pb as usize);
                 Ok(r)
             }
             Prim::Mod => {
-                let a = self.expr_val(&args[0])?;
-                let b = self.expr_val(&args[1])?;
+                let (a, pa) = self.operand(&args[0])?;
+                let (b, pb) = self.operand(&args[1])?;
                 let r = self.gen_fix_div(a, b, false, self.rt.mod_);
-                self.gc_popn(2);
+                self.gc_popn(pa as usize + pb as usize);
                 Ok(r)
             }
             Prim::Eq => self.bin(self.rt.eq, args),
@@ -1569,30 +1899,39 @@ impl<'a> FnGen<'a> {
                     .collect();
                 self.gen_map(&pairs)
             }
+            Prim::SortedSet => self.gen_sorted_set(args),
+            Prim::SortedMap => {
+                let pairs: Vec<(Ast, Ast)> = args
+                    .chunks_exact(2)
+                    .map(|c| (c[0].clone(), c[1].clone()))
+                    .collect();
+                self.gen_sorted_map(&pairs)
+            }
+            Prim::Compare => self.bin(self.rt.compare, args),
         }
     }
 
-    /// Primitiva ternária (net-0).
+    /// Primitiva ternária (net-0). Só operandos Heap são rooteados/retirados.
     fn tern(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let a = self.expr_val(&args[0])?;
-        let b = self.expr_val(&args[1])?;
-        let c = self.expr_val(&args[2])?;
+        let (a, pa) = self.operand(&args[0])?;
+        let (b, pb) = self.operand(&args[1])?;
+        let (c, pc) = self.operand(&args[2])?;
         let r = self.call3(id, a, b, c);
-        self.gc_popn(3);
+        self.gc_popn(pa as usize + pb as usize + pc as usize);
         Ok(r)
     }
 
     fn bin(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let a = self.expr_val(&args[0])?; // +1
-        let b = self.expr_val(&args[1])?; // +1
+        let (a, pa) = self.operand(&args[0])?;
+        let (b, pb) = self.operand(&args[1])?;
         let r = self.call2(id, a, b);
-        self.gc_popn(2);
+        self.gc_popn(pa as usize + pb as usize);
         Ok(r)
     }
     fn una(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let a = self.expr_val(&args[0])?; // +1
+        let (a, pa) = self.operand(&args[0])?;
         let r = self.call1(id, a);
-        self.gc_popn(1);
+        self.gc_popn(pa as usize);
         Ok(r)
     }
 
@@ -1601,7 +1940,7 @@ impl<'a> FnGen<'a> {
             if i > 0 {
                 self.call_void(self.rt.print_space, &[]);
             }
-            let v = self.expr_val(a)?; // +1 (mantido rooteado durante os próximos)
+            let v = self.spill_arg(a)?; // +1 (imediatos derramados; rooteado no print)
             self.call_void(self.rt.print, &[v]);
         }
         self.gc_popn(args.len());
@@ -1618,7 +1957,7 @@ impl<'a> FnGen<'a> {
         }
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            vals.push(self.expr_val(a)?); // n temps
+            vals.push(self.spill_arg(a)?); // n temps (imediatos derramados)
         }
         let mut acc = self.call1(self.rt.to_str, vals[0]);
         self.gc_push_val(acc); // acc temp
@@ -1636,7 +1975,7 @@ impl<'a> FnGen<'a> {
     fn gen_list(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            vals.push(self.expr_val(a)?); // n temps
+            vals.push(self.spill_arg(a)?); // n temps (imediatos derramados)
         }
         let mut acc = self.call0(self.rt.empty);
         self.gc_push_val(acc); // acc temp
