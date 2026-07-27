@@ -42,6 +42,7 @@ enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 
 typedef struct Obj {
     uint8_t type;
     uint8_t mark;
+    uint16_t szc;         /* classe de tamanho (para reciclar no free-list) */
     struct Obj *next_all; /* lista global de objetos, para o sweep */
 } Obj;
 typedef struct { Obj h; size_t len; char *data; } Str; /* também usado p/ T_KW */
@@ -131,22 +132,60 @@ static int gc_off = -1;
  * (ex.: vector trie) incrementam isto para não coletar no meio (alocação
  * limitada; as entradas já estão rooteadas pelo chamador). */
 static int gc_disabled = 0;
-static void maybe_gc(void) {
-    if (gc_stress < 0) {
-        const char *e = getenv("CLJN_GC_STRESS");
-        gc_stress = (e && e[0] && e[0] != '0') ? 1 : 0;
-        const char *o = getenv("CLJN_GC_OFF");
-        gc_off = (o && o[0] && o[0] != '0') ? 1 : 0;
+
+/* Alocador não-móvel: slabs (bump) + free-lists por classe de tamanho de 16 B.
+ * O sweep recicla objetos mortos para o free-list em vez de `free()`, evitando
+ * malloc/free por objeto e mantendo o working-set pequeno e cache-quente. Como
+ * nada se move, a shadow stack e o rooting da ADR-0006 permanecem válidos.
+ * Objetos > SZC_MAX usam malloc/free direto (szc==0). */
+#define SZC_GRAN 16
+#define SZC_MAX 512
+#define NSZC (SZC_MAX / SZC_GRAN + 1)
+static Obj *freelist[NSZC];
+static char *slab_ptr = NULL, *slab_end = NULL;
+static void *slab_bump(size_t n) {
+    if (slab_ptr + n > slab_end) {
+        size_t chunk = 1u << 20; /* 1 MiB */
+        if (n > chunk) chunk = n;
+        slab_ptr = (char *)xalloc(chunk);
+        slab_end = slab_ptr + chunk;
     }
+    void *p = slab_ptr;
+    slab_ptr += n;
+    return p;
+}
+
+static void gc_init_env(void) {
+    const char *e = getenv("CLJN_GC_STRESS");
+    gc_stress = (e && e[0] && e[0] != '0') ? 1 : 0;
+    const char *o = getenv("CLJN_GC_OFF");
+    gc_off = (o && o[0] && o[0] != '0') ? 1 : 0;
+}
+static void maybe_gc(void) {
+    if (gc_stress < 0) gc_init_env();
     if (gc_off || gc_disabled) return;
     if (gc_stress || alloc_since_gc >= gc_threshold) gc_collect();
 }
 
 static Obj *obj_alloc(size_t size, int type) {
-    maybe_gc();
-    Obj *o = xalloc(size);
+    /* safepoint inline (barato no caso comum; sem chamada quando em zona sem-GC) */
+    if (gc_stress < 0) gc_init_env();
+    if (!gc_disabled && !gc_off && (gc_stress || alloc_since_gc >= gc_threshold)) gc_collect();
+    size_t asz = (size + (SZC_GRAN - 1)) & ~(size_t)(SZC_GRAN - 1);
+    unsigned c = (unsigned)(asz / SZC_GRAN);
+    Obj *o;
+    if (c < NSZC && freelist[c]) {
+        o = freelist[c];
+        freelist[c] = o->next_all; /* recicla do free-list */
+    } else if (c < NSZC) {
+        o = (Obj *)slab_bump(asz);
+    } else {
+        o = (Obj *)xalloc(size); /* grande: malloc direto */
+        c = 0;
+    }
     o->type = (uint8_t)type;
     o->mark = 0;
+    o->szc = (uint16_t)c; /* 0 = malloc'd (não reciclado) */
     o->next_all = all_objs;
     all_objs = o;
     alloc_since_gc++;
@@ -231,7 +270,12 @@ static void gc_sweep(void) {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
             if (o->type == T_TVEC) free(((TVec *)o)->items);
-            free(o);
+            if (o->szc == 0) {
+                free(o); /* grande: malloc'd */
+            } else {
+                o->next_all = freelist[o->szc]; /* recicla */
+                freelist[o->szc] = o;
+            }
         }
     }
 }
@@ -378,7 +422,7 @@ static VNode *vnode_new(void) {
 }
 static VNode *vnode_copy(VNode *src) {
     VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
-    for (int i = 0; i < VWIDTH; i++) n->slots[i] = src->slots[i];
+    memcpy(n->slots, src->slots, sizeof(n->slots));
     return n;
 }
 Value cljn_vec_empty(void) {

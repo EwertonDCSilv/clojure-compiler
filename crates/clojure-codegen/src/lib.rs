@@ -90,6 +90,14 @@ impl Default for CodegenOptions {
 const NIL: i64 = 2;
 const FALSEV: i64 = 6;
 const TRUEV: i64 = 10;
+const T_VEC: i64 = 5; // tag de PersistentVector (deve casar com runtime.c)
+// Offsets dos campos de PVec/VNode (Obj = 16 B). Devem casar com runtime.c.
+const PV_COUNT: i32 = 16;
+const PV_SHIFT: i32 = 24;
+const PV_ROOT: i32 = 32;
+const PV_TAIL: i32 = 40;
+const PV_TAILLEN: i32 = 48;
+const VNODE_SLOTS: i32 = 16;
 // Intervalo de fixnum (deve casar com FIXNUM_MIN/MAX em runtime.c).
 const FIX_MIN: i64 = -(1 << 62);
 const FIX_MAX: i64 = (1 << 62) - 1;
@@ -1359,6 +1367,121 @@ impl<'a> FnGen<'a> {
         Ok(m)
     }
 
+    /// Fast path inline de `(nth vec i)` (aridade 2): se `coll` for T_VEC e `i`
+    /// um fixnum em [0,count), lê o tail/trie inline (sem chamada nem dispatch).
+    /// Qualquer outra situação cai em `cljn_nth`, que preserva toda a semântica
+    /// da ADR-0008 (nil, capability, sequência, erros). Não aloca → sem safepoint.
+    fn gen_nth_fast(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let (coll, coll_pushed) = self.operand(&args[0])?;
+        let (idx, idx_pushed) = self.operand(&args[1])?;
+        let type_b = self.builder.create_block();
+        let vec_b = self.builder.create_block();
+        let inb_b = self.builder.create_block();
+        let tail_b = self.builder.create_block();
+        let trie_b = self.builder.create_block();
+        let loop_b = self.builder.create_block();
+        self.builder.append_block_param(loop_b, types::I64); // node
+        self.builder.append_block_param(loop_b, types::I64); // level
+        let descend_b = self.builder.create_block();
+        let leaf_b = self.builder.create_block();
+        let slow_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64); // resultado
+
+        // guard-1: coll é ponteiro alinhado não-nulo E idx é fixnum
+        let low3 = self.builder.ins().band_imm(coll, 7);
+        let aligned = self.builder.ins().icmp_imm(IntCC::Equal, low3, 0);
+        let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, coll, 0);
+        let ptr_ok = self.builder.ins().band(aligned, nonzero);
+        let idxlow = self.builder.ins().band_imm(idx, 1);
+        let idx_fix = self.builder.ins().icmp_imm(IntCC::NotEqual, idxlow, 0);
+        let pre = self.builder.ins().band(ptr_ok, idx_fix);
+        self.builder.ins().brif(pre, type_b, &[], slow_b, &[]);
+
+        // type_b: só aqui é seguro ler o byte de tipo (coll é ponteiro)
+        self.builder.switch_to_block(type_b);
+        self.builder.seal_block(type_b);
+        let ty = self.builder.ins().load(types::I8, MemFlags::trusted(), coll, 0);
+        let is_vec = self.builder.ins().icmp_imm(IntCC::Equal, ty, T_VEC);
+        self.builder.ins().brif(is_vec, vec_b, &[], slow_b, &[]);
+
+        // vec_b: desempacota i e checa limites (fora → slow, que lança p/ aridade 2)
+        self.builder.switch_to_block(vec_b);
+        self.builder.seal_block(vec_b);
+        let i = self.builder.ins().sshr_imm(idx, 1);
+        let count = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_COUNT);
+        let neg = self.builder.ins().icmp_imm(IntCC::SignedLessThan, i, 0);
+        let ge = self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i, count);
+        let oob = self.builder.ins().bor(neg, ge);
+        self.builder.ins().brif(oob, slow_b, &[], inb_b, &[]);
+
+        // inb_b: tail vs trie
+        self.builder.switch_to_block(inb_b);
+        self.builder.seal_block(inb_b);
+        let tail_len = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_TAILLEN);
+        let tailoff = self.builder.ins().isub(count, tail_len);
+        let in_tail = self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i, tailoff);
+        self.builder.ins().brif(in_tail, tail_b, &[], trie_b, &[]);
+
+        // tail_b: tail->slots[i - tailoff]
+        self.builder.switch_to_block(tail_b);
+        self.builder.seal_block(tail_b);
+        let tail = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_TAIL);
+        let ti = self.builder.ins().isub(i, tailoff);
+        let toff = self.builder.ins().imul_imm(ti, 8);
+        let taddr = self.builder.ins().iadd(tail, toff);
+        let tres = self.builder.ins().load(types::I64, MemFlags::trusted(), taddr, VNODE_SLOTS);
+        self.builder.ins().jump(merge, &[tres.into()]);
+
+        // trie_b: node=root, level=shift
+        self.builder.switch_to_block(trie_b);
+        self.builder.seal_block(trie_b);
+        let root = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_ROOT);
+        let shift = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_SHIFT);
+        self.builder.ins().jump(loop_b, &[root.into(), shift.into()]);
+
+        // loop_b(node, level): level>0 ? descend : leaf
+        self.builder.switch_to_block(loop_b);
+        let node = self.builder.block_params(loop_b)[0];
+        let level = self.builder.block_params(loop_b)[1];
+        let more = self.builder.ins().icmp_imm(IntCC::SignedGreaterThan, level, 0);
+        self.builder.ins().brif(more, descend_b, &[], leaf_b, &[]);
+
+        // descend_b: node = node->slots[(i>>level)&31]; level -= 5
+        self.builder.switch_to_block(descend_b);
+        self.builder.seal_block(descend_b);
+        let sh = self.builder.ins().sshr(i, level);
+        let sub = self.builder.ins().band_imm(sh, 31);
+        let soff = self.builder.ins().imul_imm(sub, 8);
+        let saddr = self.builder.ins().iadd(node, soff);
+        let child = self.builder.ins().load(types::I64, MemFlags::trusted(), saddr, VNODE_SLOTS);
+        let level2 = self.builder.ins().iadd_imm(level, -5);
+        self.builder.ins().jump(loop_b, &[child.into(), level2.into()]);
+        self.builder.seal_block(loop_b); // preds: trie_b, descend_b
+
+        // leaf_b: node->slots[i&31]
+        self.builder.switch_to_block(leaf_b);
+        self.builder.seal_block(leaf_b);
+        let slot = self.builder.ins().band_imm(i, 31);
+        let loff = self.builder.ins().imul_imm(slot, 8);
+        let laddr = self.builder.ins().iadd(node, loff);
+        let lres = self.builder.ins().load(types::I64, MemFlags::trusted(), laddr, VNODE_SLOTS);
+        self.builder.ins().jump(merge, &[lres.into()]);
+
+        // slow_b: delega ao runtime (semântica completa e erros)
+        self.builder.switch_to_block(slow_b);
+        self.builder.seal_block(slow_b);
+        let sres = self.call2(self.rt.p_nth, coll, idx);
+        self.builder.ins().jump(merge, &[sres.into()]);
+
+        // merge
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        let res = self.builder.block_params(merge)[0];
+        self.gc_popn(coll_pushed as usize + idx_pushed as usize);
+        Ok(res)
+    }
+
     /// `assoc` variádico (ADR-0008): avalia TODOS os args antes da dobra e então
     /// dobra os pares da esquerda p/ direita sobre AssocOne (`cljn_assoc`),
     /// mantendo o acumulador rooteado a cada passo. args = [coll, k, v, k, v...].
@@ -1948,7 +2071,7 @@ impl<'a> FnGen<'a> {
             Prim::Get => self.bin(self.rt.p_get, args),
             Prim::Nth => {
                 if args.len() == 2 {
-                    self.bin(self.rt.p_nth, args)
+                    self.gen_nth_fast(args) // fast path inline p/ vetor (ADR-0006/0008)
                 } else {
                     self.tern(self.rt.p_nth_or, args) // aridade 3: not-found
                 }
