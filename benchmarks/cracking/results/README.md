@@ -56,6 +56,25 @@ CPU aumentaram respectivamente 3,43% e 3,99%. É uma regressão pequena observad
 única rodada; deve ser confirmada com repetições controladas antes de ser atribuída às
 mudanças do compilador.
 
+## Gráficos comparativos
+
+Os gráficos são gerados diretamente do [`extreme.csv`](extreme.csv) por
+[`render-benchmark-charts.rs`](../../render-benchmark-charts.rs). Tempo e CPU usam uma
+escala logarítmica de razão: verde à direita favorece o nativo e laranja à esquerda
+favorece Clojure/JVM. Memória mostra os valores absolutos dos dois processos em MiB.
+
+### Tempo de parede
+
+[![Comparação do tempo de parede por caso](charts/wall-time.svg)](charts/wall-time.svg)
+
+### Tempo total de CPU
+
+[![Comparação do tempo total de CPU por caso](charts/cpu-time.svg)](charts/cpu-time.svg)
+
+### Pico de memória RSS
+
+[![Comparação do pico de memória RSS por caso](charts/memory-rss.svg)](charts/memory-rss.svg)
+
 ## Resumo por teste
 
 `N/J` mostra os valores absolutos nativo/Clojure. O delta é

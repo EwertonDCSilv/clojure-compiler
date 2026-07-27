@@ -52,6 +52,9 @@ benchmarks/refresh-native-comparison.sh --suite cormen
 benchmarks/render-benchmark-summary.sh \
   benchmarks/cormen/results/extreme.csv
 
+# Regenerar os gráficos de tempo, CPU e memória das duas suítes
+make benchmarks-charts
+
 # Repetir a comparação com um nível Cranelift explícito
 make benchmarks-compare-cormen \
   CORMEN_COMPARE_ARGS="--opt-level speed" \

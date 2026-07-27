@@ -184,6 +184,7 @@ metrics, result reports, and direct links to all 90 cases.
 ```bash
 make benchmarks
 make benchmarks-compare
+make benchmarks-charts
 
 # Filter one suite while keeping the same entry point
 make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"

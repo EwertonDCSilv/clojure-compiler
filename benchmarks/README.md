@@ -347,6 +347,21 @@ benchmarks/render-benchmark-summary.sh \
   benchmarks/cracking/results/extreme.csv
 ```
 
+Os relatórios e a página do projeto também incorporam gráficos SVG de tempo, CPU e
+memória. Para regenerar os seis gráficos de cada destino a partir dos CSVs de
+referência:
+
+```bash
+make benchmarks-charts
+```
+
+O alvo atualiza `benchmarks/*/results/charts/` e
+`docs/assets/benchmarks/`. O programa Rust
+[`render-benchmark-charts.rs`](render-benchmark-charts.rs) usa somente a biblioteca
+padrão e aceita um CSV, um diretório de saída e um título, permitindo visualizar
+resultados experimentais sem substituir os gráficos oficiais. O `Makefile` recompila o
+binário apenas quando o fonte muda.
+
 Quando já existe uma referência JVM válida e apenas o compilador nativo mudou, é
 possível atualizar somente as colunas nativas:
 

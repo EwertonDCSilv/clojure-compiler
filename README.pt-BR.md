@@ -183,6 +183,7 @@ metodologia, as métricas, os relatórios e os links diretos para os 90 casos.
 ```bash
 make benchmarks
 make benchmarks-compare
+make benchmarks-charts
 
 # Filtra uma suíte mantendo a mesma entrada
 make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"

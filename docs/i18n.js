@@ -29,6 +29,7 @@
       "nav.project": "O projeto",
       "nav.pipeline": "Pipeline",
       "nav.features": "Recursos",
+      "nav.benchmarks": "Benchmarks",
       "nav.start": "Começar",
       "nav.github": "GitHub",
       "hero.eyebrow": "Compilação nativa experimental",
@@ -98,6 +99,36 @@
       "features.coreTitle": "Core compilado",
       "features.coreBody":
         "26 funções, incluindo <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> e <code>comp</code>.",
+      "benchmarks.kicker": "Desempenho verificável",
+      "benchmarks.title": "Nativo e JVM, caso a caso.",
+      "benchmarks.lead":
+        "Compare os 90 programas com a mesma carga e checksums idênticos. Escolha a suíte e alterne entre tempo, CPU e memória sem sair da página.",
+      "benchmarks.suiteLabel": "Suíte",
+      "benchmarks.metricLabel": "Métrica",
+      "benchmarks.suiteTabs": "Selecionar suíte",
+      "benchmarks.metricTabs": "Selecionar métrica",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "Tempo",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "Memória",
+      "benchmarks.summaryWall": "tempo total · nativo / JVM",
+      "benchmarks.summaryCpu": "CPU total · nativo / JVM",
+      "benchmarks.summaryMemory": "RSS mediano · nativo / JVM",
+      "benchmarks.altWall":
+        "Comparação de tempo da suíte {suite} entre o executável nativo e Clojure/JVM",
+      "benchmarks.altCpu":
+        "Comparação de CPU da suíte {suite} entre o executável nativo e Clojure/JVM",
+      "benchmarks.altMemory":
+        "Comparação de memória da suíte {suite} entre o executável nativo e Clojure/JVM",
+      "benchmarks.captionWall":
+        "Verde favorece o nativo; laranja favorece a JVM. A linha central marca a paridade e a escala é logarítmica.",
+      "benchmarks.captionCpu":
+        "A razão de CPU total usa a mesma linha de paridade: direita favorece o nativo, esquerda favorece a JVM.",
+      "benchmarks.captionMemory":
+        "Azul representa o nativo e roxo representa Clojure/JVM. Os pontos mostram RSS absoluto em MiB, em escala logarítmica.",
+      "benchmarks.openReport": "Abrir relatório completo",
+      "benchmarks.openCsv": "Ver CSV",
       "honesty.label": "Experimental por design",
       "honesty.bodyHtml":
         "<strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong> Interop Java, bignums, sequências lazy, namespaces dinâmicos e projetos multi-arquivo continuam fora do caminho nativo atual.",
@@ -152,6 +183,7 @@
       "nav.project": "El proyecto",
       "nav.pipeline": "Pipeline",
       "nav.features": "Funciones",
+      "nav.benchmarks": "Benchmarks",
       "nav.start": "Empezar",
       "nav.github": "GitHub",
       "hero.eyebrow": "Compilación nativa experimental",
@@ -221,6 +253,36 @@
       "features.coreTitle": "Core compilado",
       "features.coreBody":
         "26 funciones, entre ellas <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> y <code>comp</code>.",
+      "benchmarks.kicker": "Rendimiento verificable",
+      "benchmarks.title": "Nativo y JVM, caso por caso.",
+      "benchmarks.lead":
+        "Compara los 90 programas con la misma carga y checksums idénticos. Elige la suite y alterna entre tiempo, CPU y memoria sin salir de la página.",
+      "benchmarks.suiteLabel": "Suite",
+      "benchmarks.metricLabel": "Métrica",
+      "benchmarks.suiteTabs": "Seleccionar suite",
+      "benchmarks.metricTabs": "Seleccionar métrica",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "Tiempo",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "Memoria",
+      "benchmarks.summaryWall": "tiempo total · nativo / JVM",
+      "benchmarks.summaryCpu": "CPU total · nativo / JVM",
+      "benchmarks.summaryMemory": "RSS mediano · nativo / JVM",
+      "benchmarks.altWall":
+        "Comparación de tiempo de la suite {suite} entre el ejecutable nativo y Clojure/JVM",
+      "benchmarks.altCpu":
+        "Comparación de CPU de la suite {suite} entre el ejecutable nativo y Clojure/JVM",
+      "benchmarks.altMemory":
+        "Comparación de memoria de la suite {suite} entre el ejecutable nativo y Clojure/JVM",
+      "benchmarks.captionWall":
+        "El verde favorece al nativo y el naranja a la JVM. La línea central marca la paridad y la escala es logarítmica.",
+      "benchmarks.captionCpu":
+        "La razón de CPU total usa la misma línea de paridad: la derecha favorece al nativo y la izquierda a la JVM.",
+      "benchmarks.captionMemory":
+        "Azul representa al nativo y morado a Clojure/JVM. Los puntos muestran RSS absoluto en MiB, en escala logarítmica.",
+      "benchmarks.openReport": "Abrir informe completo",
+      "benchmarks.openCsv": "Ver CSV",
       "honesty.label": "Experimental por diseño",
       "honesty.bodyHtml":
         "<strong>Este proyecto aún no sustituye a Clojure/JVM.</strong> La interoperabilidad Java, bignums, secuencias lazy, namespaces dinámicos y proyectos multiarchivo siguen fuera de la ruta nativa actual.",
@@ -275,6 +337,7 @@
       "nav.project": "The project",
       "nav.pipeline": "Pipeline",
       "nav.features": "Features",
+      "nav.benchmarks": "Benchmarks",
       "nav.start": "Get started",
       "nav.github": "GitHub",
       "hero.eyebrow": "Experimental native compilation",
@@ -344,6 +407,36 @@
       "features.coreTitle": "Compiled core",
       "features.coreBody":
         "26 functions including <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code>, and <code>comp</code>.",
+      "benchmarks.kicker": "Verifiable performance",
+      "benchmarks.title": "Native and JVM, case by case.",
+      "benchmarks.lead":
+        "Compare all 90 programs under the same load with matching checksums. Choose a suite and switch between wall time, CPU, and memory without leaving the page.",
+      "benchmarks.suiteLabel": "Suite",
+      "benchmarks.metricLabel": "Metric",
+      "benchmarks.suiteTabs": "Select benchmark suite",
+      "benchmarks.metricTabs": "Select benchmark metric",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "Wall time",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "Memory",
+      "benchmarks.summaryWall": "total wall time · native / JVM",
+      "benchmarks.summaryCpu": "total CPU · native / JVM",
+      "benchmarks.summaryMemory": "median RSS · native / JVM",
+      "benchmarks.altWall":
+        "Wall-time comparison for the {suite} suite between the native executable and Clojure/JVM",
+      "benchmarks.altCpu":
+        "CPU comparison for the {suite} suite between the native executable and Clojure/JVM",
+      "benchmarks.altMemory":
+        "Memory comparison for the {suite} suite between the native executable and Clojure/JVM",
+      "benchmarks.captionWall":
+        "Green favors native; orange favors the JVM. The center line marks parity and the scale is logarithmic.",
+      "benchmarks.captionCpu":
+        "Total CPU uses the same parity line: right favors native, while left favors the JVM.",
+      "benchmarks.captionMemory":
+        "Blue represents native and purple represents Clojure/JVM. Points show absolute RSS in MiB on a logarithmic scale.",
+      "benchmarks.openReport": "Open full report",
+      "benchmarks.openCsv": "View CSV",
       "honesty.label": "Experimental by design",
       "honesty.bodyHtml":
         "<strong>This project is not yet a replacement for Clojure/JVM.</strong> Java interop, bignums, lazy sequences, dynamic namespaces, and multi-file projects remain outside the current native path.",
@@ -398,6 +491,7 @@
       "nav.project": "Le projet",
       "nav.pipeline": "Pipeline",
       "nav.features": "Fonctions",
+      "nav.benchmarks": "Benchmarks",
       "nav.start": "Démarrer",
       "nav.github": "GitHub",
       "hero.eyebrow": "Compilation native expérimentale",
@@ -467,6 +561,36 @@
       "features.coreTitle": "Core compilé",
       "features.coreBody":
         "26 fonctions, dont <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> et <code>comp</code>.",
+      "benchmarks.kicker": "Performance vérifiable",
+      "benchmarks.title": "Natif et JVM, cas par cas.",
+      "benchmarks.lead":
+        "Comparez les 90 programmes avec la même charge et des checksums identiques. Choisissez une suite et alternez entre temps d’exécution, CPU et mémoire sans quitter la page.",
+      "benchmarks.suiteLabel": "Suite",
+      "benchmarks.metricLabel": "Métrique",
+      "benchmarks.suiteTabs": "Sélectionner la suite",
+      "benchmarks.metricTabs": "Sélectionner la métrique",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "Temps",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "Mémoire",
+      "benchmarks.summaryWall": "temps total · natif / JVM",
+      "benchmarks.summaryCpu": "CPU total · natif / JVM",
+      "benchmarks.summaryMemory": "RSS médian · natif / JVM",
+      "benchmarks.altWall":
+        "Comparaison du temps de la suite {suite} entre l'exécutable natif et Clojure/JVM",
+      "benchmarks.altCpu":
+        "Comparaison CPU de la suite {suite} entre l'exécutable natif et Clojure/JVM",
+      "benchmarks.altMemory":
+        "Comparaison mémoire de la suite {suite} entre l'exécutable natif et Clojure/JVM",
+      "benchmarks.captionWall":
+        "Le vert favorise le natif et l'orange la JVM. La ligne centrale marque la parité et l'échelle est logarithmique.",
+      "benchmarks.captionCpu":
+        "Le CPU total utilise la même ligne de parité : la droite favorise le natif, la gauche la JVM.",
+      "benchmarks.captionMemory":
+        "Le bleu représente le natif et le violet Clojure/JVM. Les points indiquent le RSS absolu en MiB sur une échelle logarithmique.",
+      "benchmarks.openReport": "Ouvrir le rapport complet",
+      "benchmarks.openCsv": "Voir le CSV",
       "honesty.label": "Expérimental par conception",
       "honesty.bodyHtml":
         "<strong>Ce projet ne remplace pas encore Clojure/JVM.</strong> L'interop Java, les bignums, les séquences lazy, les namespaces dynamiques et les projets multi-fichiers restent hors de la voie native actuelle.",
@@ -521,6 +645,7 @@
       "nav.project": "Проект",
       "nav.pipeline": "Конвейер",
       "nav.features": "Возможности",
+      "nav.benchmarks": "Бенчмарки",
       "nav.start": "Начало работы",
       "nav.github": "GitHub",
       "hero.eyebrow": "Экспериментальная нативная компиляция",
@@ -590,6 +715,36 @@
       "features.coreTitle": "Скомпилированный core",
       "features.coreBody":
         "26 функций, включая <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> и <code>comp</code>.",
+      "benchmarks.kicker": "Проверяемая производительность",
+      "benchmarks.title": "Нативный код и JVM — тест за тестом.",
+      "benchmarks.lead":
+        "Сравните 90 программ с одинаковой нагрузкой и совпадающими контрольными суммами. Выбирайте набор и переключайтесь между временем, CPU и памятью прямо на странице.",
+      "benchmarks.suiteLabel": "Набор",
+      "benchmarks.metricLabel": "Метрика",
+      "benchmarks.suiteTabs": "Выбрать набор тестов",
+      "benchmarks.metricTabs": "Выбрать метрику",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "Время",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "Память",
+      "benchmarks.summaryWall": "общее время · native / JVM",
+      "benchmarks.summaryCpu": "общее CPU · native / JVM",
+      "benchmarks.summaryMemory": "медианный RSS · native / JVM",
+      "benchmarks.altWall":
+        "Сравнение времени набора {suite} между нативным исполняемым файлом и Clojure/JVM",
+      "benchmarks.altCpu":
+        "Сравнение CPU набора {suite} между нативным исполняемым файлом и Clojure/JVM",
+      "benchmarks.altMemory":
+        "Сравнение памяти набора {suite} между нативным исполняемым файлом и Clojure/JVM",
+      "benchmarks.captionWall":
+        "Зелёный цвет означает преимущество native, оранжевый — JVM. Центральная линия обозначает паритет; шкала логарифмическая.",
+      "benchmarks.captionCpu":
+        "Общее CPU использует ту же линию паритета: справа преимущество native, слева — JVM.",
+      "benchmarks.captionMemory":
+        "Синий обозначает native, фиолетовый — Clojure/JVM. Точки показывают абсолютный RSS в MiB по логарифмической шкале.",
+      "benchmarks.openReport": "Открыть полный отчёт",
+      "benchmarks.openCsv": "Открыть CSV",
       "honesty.label": "Экспериментальный по замыслу",
       "honesty.bodyHtml":
         "<strong>Проект пока не заменяет Clojure/JVM.</strong> Java interop, bignums, ленивые последовательности, динамические namespaces и многофайловые проекты остаются за пределами текущего нативного пути.",
@@ -644,6 +799,7 @@
       "nav.project": "项目",
       "nav.pipeline": "编译流程",
       "nav.features": "特性",
+      "nav.benchmarks": "基准测试",
       "nav.start": "快速开始",
       "nav.github": "GitHub",
       "hero.eyebrow": "实验性原生编译",
@@ -709,6 +865,33 @@
       "features.coreTitle": "已编译的 core",
       "features.coreBody":
         "包含 26 个函数，例如 <code>map</code>、<code>filter</code>、<code>reduce</code>、<code>range</code>、<code>into</code> 和 <code>comp</code>。",
+      "benchmarks.kicker": "可验证的性能",
+      "benchmarks.title": "原生与 JVM，逐项对比。",
+      "benchmarks.lead":
+        "在相同负载和一致校验和下比较全部 90 个程序。无需离开页面，即可选择套件并切换时间、CPU 和内存指标。",
+      "benchmarks.suiteLabel": "套件",
+      "benchmarks.metricLabel": "指标",
+      "benchmarks.suiteTabs": "选择基准测试套件",
+      "benchmarks.metricTabs": "选择基准测试指标",
+      "benchmarks.cormen": "Cormen / CLRS",
+      "benchmarks.cracking": "Cracking",
+      "benchmarks.wall": "时间",
+      "benchmarks.cpu": "CPU",
+      "benchmarks.memory": "内存",
+      "benchmarks.summaryWall": "总时间 · 原生 / JVM",
+      "benchmarks.summaryCpu": "总 CPU · 原生 / JVM",
+      "benchmarks.summaryMemory": "RSS 中位数 · 原生 / JVM",
+      "benchmarks.altWall": "{suite} 套件中原生可执行文件与 Clojure/JVM 的时间对比",
+      "benchmarks.altCpu": "{suite} 套件中原生可执行文件与 Clojure/JVM 的 CPU 对比",
+      "benchmarks.altMemory": "{suite} 套件中原生可执行文件与 Clojure/JVM 的内存对比",
+      "benchmarks.captionWall":
+        "绿色表示原生更优，橙色表示 JVM 更优。中线表示性能持平，采用对数刻度。",
+      "benchmarks.captionCpu":
+        "总 CPU 使用相同的持平线：右侧表示原生更优，左侧表示 JVM 更优。",
+      "benchmarks.captionMemory":
+        "蓝色表示原生，紫色表示 Clojure/JVM。数据点以对数刻度显示绝对 RSS（MiB）。",
+      "benchmarks.openReport": "打开完整报告",
+      "benchmarks.openCsv": "查看 CSV",
       "honesty.label": "有意保持实验性",
       "honesty.bodyHtml":
         "<strong>本项目目前还不能替代 Clojure/JVM。</strong> Java interop、bignums、惰性序列、动态 namespaces 和多文件项目仍不在当前原生路径的范围内。",

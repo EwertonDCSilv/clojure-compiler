@@ -1266,6 +1266,164 @@
         color: var(--sky);
       }
 
+      .benchmark-dashboard {
+        margin-top: 0.5rem;
+      }
+
+      .benchmark-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 2rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem;
+        border: 1px solid var(--line-dark);
+        border-radius: 18px;
+        background: rgba(11, 22, 18, 0.035);
+      }
+
+      .benchmark-control {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .benchmark-control-label {
+        color: #60746a;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .benchmark-toggle {
+        display: inline-flex;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        border-radius: 12px;
+        background: rgba(11, 22, 18, 0.075);
+      }
+
+      .benchmark-toggle button {
+        min-height: 2.5rem;
+        padding: 0.625rem 0.875rem;
+        color: #52675c;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        font: 600 0.83rem/1 var(--sans);
+        cursor: pointer;
+        transition:
+          color 160ms ease,
+          background 160ms ease,
+          transform 160ms ease;
+      }
+
+      .benchmark-toggle button:hover {
+        color: var(--ink);
+      }
+
+      .benchmark-toggle button[aria-pressed="true"] {
+        color: var(--paper);
+        background: var(--ink);
+        box-shadow: 0 4px 12px rgba(11, 22, 18, 0.18);
+      }
+
+      .benchmark-toggle button:active {
+        transform: translateY(1px);
+      }
+
+      .benchmark-summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        margin: 1.25rem 0;
+        border: 1px solid var(--line-dark);
+        border-radius: 18px;
+        background: var(--paper);
+      }
+
+      .benchmark-summary-item {
+        padding: 1.25rem 1.5rem;
+        border-right: 1px solid var(--line-dark);
+      }
+
+      .benchmark-summary-item:last-child {
+        border-right: 0;
+      }
+
+      .benchmark-summary-value {
+        display: block;
+        margin-bottom: 0.4rem;
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: clamp(1.05rem, 2vw, 1.35rem);
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .benchmark-summary-label {
+        color: #60746a;
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+
+      .benchmark-figure {
+        margin: 0;
+      }
+
+      .benchmark-chart-frame {
+        max-height: min(74vh, 760px);
+        overflow: auto;
+        border: 1px solid rgba(11, 22, 18, 0.18);
+        border-radius: 18px;
+        background: #0f172a;
+        box-shadow: 0 24px 70px rgba(11, 22, 18, 0.16);
+        overscroll-behavior: contain;
+      }
+
+      .benchmark-chart {
+        display: block;
+        width: 100%;
+        min-width: 960px;
+        height: auto;
+      }
+
+      .benchmark-figure figcaption {
+        margin-top: 1rem;
+        color: #60746a;
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+
+      .benchmark-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: 1.25rem;
+      }
+
+      .benchmark-link {
+        display: inline-flex;
+        gap: 0.45rem;
+        align-items: center;
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 0.86rem;
+        font-weight: 700;
+      }
+
+      .benchmark-link::after {
+        content: "↗";
+        color: var(--green);
+        font-family: var(--mono);
+      }
+
+      .benchmark-link:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.22em;
+      }
+
       .stats-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -1498,6 +1656,19 @@
           gap: 2.75rem;
         }
 
+        .benchmark-summary {
+          grid-template-columns: 1fr;
+        }
+
+        .benchmark-summary-item {
+          border-right: 0;
+          border-bottom: 1px solid var(--line-dark);
+        }
+
+        .benchmark-summary-item:last-child {
+          border-bottom: 0;
+        }
+
         .stats-grid {
           grid-template-columns: repeat(2, 1fr);
         }
@@ -1705,6 +1876,39 @@
           justify-self: start;
         }
 
+        .benchmark-controls,
+        .benchmark-control {
+          align-items: stretch;
+        }
+
+        .benchmark-controls,
+        .benchmark-control {
+          flex-direction: column;
+          width: 100%;
+        }
+
+        .benchmark-toggle {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          width: 100%;
+        }
+
+        .benchmark-control:first-child .benchmark-toggle {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .benchmark-toggle button {
+          padding-inline: 0.5rem;
+        }
+
+        .benchmark-chart-frame {
+          max-height: 560px;
+        }
+
+        .benchmark-chart {
+          min-width: 900px;
+        }
+
         .stats-grid {
           grid-template-columns: 1fr;
         }
@@ -1844,6 +2048,7 @@
           <li><a href="#projeto" data-i18n="nav.project">O projeto</a></li>
           <li><a href="#pipeline" data-i18n="nav.pipeline">Pipeline</a></li>
           <li><a href="#recursos" data-i18n="nav.features">Recursos</a></li>
+          <li><a href="#benchmarks" data-i18n="nav.benchmarks">Benchmarks</a></li>
           <li><a href="#comecar" data-i18n="nav.start">Começar</a></li>
           <li class="language-item">
             <div class="language-switcher">
@@ -2177,6 +2382,160 @@
         </div>
       </section>
 
+      <section class="section" id="benchmarks" aria-labelledby="benchmarks-title">
+        <div class="shell">
+          <span class="section-kicker" data-i18n="benchmarks.kicker">
+            Desempenho verificável
+          </span>
+          <h2
+            class="section-title reveal"
+            id="benchmarks-title"
+            data-i18n="benchmarks.title"
+          >
+            Nativo e JVM, caso a caso.
+          </h2>
+          <p class="section-lead reveal" data-i18n="benchmarks.lead">
+            Compare os 90 programas com a mesma carga e checksums idênticos. Escolha a
+            suíte e alterne entre tempo, CPU e memória sem sair da página.
+          </p>
+
+          <div class="benchmark-dashboard reveal">
+            <div class="benchmark-controls">
+              <div class="benchmark-control">
+                <span class="benchmark-control-label" data-i18n="benchmarks.suiteLabel">
+                  Suíte
+                </span>
+                <div
+                  class="benchmark-toggle"
+                  aria-label="Selecionar suíte"
+                  data-i18n-aria-label="benchmarks.suiteTabs"
+                >
+                  <button
+                    type="button"
+                    aria-pressed="true"
+                    data-benchmark-suite="cormen"
+                    data-i18n="benchmarks.cormen"
+                  >
+                    Cormen / CLRS
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed="false"
+                    data-benchmark-suite="cracking"
+                    data-i18n="benchmarks.cracking"
+                  >
+                    Cracking
+                  </button>
+                </div>
+              </div>
+
+              <div class="benchmark-control">
+                <span class="benchmark-control-label" data-i18n="benchmarks.metricLabel">
+                  Métrica
+                </span>
+                <div
+                  class="benchmark-toggle"
+                  aria-label="Selecionar métrica"
+                  data-i18n-aria-label="benchmarks.metricTabs"
+                >
+                  <button
+                    type="button"
+                    aria-pressed="true"
+                    data-benchmark-metric="wall"
+                    data-i18n="benchmarks.wall"
+                  >
+                    Tempo
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed="false"
+                    data-benchmark-metric="cpu"
+                    data-i18n="benchmarks.cpu"
+                  >
+                    CPU
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed="false"
+                    data-benchmark-metric="memory"
+                    data-i18n="benchmarks.memory"
+                  >
+                    Memória
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="benchmark-summary" aria-live="polite">
+              <div class="benchmark-summary-item">
+                <span class="benchmark-summary-value" data-benchmark-summary="wall">
+                  39,04 s / 16,91 s
+                </span>
+                <span class="benchmark-summary-label" data-i18n="benchmarks.summaryWall">
+                  tempo total · nativo / JVM
+                </span>
+              </div>
+              <div class="benchmark-summary-item">
+                <span class="benchmark-summary-value" data-benchmark-summary="cpu">
+                  38,87 s / 32,61 s
+                </span>
+                <span class="benchmark-summary-label" data-i18n="benchmarks.summaryCpu">
+                  CPU total · nativo / JVM
+                </span>
+              </div>
+              <div class="benchmark-summary-item">
+                <span class="benchmark-summary-value" data-benchmark-summary="memory">
+                  17,4 MiB / 271,1 MiB
+                </span>
+                <span class="benchmark-summary-label" data-i18n="benchmarks.summaryMemory">
+                  RSS mediano · nativo / JVM
+                </span>
+              </div>
+            </div>
+
+            <figure class="benchmark-figure">
+              <div class="benchmark-chart-frame" id="benchmark-chart-panel">
+                <img
+                  class="benchmark-chart"
+                  id="benchmark-chart"
+                  src="./assets/benchmarks/cormen/wall-time.svg"
+                  alt="Comparação de tempo da suíte Cormen entre o executável nativo e Clojure/JVM"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption id="benchmark-caption" data-i18n="benchmarks.captionWall">
+                Verde favorece o nativo; laranja favorece a JVM. A linha central marca
+                a paridade e a escala é logarítmica.
+              </figcaption>
+            </figure>
+
+            <div class="benchmark-actions">
+              <a
+                class="benchmark-link"
+                id="benchmark-report-link"
+                href="https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/README.md"
+                target="_blank"
+                rel="noreferrer"
+                data-i18n="benchmarks.openReport"
+              >
+                Abrir relatório completo
+              </a>
+              <a
+                class="benchmark-link"
+                id="benchmark-csv-link"
+                href="https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/extreme.csv"
+                target="_blank"
+                rel="noreferrer"
+                data-i18n="benchmarks.openCsv"
+              >
+                Ver CSV
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="section section-dark" id="comecar">
         <div class="demo-grid shell">
           <div class="demo-copy reveal">
@@ -2367,6 +2726,116 @@
           }, 1800);
         });
       });
+
+      const benchmarkSuites = {
+        cormen: {
+          labelKey: "benchmarks.cormen",
+          assetDirectory: "cormen",
+          report:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/README.md",
+          csv:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/extreme.csv",
+          wall: [39.04, 16.91],
+          cpu: [38.87, 32.61],
+          memory: [17.4, 271.1],
+        },
+        cracking: {
+          labelKey: "benchmarks.cracking",
+          assetDirectory: "cracking",
+          report:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/README.md",
+          csv:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/extreme.csv",
+          wall: [9.04, 24.96],
+          cpu: [8.86, 53.88],
+          memory: [5.1, 117.5],
+        },
+      };
+      const benchmarkMetrics = {
+        wall: {
+          file: "wall-time.svg",
+          altKey: "benchmarks.altWall",
+          captionKey: "benchmarks.captionWall",
+        },
+        cpu: {
+          file: "cpu-time.svg",
+          altKey: "benchmarks.altCpu",
+          captionKey: "benchmarks.captionCpu",
+        },
+        memory: {
+          file: "memory-rss.svg",
+          altKey: "benchmarks.altMemory",
+          captionKey: "benchmarks.captionMemory",
+        },
+      };
+      const benchmarkState = { suite: "cormen", metric: "wall" };
+      const benchmarkChart = document.querySelector("#benchmark-chart");
+      const benchmarkCaption = document.querySelector("#benchmark-caption");
+      const benchmarkReportLink = document.querySelector("#benchmark-report-link");
+      const benchmarkCsvLink = document.querySelector("#benchmark-csv-link");
+
+      const formatBenchmarkValue = (value, digits) =>
+        new Intl.NumberFormat(document.documentElement.lang, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        }).format(value);
+
+      const formatBenchmarkPair = ([nativeValue, jvmValue], digits, unit) =>
+        `${formatBenchmarkValue(nativeValue, digits)} ${unit} / ${formatBenchmarkValue(
+          jvmValue,
+          digits
+        )} ${unit}`;
+
+      const updateBenchmarkDashboard = () => {
+        const suite = benchmarkSuites[benchmarkState.suite];
+        const metric = benchmarkMetrics[benchmarkState.metric];
+        const suiteName = window.pageI18n.t(suite.labelKey);
+
+        document.querySelectorAll("[data-benchmark-suite]").forEach((button) => {
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.benchmarkSuite === benchmarkState.suite)
+          );
+        });
+        document.querySelectorAll("[data-benchmark-metric]").forEach((button) => {
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.benchmarkMetric === benchmarkState.metric)
+          );
+        });
+
+        document.querySelector('[data-benchmark-summary="wall"]').textContent =
+          formatBenchmarkPair(suite.wall, 2, "s");
+        document.querySelector('[data-benchmark-summary="cpu"]').textContent =
+          formatBenchmarkPair(suite.cpu, 2, "s");
+        document.querySelector('[data-benchmark-summary="memory"]').textContent =
+          formatBenchmarkPair(suite.memory, 1, "MiB");
+
+        benchmarkChart.src = `./assets/benchmarks/${suite.assetDirectory}/${metric.file}`;
+        benchmarkChart.alt = window.pageI18n
+          .t(metric.altKey)
+          .replace("{suite}", suiteName);
+        benchmarkCaption.textContent = window.pageI18n.t(metric.captionKey);
+        benchmarkReportLink.href = suite.report;
+        benchmarkCsvLink.href = suite.csv;
+      };
+
+      document.querySelectorAll("[data-benchmark-suite]").forEach((button) => {
+        button.addEventListener("click", () => {
+          benchmarkState.suite = button.dataset.benchmarkSuite;
+          updateBenchmarkDashboard();
+        });
+      });
+
+      document.querySelectorAll("[data-benchmark-metric]").forEach((button) => {
+        button.addEventListener("click", () => {
+          benchmarkState.metric = button.dataset.benchmarkMetric;
+          updateBenchmarkDashboard();
+        });
+      });
+
+      window.addEventListener("page:languagechange", updateBenchmarkDashboard);
+      updateBenchmarkDashboard();
 
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const revealItems = document.querySelectorAll(".reveal");

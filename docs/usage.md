@@ -83,6 +83,7 @@ Alvos auxiliares:
 | `make compatibility-oracle` | comparação manual com Clojure/JVM |
 | `make benchmarks-list` | lista os casos das duas suítes |
 | `make benchmarks-ci` | recorte de checksums usado na CI |
+| `make benchmarks-charts` | regenera os SVGs dos relatórios e da página do projeto |
 | `make benchmarks-compare-cracking` | comparação JVM somente da suíte Cracking |
 | `make benchmarks-compare-cormen` | comparação JVM somente da suíte Cormen |
 
@@ -173,12 +174,15 @@ em [`specs/conformance/README.md`](../specs/conformance/README.md).
 ```bash
 make benchmarks
 make benchmarks-compare
+make benchmarks-charts
 make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 ```
 
 Os runners preparam as variantes nativa e Clojure/JVM e geram resultados CSV com tempo
 de parede, CPU e memória. `make benchmarks` não requer JVM; somente os alvos
-`benchmarks-compare*` usam Java e os artefatos Clojure fixados.
+`benchmarks-compare*` usam Java e os artefatos Clojure fixados. O alvo
+`benchmarks-charts` usa os CSVs comparativos versionados para atualizar tanto os
+relatórios quanto o painel de benchmarks da página do projeto.
 
 Consulte o [catálogo central](../benchmarks/README.md) e os READMEs de
 [`Cracking`](../benchmarks/cracking/README.md) e

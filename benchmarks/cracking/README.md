@@ -76,6 +76,9 @@ benchmarks/refresh-native-comparison.sh --suite cracking
 benchmarks/render-benchmark-summary.sh \
   benchmarks/cracking/results/extreme.csv
 
+# Regenerar os gráficos de tempo, CPU e memória das duas suítes
+make benchmarks-charts
+
 # Escolher outro multiplicador de carga
 make benchmarks-cracking CRACKING_ARGS="--scale 10 --csv /tmp/scale-10.csv"
 
