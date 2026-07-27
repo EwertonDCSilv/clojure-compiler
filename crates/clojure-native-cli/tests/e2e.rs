@@ -161,6 +161,41 @@ fn compiles_loop_recur() {
 }
 
 #[test]
+fn rooting_elision_preserves_gc_safety() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0006 Fases 4-5: a elisão de root para imediatos/Locals não pode soltar
+    // valores heap vivos. Casos sentinela do spec, sob coleta a cada alocação.
+    let src = r#"(ns re.core)
+;; heap `x` vivo enquanto o outro operando aloca
+(defn s1 [] (cons (list 1 2 3) (list 4 5 6)))
+;; acc heap loop-carried + i imediato: 3000 conses
+(defn s2 [] (loop [i 0 acc (list)] (if (< i 3000) (recur (inc i) (cons i acc)) (count acc))))
+;; loop numérico puro (sem tráfego de root no corpo)
+(defn s3 [n] (loop [i 0 acc 0] (if (< i n) (recur (inc i) (+ acc i)) acc)))
+;; closure captura heap, usada após muitas alocações
+(defn wrap [lst] (fn [x] (cons x lst)))
+;; if de kind misto (heap vs imediato)
+(defn s5 [b] (if b (list 1 2) 42))
+(defn -main []
+  (println (s1))
+  (println (s2))
+  (println (s3 100000))
+  (let [w (wrap (list :a))
+        _ (reduce (fn [a i] (cons i a)) (list) (range 1000))]
+    (println (w 9)))
+  (println (s5 true) (s5 false)))
+(-main)"#;
+    let expected = "((1 2 3) 4 5 6)\n3000\n4999950000\n(9 :a)\n(1 2) 42\n";
+    assert_eq!(build_and_run("cljn_e2e_root", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_root_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn fixnum_fast_paths_correct() {
     if !have_cc() {
         return;
