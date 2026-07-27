@@ -1,5 +1,9 @@
 # Runtime C modules
 
+[Project README](../../../README.md) ·
+[Architecture guide](../../../docs/architecture.md) ·
+[Runtime specification](../../../specs/RUNTIME_SPEC.md)
+
 The native runtime is physically split by subsystem but remains one C translation unit.
 `clojure-codegen` concatenates the fragments with `include_str!`; `runtime_all.c` and the
 compatibility entry point `../runtime.c` provide the same ordering to C-native tools.
@@ -31,6 +35,9 @@ When adding or moving a module, update both `runtime_all.c` and the
 Run the dedicated gates with:
 
 ```bash
-scripts/test-runtime-c.sh
-scripts/test-runtime-c.sh --sanitize
+make test-runtime
+make test-runtime-sanitize
 ```
+
+Run these commands from the repository root. The underlying
+`scripts/test-runtime-c.sh` entry point remains available for low-level debugging.

@@ -35,7 +35,7 @@ Grande parte do ecossistema. **Não é um compromisso**; serve de norte de longo
 
 **Meta declarada do MVP: A + B + C (subconjunto).** A situação atual por recurso é
 `active`, `xfail` ou `pending` na suíte executável. Ver
-[VISION.md](VISION.md#nivel-de-compatibilidade-desejado).
+[VISION.md](VISION.md#nível-de-compatibilidade-desejado).
 
 ---
 
@@ -108,7 +108,7 @@ resultado plausível-porém-diferente. Preferir erro alto e claro.
 
 - O analisador mantém uma tabela de "construções não suportadas" com a política e a
   mensagem associada; ao encontrá-las emite diagnóstico estruturado (ver
-  [COMPILER_PIPELINE.md](COMPILER_PIPELINE.md#tratamento-de-erros) e a seção de erros).
+  [COMPILER_PIPELINE.md](COMPILER_PIPELINE.md#7-diagnósticos) e a seção de erros).
 - Feature flags entram no manifesto do projeto e na CLI (`clojure-native build
   --feature regex`), afetando reader/analyzer/stdlib disponíveis.
 - Um documento gerado `COMPAT_REPORT` (saída de `clojure-native check`) lista todas as

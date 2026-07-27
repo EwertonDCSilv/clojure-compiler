@@ -1,5 +1,8 @@
 # Comparação extrema de referência
 
+[Catálogo dos benchmarks](../../README.md) ·
+[Guia da suíte](../README.md)
+
 Arquivo: [`extreme.csv`](extreme.csv)
 
 Medições nativas atualizadas em 2026-07-27 com:

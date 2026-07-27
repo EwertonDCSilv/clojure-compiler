@@ -1,5 +1,8 @@
 # Arquitetura
 
+[Índice da documentação](README.md) · [Visão geral](overview.md) ·
+[Uso](usage.md) · [Especificações](../specs/README.md)
+
 O `clojure-compiler` é um workspace Cargo. O executável entregue pelo workspace se chama
 `clojure-native`.
 
@@ -85,3 +88,27 @@ Além dos testes de cada crate, `clojure-test-support` descobre e executa os cas
 [`tests/conformance/`](../tests/conformance). Casos `active` bloqueiam em divergências;
 `xfail` bloqueia se passar inesperadamente; `pending` valida schema e checksum sem
 executar. O runner reutiliza um único CLI release e limita a concorrência a quatro casos.
+
+O [`Makefile`](../Makefile) mantém uma entrada estável sobre essas camadas:
+
+```text
+make quality
+   ├── rustfmt
+   ├── clippy
+   ├── clj-kondo
+   └── cargo test --workspace
+
+make all
+   ├── quality
+   ├── coverage
+   ├── compatibility
+   └── benchmarks
+```
+
+Os scripts em `scripts/` e nos diretórios de benchmark continuam sendo as interfaces
+de baixo nível. A CI usa os mesmos alvos públicos do Makefile, divididos em jobs de
+qualidade, cobertura, conformidade e checksums de benchmarks.
+
+Detalhes normativos ficam nas
+[`especificações`](../specs/README.md); comandos e requisitos estão no
+[guia de uso](usage.md).

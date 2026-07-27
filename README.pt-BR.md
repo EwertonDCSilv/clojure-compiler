@@ -22,6 +22,17 @@ O repositório funciona tanto como implementação quanto como registro arquitet
 Especificações, limites de compatibilidade, planos de implementação e decisões
 arquiteturais ficam em [`specs/`](specs/README.md).
 
+## Documentação
+
+| Guia | Conteúdo |
+| --- | --- |
+| [`docs/README.md`](docs/README.md) | Índice documental e política de fonte de verdade |
+| [`docs/overview.md`](docs/overview.md) | Recursos e limitações atuais |
+| [`docs/usage.md`](docs/usage.md) | CLI, Makefile, instalação, testes e benchmarks |
+| [`docs/architecture.md`](docs/architecture.md) | Crates, pipeline AOT, runtime e GC |
+| [`specs/conformance/README.md`](specs/conformance/README.md) | Contrato executável de compatibilidade A–E |
+| [`benchmarks/README.md`](benchmarks/README.md) | Catálogo e metodologia dos 90 benchmarks |
+
 ## Recursos atuais
 
 - Reader com spans de código-fonte, macros de leitura, suporte a Unicode e diagnósticos
@@ -60,15 +71,36 @@ os casos de conformidade marcados como `active`.
 ## Requisitos
 
 - Rust 1.74 ou mais recente e Cargo.
+- GNU Make.
 - Um compilador C disponível como `cc` ou configurado pela variável de ambiente `CC`.
+- GNU `time` em `/usr/bin/time` para os benchmarks.
+- `cargo-llvm-cov` e o componente Rust `llvm-tools-preview` para `make coverage`,
+  `make all` e `make ci`.
+- Java para a comparação opcional `make benchmarks-compare` com Clojure/JVM. Os
+  relatórios de referência usam Java 21; `curl` e rede são necessários somente para
+  preencher o cache de artefatos na primeira execução.
 - Uma plataforma host suportada pela configuração atual do Cranelift e do linker nativo.
 
 ## Compilar o compilador
 
 ```bash
-cargo build --release -p clojure-native-cli
+make release
 ./target/release/clojure-native --help
 ```
+
+Use `make help` para listar os alvos de build, qualidade, testes, compatibilidade,
+benchmarks e instalação.
+
+## Instalar no Linux
+
+```bash
+make install
+~/.local/bin/clojure-native --help
+```
+
+O destino padrão é `~/.local/bin`. Garanta que ele esteja no `PATH` ou altere o destino
+com `PREFIX=/usr/local`, `BINDIR=/outro/bin` e, para empacotamento, `DESTDIR`. Uma
+instalação global pode usar `sudo make install PREFIX=/usr/local`.
 
 ## Compilar e executar um programa nativo
 
@@ -103,12 +135,16 @@ enquanto suas regressões nos benchmarks são investigadas.
 ## Testes e validação
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-scripts/lint-clojure.sh
-scripts/coverage.sh
-scripts/conformance.sh verify
+make quality
+make coverage
+make compatibility
+make benchmarks
+
+# Executa todos os gates locais acima
+make all
+
+# Reproduz os comandos usados pelo GitHub Actions
+make ci
 ```
 
 O gate de lint Clojure usa uma versão de `clj-kondo` fixada e validada por checksum. No
@@ -128,9 +164,9 @@ offline e sem JVM, confere a integridade das fixtures e grava relatórios em
 `target/conformance/`.
 
 ```bash
-scripts/conformance.sh list --level A
-scripts/conformance.sh list --namespace clojure.core
-scripts/conformance.sh verify
+make compatibility-list CONFORMANCE_ARGS="--level A"
+make compatibility-list CONFORMANCE_ARGS="--namespace clojure.core"
+make compatibility
 ```
 
 Consulte [`specs/conformance/README.md`](specs/conformance/README.md) para filtros,
@@ -141,11 +177,15 @@ checksums, relatórios e o oracle manual opcional com Clojure/JVM 1.12.5.
 As duas suítes têm um runner nativo e um runner de comparação. Seus CSVs registram
 tempo de parede, tempo de CPU e pico de memória:
 
+Comece pelo [catálogo central de benchmarks](benchmarks/README.md) para consultar a
+metodologia, as métricas, os relatórios e os links diretos para os 90 casos.
+
 ```bash
-benchmarks/cracking/run.sh
-benchmarks/cracking/compare-clojure.sh --csv benchmarks/cracking/results/comparison.csv
-benchmarks/cormen/run.sh
-benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.csv
+make benchmarks
+make benchmarks-compare
+
+# Filtra uma suíte mantendo a mesma entrada
+make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 ```
 
 - [`benchmarks/cracking`](benchmarks/cracking/README.md): 60 casos organizados por
@@ -157,6 +197,7 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
 
 | Caminho | Responsabilidade |
 | --- | --- |
+| [`Makefile`](Makefile) | Build, qualidade, testes, compatibilidade, benchmarks e instalação Linux |
 | `crates/clojure-reader` | Reader e parser |
 | `crates/clojure-interp` | Interpretador de bootstrap |
 | `crates/clojure-analyzer` | Análise, expansão de macros, closures, records e protocolos |
@@ -166,7 +207,7 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
 | [`tests/conformance`](tests/conformance) | Fixtures executáveis de compatibilidade A–E |
 | `examples` | Exemplos Clojure e cargas de desempenho |
 | `specs` | Escopo, modelo de runtime, planos, riscos e ADRs |
-| `docs` | Guias breves de uso, visão geral e arquitetura |
+| [`docs`](docs/README.md) | Índice, site, guias de uso, visão geral e arquitetura |
 
 ## Limitações conhecidas
 

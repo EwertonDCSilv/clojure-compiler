@@ -1,7 +1,8 @@
-//! `clojure-native` — CLI. MVP: `read`, `eval`, `run`.
+//! `clojure-native` — CLI para leitura, interpretação e compilação AOT.
 //!
-//! O caminho `build` (compilação AOT nativa via Cranelift) é das Fases 5+ e ainda
-//! não está ligado aqui; ver specs/IMPLEMENTATION_PLAN.md.
+//! `read` produz um dump determinístico das forms, `eval` e `run` usam o
+//! interpretador de bootstrap, e `build` gera um objeto com Cranelift e o linka ao
+//! runtime C embutido para produzir um executável nativo.
 
 use clojure_interp::Interp;
 use clojure_span::SourceMap;

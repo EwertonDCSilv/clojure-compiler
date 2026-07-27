@@ -1,23 +1,34 @@
 # Estratégia de testes
 
+[Índice das especificações](README.md) ·
+[Guia de uso](../docs/usage.md) ·
+[Contrato de conformidade](conformance/README.md)
+
 A estratégia combina testes Rust, execução nativa end-to-end, conformidade versionada,
 GC stress, cobertura e benchmarks. Clojure/JVM é apenas um oracle manual: não é
 dependência da CI, do runner `verify` nem do binário produzido.
 
 ## Camadas
 
-| Camada | Comando ou ferramenta | Contrato |
-| --- | --- | --- |
-| Formatação | `cargo fmt --all --check` | nenhuma divergência |
-| Lints Rust | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
-| Lints Clojure | `scripts/lint-clojure.sh` | zero erros e zero warnings |
-| Unitários/integração | `cargo test --workspace` | todos verdes |
-| Runtime C | `scripts/test-runtime-c.sh` | invariantes internos, ABI, erros e GC stress |
-| Cobertura | `scripts/coverage.sh` | gates globais e por arquivo |
-| Conformidade | `scripts/conformance.sh verify` | ativos/xfail/checksums corretos |
-| GC | casos com `CLJN_GC_STRESS=1` | coleta a cada alocação sem corrupção |
-| Benchmarks | runners Cracking e Cormen | checksum e métricas comparáveis |
-| Oracle JVM | `scripts/conformance.sh oracle ...` | operação exclusivamente manual |
+| Camada | Entrada recomendada | Implementação | Contrato |
+| --- | --- | --- | --- |
+| Formatação | `make fmt-check` | `cargo fmt --all --check` | nenhuma divergência |
+| Lints | `make lint` | Clippy + `clj-kondo` | zero erros e warnings |
+| Unitários/integração | `make test` | `cargo test --workspace` | todos verdes |
+| Runtime C | `make test-runtime` | harnesses C dedicados | invariantes, ABI, erros e GC stress |
+| Cobertura | `make coverage` | `cargo-llvm-cov` | gates globais e por arquivo |
+| Conformidade | `make compatibility` | runner A–E offline | ativos/xfail/checksums corretos |
+| GC | casos com `CLJN_GC_STRESS=1` | runtime e conformidade | coleta a cada alocação sem corrupção |
+| Benchmarks | `make benchmarks` | runners Cracking e Cormen | checksum e métricas comparáveis |
+| Oracle JVM | `make compatibility-oracle` | Clojure 1.12.5 local | operação exclusivamente manual |
+
+Os agregadores são:
+
+```bash
+make quality  # formato, lints e testes
+make all      # quality + cobertura + conformidade + 90 benchmarks
+make ci       # comandos usados pelos jobs do GitHub Actions
+```
 
 Property testing, fuzzing, Miri, sanitizers e uma matriz multiplataforma mais ampla
 continuam recomendados para as fases que introduzirem novas superfícies de `unsafe`,
@@ -31,7 +42,7 @@ executados em subprocessos para validar status e `stderr`. As suítes rodam norm
 com `CLJN_GC_STRESS=1`. Para executar também ASan e UBSan:
 
 ```bash
-scripts/test-runtime-c.sh --sanitize
+make test-runtime-sanitize
 ```
 
 ## Suíte de conformidade
@@ -118,7 +129,7 @@ fornece `CLOJURE_CLASSPATH`.
 
 ```bash
 CLOJURE_CLASSPATH=/caminho/clojure-1.12.5.jar:/caminho/spec.alpha.jar:/caminho/core.specs.alpha.jar \
-  scripts/conformance.sh oracle --check
+  make compatibility-oracle
 ```
 
 `oracle --bless` altera expectativas somente quando solicitado explicitamente, apenas
@@ -134,7 +145,7 @@ Na comparação diferencial:
 
 ## Gates de cobertura
 
-`scripts/coverage.sh` usa `cargo-llvm-cov` e aplica:
+`make coverage` chama `scripts/coverage.sh`, que usa `cargo-llvm-cov` e aplica:
 
 - no mínimo 82% de regiões;
 - no mínimo 82% de funções;
@@ -159,9 +170,9 @@ comparar Cranelift frio com HotSpot aquecido sem contexto.
 
 Uma mudança está pronta quando:
 
-1. `fmt`, `clippy`, `clj-kondo` e testes Rust passam;
+1. `make quality` passa;
 2. os gates de cobertura permanecem acima dos limites;
-3. `scripts/conformance.sh verify` passa sem rede e sem JVM;
+3. `make compatibility` passa sem rede e sem JVM;
 4. casos novos têm status, razão, tracking e checksum;
 5. mudanças de desempenho relevantes incluem checksum e metodologia reproduzível.
 

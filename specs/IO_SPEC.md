@@ -255,7 +255,7 @@ O oracle JVM é manual e só se aplica a APIs compatíveis de core/EDN. `cljn.*`
 O gate completo exige simultaneamente:
 
 1. todos os casos previstos promovidos a `active`, sem `xfail` de I/O;
-2. `scripts/conformance.sh verify` verde sem rede e sem JVM;
+2. `make compatibility` verde sem rede e sem JVM;
 3. zero handles abertos no fim de cada caso, inclusive sob GC stress e exceção;
 4. arquivos grandes processados em blocos, com testes que detectem buffering ausente;
 5. sanitizers e gates de cobertura existentes preservados;

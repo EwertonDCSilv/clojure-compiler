@@ -1,5 +1,8 @@
 # Visão geral
 
+[Índice da documentação](README.md) · [Uso](usage.md) ·
+[Arquitetura](architecture.md) · [Especificações](../specs/README.md)
+
 O repositório `clojure-compiler` implementa um compilador nativo experimental de
 Clojure em Rust. O executável do projeto, `clojure-native`, lê, interpreta e compila
 antecipadamente um subconjunto documentado da linguagem. O binário gerado não usa JVM
@@ -56,6 +59,19 @@ As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/crackin
 [`benchmarks/cormen/`](../benchmarks/cormen). Ambas exportam CSV com tempo de parede,
 CPU e pico de memória para o nativo e para Clojure/JVM.
 
+Os gates correntes são expostos pelo [`Makefile`](../Makefile):
+
+```bash
+make quality        # formato, lints e testes
+make coverage       # cobertura global e por arquivo
+make compatibility  # matriz executável A–E
+make benchmarks     # 90 casos nativos com checksum
+```
+
+`make all` executa o conjunto local completo. A comparação com Clojure/JVM é separada
+em `make benchmarks-compare`, pois requer Java — os relatórios de referência usam Java
+21 — e baixa artefatos fixados com `curl` na primeira execução.
+
 ## Limites importantes
 
 O compilador ainda não é uma implementação completa de Clojure. A execução nativa
@@ -69,4 +85,5 @@ Streams gerais, arquivos, filesystem e readers de runtime também ainda não est
 implementados.
 
 Consulte [`specs/README.md`](../specs/README.md) para o estado detalhado e
-[`README.pt-BR.md`](../README.pt-BR.md) para instruções de uso.
+[`usage.md`](usage.md) para os comandos. O código e os casos de conformidade `active`
+são a fonte de verdade quando uma especificação também descreve trabalho futuro.

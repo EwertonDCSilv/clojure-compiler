@@ -7,7 +7,7 @@
   [MEMORY_MODEL.md](../MEMORY_MODEL.md).
 
 ## Alternativas
-Ver tabela completa em [MEMORY_MODEL.md](../MEMORY_MODEL.md#comparacao-de-abordagens).
+Ver tabela completa em [MEMORY_MODEL.md](../MEMORY_MODEL.md#comparação-de-abordagens).
 Pontos decisivos:
 - **Refcount puro** vaza ciclos (lazy-seq auto-referente, closures via atom/Var) e sofre
   churn no sharing ⇒ **insuficiente** como modelo do runtime.

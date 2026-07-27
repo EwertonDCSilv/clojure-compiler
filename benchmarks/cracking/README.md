@@ -1,5 +1,9 @@
 # Cracking-style benchmark suite
 
+[Catálogo dos 90 benchmarks](../README.md) ·
+[Suíte Cormen/CLRS](../cormen/README.md) ·
+[README do projeto](../../README.pt-BR.md)
+
 Suíte de benchmarks algorítmicos para o `clojure-compiler`, inspirada nas áreas de estudo
 popularizadas por livros de entrevistas técnicas.
 
@@ -39,8 +43,7 @@ e torna explícito o que deverá ser substituído quando essas primitivas entrar
 Na raiz do repositório:
 
 ```bash
-cargo build --release -p clojure-native-cli
-benchmarks/cracking/run.sh
+make benchmarks-cracking
 ```
 
 O runner imprime CSV:
@@ -53,18 +56,18 @@ Exemplos:
 
 ```bash
 # Executar apenas árvores e grafos
-benchmarks/cracking/run.sh --chapter 04
+make benchmarks-cracking CRACKING_ARGS="--chapter 04"
 
 # Exercitar o rooting com coleta em toda alocação
-benchmarks/cracking/run.sh --chapter 07 --gc-stress
+make benchmarks-cracking CRACKING_ARGS="--chapter 07 --gc-stress"
 
 # Multiplicar a carga interna de todos os casos por 25 e gravar métricas nativas
-benchmarks/cracking/run.sh --extreme \
-  --csv /tmp/native-extreme.csv
+make benchmarks-cracking \
+  CRACKING_ARGS="--extreme --csv /tmp/native-extreme.csv"
 
 # Comparar o nativo com Clojure/JVM na mesma carga extrema
-benchmarks/cracking/compare-clojure.sh \
-  --csv benchmarks/cracking/results/extreme.csv
+make benchmarks-compare-cracking \
+  CRACKING_COMPARISON_CSV=benchmarks/cracking/results/extreme.csv
 
 # Atualizar só o nativo, preservando as medições JVM do CSV comparativo
 benchmarks/refresh-native-comparison.sh --suite cracking
@@ -74,14 +77,19 @@ benchmarks/render-benchmark-summary.sh \
   benchmarks/cracking/results/extreme.csv
 
 # Escolher outro multiplicador de carga
-benchmarks/cracking/run.sh --scale 10 --csv /tmp/scale-10.csv
+make benchmarks-cracking CRACKING_ARGS="--scale 10 --csv /tmp/scale-10.csv"
 
 # Usar outro binário do compilador
-benchmarks/cracking/run.sh --compiler /caminho/para/clojure-native
+make benchmarks-cracking \
+  CRACKING_ARGS="--compiler /caminho/para/clojure-native"
 
 # Apenas listar os casos selecionados
-benchmarks/cracking/run.sh --list
+make benchmarks-list
 ```
+
+Os scripts continuam disponíveis como interface de baixo nível. O
+[`Makefile`](../../Makefile) é a entrada recomendada para build, testes, compatibilidade
+e execução conjunta das suítes.
 
 `expected.tsv` contém o checksum esperado de cada programa. Qualquer erro de build,
 execução ou divergência faz o runner terminar com status diferente de zero.
@@ -165,4 +173,5 @@ inválida ou status não-zero.
 3. Faça o programa imprimir um único checksum determinístico.
 4. Compile e execute o caso.
 5. Registre o checksum em `expected.tsv`.
-6. Rode `benchmarks/cracking/run.sh` e `cargo test --workspace`.
+6. Atualize o [catálogo central](../README.md).
+7. Rode `make benchmarks-cracking` e `make test`.

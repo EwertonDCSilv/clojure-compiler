@@ -1,5 +1,9 @@
 # Executable Clojure conformance suite
 
+[Project README](../../README.md) ·
+[Documentation](../../docs/README.md) ·
+[Specification index](../README.md)
+
 The executable fixtures live in [`tests/conformance/`](../../tests/conformance), while
 this document records their contract and maintenance policy. The suite classifies the
 compiler's current behavior by compatibility levels A–E from
@@ -29,19 +33,23 @@ multimethods, and transients:
 
 ```bash
 # Offline native verification; no JVM and no downloads
-scripts/conformance.sh verify
+make compatibility
 
 # Inventory and filters
-scripts/conformance.sh list
-scripts/conformance.sh list --level A --status active
-scripts/conformance.sh list --area arithmetic
-scripts/conformance.sh list --namespace clojure.string
+make compatibility-list
+make compatibility-list CONFORMANCE_ARGS="--level A --status active"
+make compatibility-list CONFORMANCE_ARGS="--area arithmetic"
+make compatibility-list CONFORMANCE_ARGS="--namespace clojure.string"
 ```
 
 `verify` builds the release CLI once and reuses it for every case. At most four cases
 run concurrently. The machine-readable report is
 `target/conformance/report.json`; the human summary is
 `target/conformance/report-summary.txt`.
+
+The [`Makefile`](../../Makefile) is the recommended public entry point. The underlying
+`scripts/conformance.sh` interface remains available for fixture maintenance and
+low-level debugging.
 
 ## Levels and current policy
 
@@ -143,7 +151,7 @@ local classpath containing Clojure **1.12.5** and its dependencies:
 
 ```bash
 CLOJURE_CLASSPATH=/path/to/clojure-1.12.5.jar:/path/to/spec.alpha.jar:/path/to/core.specs.alpha.jar \
-  scripts/conformance.sh oracle --check
+  make compatibility-oracle
 ```
 
 The runner checks the reported Clojure version before executing cases. Updating
@@ -158,10 +166,10 @@ differences are never overwritten from the JVM.
 
 ## Acceptance gate
 
-CI runs `scripts/conformance.sh verify` without a JVM. The general gate requires all active
-cases to pass, every xfail to remain an expected failure, no unexpected pass, and an
-exact checksum inventory. Unit tests in `clojure-test-support` cover discovery, strict
-TOML parsing, path/newline normalization, process timeouts, structural collection
+CI runs `make compatibility` without a JVM. The general gate requires all active cases
+to pass, every xfail to remain an expected failure, no unexpected pass, and an exact
+checksum inventory. Unit tests in `clojure-test-support` cover discovery, strict TOML
+parsing, path/newline normalization, process timeouts, structural collection
 comparison, binary streams, stdin/argv/env/exit status, filesystem snapshots,
 declarative symlinks, error categories, checksums, filters, and state accounting.
 

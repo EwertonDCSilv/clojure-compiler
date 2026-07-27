@@ -1,5 +1,9 @@
 # CLRS-style algorithm benchmark suite
 
+[Catálogo dos 90 benchmarks](../README.md) ·
+[Suíte Cracking](../cracking/README.md) ·
+[README do projeto](../../README.pt-BR.md)
+
 Suíte de cargas determinísticas para o `clojure-compiler`, organizada pelas grandes
 famílias de algoritmos ensinadas em *Introduction to Algorithms* (CLRS/Cormen).
 
@@ -28,18 +32,18 @@ Na raiz do repositório:
 
 ```bash
 # Compilar e validar os 30 casos
-benchmarks/cormen/run.sh
+make benchmarks-cormen
 
 # Executar apenas algoritmos de grafos
-benchmarks/cormen/run.sh --chapter 05
+make benchmarks-cormen CORMEN_ARGS="--chapter 05"
 
 # Forçar uma carga 25 vezes maior e coletar CPU, memória e tempo
-benchmarks/cormen/run.sh --extreme \
-  --csv benchmarks/cormen/results/native-extreme.csv
+make benchmarks-cormen \
+  CORMEN_ARGS="--extreme --csv benchmarks/cormen/results/native-extreme.csv"
 
 # Comparar nativo com Clojure/JVM AOT
-benchmarks/cormen/compare-clojure.sh \
-  --csv benchmarks/cormen/results/extreme.csv
+make benchmarks-compare-cormen \
+  CORMEN_COMPARISON_CSV=benchmarks/cormen/results/extreme.csv
 
 # Atualizar só o nativo, preservando as medições JVM do CSV comparativo
 benchmarks/refresh-native-comparison.sh --suite cormen
@@ -49,9 +53,14 @@ benchmarks/render-benchmark-summary.sh \
   benchmarks/cormen/results/extreme.csv
 
 # Repetir a comparação com um nível Cranelift explícito
-benchmarks/cormen/compare-clojure.sh --opt-level speed \
-  --csv benchmarks/cormen/results/cranelift-speed.csv
+make benchmarks-compare-cormen \
+  CORMEN_COMPARE_ARGS="--opt-level speed" \
+  CORMEN_COMPARISON_CSV=benchmarks/cormen/results/cranelift-speed.csv
 ```
+
+Os scripts continuam disponíveis como interface de baixo nível. O
+[`Makefile`](../../Makefile) é a entrada recomendada para build, testes, compatibilidade
+e execução conjunta das suítes.
 
 As opções, colunas CSV e razões de comparação são as mesmas documentadas na
 [suíte cracking](../cracking/README.md).
@@ -62,3 +71,12 @@ A execução extrema versionada (`--scale 25`) está em
 [`results/extreme.csv`](results/extreme.csv), acompanhada do
 [ambiente, metodologia e resumo](results/README.md). Os 30 casos foram comparados
 com Clojure/JVM AOT e tiveram checksums idênticos.
+
+## Adicionar um benchmark
+
+1. Coloque um programa `.clj` autônomo na família adequada.
+2. Use apenas o subconjunto de [`LANGUAGE_SCOPE`](../../specs/LANGUAGE_SCOPE.md).
+3. Faça o programa imprimir exatamente um checksum determinístico.
+4. Compile e execute o caso, depois registre o resultado em `expected.tsv`.
+5. Atualize este README e o [catálogo central](../README.md).
+6. Rode `make benchmarks-cormen` e `make test`.

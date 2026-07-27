@@ -4,7 +4,7 @@
 - **Contexto:** todo valor Clojure em runtime precisa de uma representação uniforme que
   suporte imediatos rápidos (nil/bool/int/float/char), objetos de heap gerenciados pela GC,
   igualdade/hash consistentes, metadata e pattern-matching no runtime Rust. Ver
-  [RUNTIME_SPEC.md](../RUNTIME_SPEC.md#representacao-de-valores-adr-0003).
+  [RUNTIME_SPEC.md](../RUNTIME_SPEC.md#representação-atual).
 
 ## Alternativas
 

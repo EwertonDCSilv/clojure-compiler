@@ -1,5 +1,10 @@
 # Especificações — `clojure-compiler`
 
+[README do projeto](../README.pt-BR.md) ·
+[Documentação operacional](../docs/README.md) ·
+[Matriz de conformidade](conformance/README.md) ·
+[Benchmarks](../benchmarks/README.md)
+
 Este diretório registra a arquitetura, o escopo e as decisões do compilador nativo. O
 nome do produto e do binário é `clojure-native`; o repositório se chama
 `clojure-compiler`.
@@ -76,10 +81,25 @@ Ordem sugerida:
 
 Documentos operacionais:
 
+- [../docs/README.md](../docs/README.md) — índice dos guias correntes.
+- [../docs/usage.md](../docs/usage.md) — CLI, Makefile, instalação e gates.
 - [conformance/README.md](conformance/README.md) — suíte executável A–E.
+- [../benchmarks/README.md](../benchmarks/README.md) — catálogo das suítes de desempenho.
 - [optime.md](optime.md) — plano de otimização.
 - [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — decisão e
   resultados de otimização.
+
+Para verificar o estado executável sem confundir itens futuros com recursos entregues:
+
+```bash
+make quality
+make compatibility
+make benchmarks
+```
+
+O [`Makefile`](../Makefile) é a interface operacional pública. Scripts individuais
+continuam documentados somente quando são necessários para manutenção de baixo nível ou
+para reproduzir uma medição histórica.
 
 ## ADRs
 

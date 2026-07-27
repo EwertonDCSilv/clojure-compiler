@@ -3,12 +3,12 @@
   "use strict";
 
   const languageConfig = {
-    pt: { htmlLang: "pt-BR", locale: "pt_BR" },
-    es: { htmlLang: "es", locale: "es_ES" },
-    en: { htmlLang: "en", locale: "en_US" },
-    fr: { htmlLang: "fr", locale: "fr_FR" },
-    ru: { htmlLang: "ru", locale: "ru_RU" },
-    ch: { htmlLang: "zh-CN", locale: "zh_CN" },
+    pt: { htmlLang: "pt-BR", locale: "pt_BR", code: "PT", name: "Português", flag: "🇧🇷" },
+    es: { htmlLang: "es", locale: "es_ES", code: "ES", name: "Español", flag: "🇪🇸" },
+    en: { htmlLang: "en", locale: "en_US", code: "EN", name: "English", flag: "🇺🇸" },
+    fr: { htmlLang: "fr", locale: "fr_FR", code: "FR", name: "Français", flag: "🇫🇷" },
+    ru: { htmlLang: "ru", locale: "ru_RU", code: "RU", name: "Русский", flag: "🇷🇺" },
+    ch: { htmlLang: "zh-CN", locale: "zh_CN", code: "中文", name: "中文", flag: "🇨🇳" },
   };
 
   const messages = {
@@ -804,8 +804,19 @@
     const localeMeta = document.querySelector('meta[property="og:locale"]');
     if (localeMeta) localeMeta.setAttribute("content", config.locale);
 
-    const languageSelect = document.querySelector("#language-select");
-    if (languageSelect) languageSelect.value = activeLanguage;
+    const languageButton = document.querySelector("#language-button");
+    const currentFlag = document.querySelector("[data-current-language-flag]");
+    const currentCode = document.querySelector("[data-current-language-code]");
+
+    if (currentFlag) currentFlag.textContent = config.flag;
+    if (currentCode) currentCode.textContent = config.code;
+    if (languageButton) {
+      languageButton.setAttribute("aria-label", `${translate("language.label")}: ${config.name}`);
+    }
+
+    document.querySelectorAll("[data-language]").forEach((option) => {
+      option.setAttribute("aria-selected", String(option.dataset.language === activeLanguage));
+    });
 
     try {
       window.localStorage.setItem("clojure-native-language", activeLanguage);
@@ -827,9 +838,62 @@
     );
   };
 
-  const languageSelect = document.querySelector("#language-select");
-  languageSelect?.addEventListener("change", (event) => {
-    applyLanguage(event.target.value, true);
+  const languageSwitcher = document.querySelector(".language-switcher");
+  const languageButton = document.querySelector("#language-button");
+  const languageMenu = document.querySelector("#language-menu");
+  const languageOptions = [...document.querySelectorAll("[data-language]")];
+
+  const setLanguageMenuOpen = (open) => {
+    if (!languageButton || !languageMenu) return;
+    languageButton.setAttribute("aria-expanded", String(open));
+    languageMenu.hidden = !open;
+  };
+
+  const focusLanguageOption = (index) => {
+    const normalizedIndex = (index + languageOptions.length) % languageOptions.length;
+    languageOptions[normalizedIndex]?.focus();
+  };
+
+  languageButton?.addEventListener("click", () => {
+    const willOpen = languageButton.getAttribute("aria-expanded") !== "true";
+    setLanguageMenuOpen(willOpen);
+    if (willOpen) {
+      const activeIndex = languageOptions.findIndex(
+        (option) => option.dataset.language === activeLanguage
+      );
+      window.requestAnimationFrame(() => focusLanguageOption(Math.max(activeIndex, 0)));
+    }
+  });
+
+  languageOptions.forEach((option, index) => {
+    option.addEventListener("click", () => {
+      applyLanguage(option.dataset.language, true);
+      setLanguageMenuOpen(false);
+      languageButton?.focus();
+    });
+
+    option.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        focusLanguageOption(index + (event.key === "ArrowDown" ? 1 : -1));
+      }
+
+      if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        focusLanguageOption(event.key === "Home" ? 0 : languageOptions.length - 1);
+      }
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!languageSwitcher?.contains(event.target)) setLanguageMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && languageButton?.getAttribute("aria-expanded") === "true") {
+      setLanguageMenuOpen(false);
+      languageButton.focus();
+    }
   });
 
   window.pageI18n = {
