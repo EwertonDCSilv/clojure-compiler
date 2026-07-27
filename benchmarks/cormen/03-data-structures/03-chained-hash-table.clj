@@ -1,15 +1,15 @@
 (ns cormen.structures.chained-hash-table)
 
-(defn hash-index [key size]
-  (mod (+ (* key 17) 11) size))
+(defn hash-index [entry-key size]
+  (mod (+ (* entry-key 17) 11) size))
 
-(defn insert-key [table key]
-  (let [index (hash-index key (count table))
+(defn insert-key [table entry-key]
+  (let [index (hash-index entry-key (count table))
         bucket (nth table index)]
-    (assoc table index (cons key bucket))))
+    (assoc table index (cons entry-key bucket))))
 
-(defn build-table [keys]
-  (loop [remaining keys table [(list) (list) (list) (list) (list) (list) (list)]]
+(defn build-table [entry-keys]
+  (loop [remaining entry-keys table [(list) (list) (list) (list) (list) (list) (list)]]
     (if (empty? remaining)
       table
       (recur (rest remaining) (insert-key table (first remaining))))))
@@ -36,10 +36,10 @@
                   1))))))
 
 (defn benchmark [rounds]
-  (let [keys [5 12 19 26 7 14 21 28 3 10 17]]
+  (let [entry-keys [5 12 19 26 7 14 21 28 3 10 17]]
     (loop [n rounds checksum 0]
       (if (> n 0)
-        (let [table (build-table keys)]
+        (let [table (build-table entry-keys)]
           (recur (dec n)
                  (+ checksum (lookup-score table [5 19 28 4 11 17]))))
         checksum))))

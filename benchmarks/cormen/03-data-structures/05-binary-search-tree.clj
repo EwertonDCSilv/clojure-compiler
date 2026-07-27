@@ -3,10 +3,10 @@
 (defn insert-node [tree value]
   (if (nil? tree)
     [value nil nil]
-    (let [key (nth tree 0)]
-      (if (< value key)
-        [key (insert-node (nth tree 1) value) (nth tree 2)]
-        [key (nth tree 1) (insert-node (nth tree 2) value)]))))
+    (let [node-value (nth tree 0)]
+      (if (< value node-value)
+        [node-value (insert-node (nth tree 1) value) (nth tree 2)]
+        [node-value (nth tree 1) (insert-node (nth tree 2) value)]))))
 
 (defn build-tree [values]
   (loop [i 0 tree nil]

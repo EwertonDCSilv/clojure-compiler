@@ -9,7 +9,8 @@ dependência da CI, do runner `verify` nem do binário produzido.
 | Camada | Comando ou ferramenta | Contrato |
 | --- | --- | --- |
 | Formatação | `cargo fmt --all --check` | nenhuma divergência |
-| Lints | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
+| Lints Rust | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
+| Lints Clojure | `scripts/lint-clojure.sh` | zero erros e zero warnings |
 | Unitários/integração | `cargo test --workspace` | todos verdes |
 | Cobertura | `scripts/coverage.sh` | gates globais e por arquivo |
 | Conformidade | `scripts/conformance.sh verify` | ativos/xfail/checksums corretos |
@@ -146,7 +147,7 @@ comparar Cranelift frio com HotSpot aquecido sem contexto.
 
 Uma mudança está pronta quando:
 
-1. `fmt`, `clippy` e testes Rust passam;
+1. `fmt`, `clippy`, `clj-kondo` e testes Rust passam;
 2. os gates de cobertura permanecem acima dos limites;
 3. `scripts/conformance.sh verify` passa sem rede e sem JVM;
 4. casos novos têm status, razão, tracking e checksum;

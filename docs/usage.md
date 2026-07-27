@@ -41,9 +41,15 @@ O binário produzido não requer JVM em tempo de execução.
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+scripts/lint-clojure.sh
 scripts/coverage.sh
 scripts/conformance.sh verify
 ```
+
+`scripts/lint-clojure.sh` verifica com `clj-kondo` os cores de bootstrap, exemplos,
+benchmarks e o oracle JVM. No Linux x86_64, a versão fixada é instalada automaticamente
+em `target/tools/`; em outras plataformas, use `CLJ_KONDO_BIN` ou disponibilize
+`clj-kondo` no `PATH`.
 
 O gate de cobertura exige no mínimo 82% de linhas, funções e regiões no workspace e 30%
 de linhas por arquivo. A suíte de conformidade roda offline e escreve:

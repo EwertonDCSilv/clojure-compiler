@@ -46,10 +46,10 @@
     (if (>= head (count queue))
       checksum
       (let [node (nth queue head)
-            update (release-neighbors (nth graph node) degrees queue)]
+            release-result (release-neighbors (nth graph node) degrees queue)]
         (recur (inc head)
-               (nth update 1)
-               (nth update 0)
+               (nth release-result 1)
+               (nth release-result 0)
                (inc position)
                (+ checksum (* position (inc node))))))))
 

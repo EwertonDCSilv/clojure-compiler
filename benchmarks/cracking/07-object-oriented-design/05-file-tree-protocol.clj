@@ -1,11 +1,11 @@
 (ns cracking.objects.file-tree)
 
 (defprotocol NodeSize (node-size [this]))
-(defrecord FileNode [bytes])
+(defrecord FileNode [byte-count])
 (defrecord FolderNode [children])
 
 (extend-type FileNode NodeSize
-  (node-size [this] (:bytes this)))
+  (node-size [this] (:byte-count this)))
 
 (extend-type FolderNode NodeSize
   (node-size [this]

@@ -1,14 +1,14 @@
 (ns cracking.search.frequency-table)
 
-(defn frequencies [values]
+(defn frequency-table [values]
   (reduce (fn [table value]
             (assoc table value (inc (or (get table value) 0))))
           {}
           values))
 
 (defn checksum [table]
-  (reduce (fn [total key]
-            (+ total (* key (get table key))))
+  (reduce (fn [total entry-key]
+            (+ total (* entry-key (get table entry-key))))
           0
           (keys table)))
 
@@ -16,7 +16,7 @@
   (let [values (list 1 2 3 2 1 4 5 4 3 2 1 6 5 4 3 2 1)]
     (loop [n rounds total 0]
       (if (> n 0)
-        (recur (dec n) (+ total (checksum (frequencies values))))
+        (recur (dec n) (+ total (checksum (frequency-table values))))
         total))))
 
 (defn -main [] (println (benchmark 2000)))

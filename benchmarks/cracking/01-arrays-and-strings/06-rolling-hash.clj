@@ -3,10 +3,10 @@
 ;; Inteiros representam caracteres porque o subconjunto compilado ainda não expõe
 ;; operações de indexação de strings.
 (defn rolling-hash [codes]
-  (loop [i 0 hash 7]
+  (loop [i 0 hash-value 7]
     (if (< i (count codes))
-      (recur (inc i) (mod (+ (* hash 31) (nth codes i)) 1000003))
-      hash)))
+      (recur (inc i) (mod (+ (* hash-value 31) (nth codes i)) 1000003))
+      hash-value)))
 
 (defn benchmark [rounds]
   (loop [n rounds total 0]

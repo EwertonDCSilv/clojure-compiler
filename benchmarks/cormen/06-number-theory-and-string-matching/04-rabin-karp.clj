@@ -1,11 +1,11 @@
 (ns cormen.strings.rabin-karp)
 
 (defn vector-hash [values start length]
-  (loop [i 0 hash 0]
+  (loop [i 0 hash-value 0]
     (if (>= i length)
-      hash
+      hash-value
       (recur (inc i)
-             (mod (+ (* hash 31) (nth values (+ start i))) 1000003)))))
+             (mod (+ (* hash-value 31) (nth values (+ start i))) 1000003)))))
 
 (defn highest-power [length]
   (loop [i 1 value 1]

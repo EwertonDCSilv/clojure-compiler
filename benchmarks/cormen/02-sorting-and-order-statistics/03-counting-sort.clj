@@ -1,6 +1,6 @@
 (ns cormen.sorting.counting-sort)
 
-(defn frequencies [values]
+(defn digit-frequencies [values]
   (loop [i 0 counts [0 0 0 0 0 0 0 0 0 0]]
     (if (< i (count values))
       (let [value (nth values i)]
@@ -8,7 +8,7 @@
       counts)))
 
 (defn counting-sort [values]
-  (let [counts (frequencies values)]
+  (let [counts (digit-frequencies values)]
     (loop [value 0 remaining (nth counts 0) result []]
       (cond
         (>= value 10) result

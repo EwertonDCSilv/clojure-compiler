@@ -19,13 +19,13 @@
     (if (>= head (count queue))
       distances
       (let [node (nth queue head)
-            update (discover-neighbors
-                     (nth graph node)
-                     0
-                     (inc (nth distances node))
-                     distances
-                     queue)]
-        (recur (inc head) (nth update 1) (nth update 0))))))
+            discovery (discover-neighbors
+                        (nth graph node)
+                        0
+                        (inc (nth distances node))
+                        distances
+                        queue)]
+        (recur (inc head) (nth discovery 1) (nth discovery 0))))))
 
 (defn weighted-sum [values]
   (loop [i 0 total 0]

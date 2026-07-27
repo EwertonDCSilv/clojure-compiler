@@ -103,9 +103,17 @@ enquanto suas regressões nos benchmarks são investigadas.
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+scripts/lint-clojure.sh
 scripts/coverage.sh
 scripts/conformance.sh verify
 ```
+
+O gate de lint Clojure usa uma versão de `clj-kondo` fixada e validada por checksum. No
+Linux x86_64, o script instala a ferramenta em `target/tools/` quando necessário; em
+outras plataformas, instale `clj-kondo` e exponha o executável no `PATH` ou em
+`CLJ_KONDO_BIN`. Fixtures de conformidade deliberadamente inválidas ficam fora, mas os
+dois cores de bootstrap, exemplos, benchmarks de algoritmos e o oracle JVM são
+verificados com warnings tratados como erro.
 
 A matriz executável de compatibilidade contém atualmente 447 casos nos níveis A–E:
 170 ativos, 245 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E

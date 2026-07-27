@@ -4,12 +4,12 @@
   (loop [i 1 result values]
     (if (>= i (count result))
       result
-      (let [key (nth result i)
+      (let [pivot (nth result i)
             shifted
             (loop [j (dec i) current result]
-              (if (and (>= j 0) (> (nth current j) key))
+              (if (and (>= j 0) (> (nth current j) pivot))
                 (recur (dec j) (assoc current (inc j) (nth current j)))
-                (assoc current (inc j) key)))]
+                (assoc current (inc j) pivot)))]
         (recur (inc i) shifted)))))
 
 (defn weighted-sum [values]

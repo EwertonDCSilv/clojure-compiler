@@ -1,0 +1,10 @@
+;; Benchmark files are grouped by numbered chapters instead of namespace-shaped
+;; source roots, so their paths intentionally do not mirror their namespaces.
+{:linters
+ {:namespace-name-mismatch {:level :off}
+  :shadowed-var {:level :warning}
+  :redundant-let {:level :warning}
+  :single-key-in {:level :warning}
+  :unused-value {:level :warning}}
+ :output
+ {:linter-name true}}
