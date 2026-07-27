@@ -221,10 +221,12 @@ static void gc_sweep(void) {
 
 static void gc_mark_method_table(void); /* fwd */
 static void gc_mark_exceptions(void);   /* fwd */
+static void gc_mark_multi(void);        /* fwd */
 static void gc_collect(void) {
     for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
     gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
     gc_mark_exceptions();   /* valor de exceção em voo */
+    gc_mark_multi();        /* funções de dispatch de multimethods + :default */
     gc_sweep();
     alloc_since_gc = 0;
 }
@@ -1636,6 +1638,47 @@ Value cljn_try(Value body, Value catch, Value finally) {
     return result;
 }
 static void gc_mark_exceptions(void) { gc_mark(exception_value); }
+
+/* ---------- multimethods (defmulti/defmethod) ----------
+ * Reusa a method_table (chave = valor de dispatch, casada por cljn_equal_raw).
+ * A função de dispatch de cada multimethod fica num registro próprio por mid. */
+typedef struct MultiEntry { int64_t mid; Value fn; struct MultiEntry *next; } MultiEntry;
+static MultiEntry *multi_table = NULL;
+static Value cljn_default_kw = 0; /* keyword :default cacheada (root) */
+
+void cljn_multi_register(Value mid, Value fn) {
+    MultiEntry *e = xalloc(sizeof(MultiEntry));
+    e->mid = (int64_t)mid; e->fn = fn; e->next = multi_table; multi_table = e;
+}
+static Value multi_dispatch_fn(int64_t mid) {
+    for (MultiEntry *e = multi_table; e; e = e->next) if (e->mid == mid) return e->fn;
+    return NIL;
+}
+Value cljn_multi_call(Value mid, Value argc, Value argv_) {
+    int64_t n = (int64_t)argc;
+    Value *argv = (Value *)argv_;
+    Value df = multi_dispatch_fn((int64_t)mid);
+    if (obj_type(df) != T_FN) { fprintf(stderr, "erro: multimethod sem função de dispatch\n"); exit(1); }
+    Value dv = ((FnCode)((Fn *)df)->code)(df, n, argv);
+    gc_stack[gc_sp++] = dv; /* rooteia dv durante lookup e alloc de :default */
+    Value impl = cljn_lookup_method(mid, dv);
+    if (impl == NIL) {
+        if (cljn_default_kw == 0) cljn_default_kw = cljn_kw("default", 7);
+        impl = cljn_lookup_method(mid, cljn_default_kw);
+    }
+    gc_sp--;
+    if (obj_type(impl) != T_FN) {
+        fputs("erro: sem método de multimethod para o valor de dispatch: ", stderr);
+        SB b; sb_init(&b); write_val(&b, dv, 0); fwrite(b.p, 1, b.len, stderr); free(b.p);
+        fputc('\n', stderr);
+        exit(1);
+    }
+    return ((FnCode)((Fn *)impl)->code)(impl, n, argv);
+}
+static void gc_mark_multi(void) {
+    for (MultiEntry *e = multi_table; e; e = e->next) gc_mark(e->fn);
+    if (cljn_default_kw) gc_mark(cljn_default_kw);
+}
 
 /* Introspecção para testes. */
 long cljn_gc_live_objects(void) { long n=0; for (Obj*o=all_objs;o;o=o->next_all) n++; return n; }

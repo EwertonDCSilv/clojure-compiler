@@ -293,6 +293,38 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_multimethods() {
+    if !have_cc() {
+        return;
+    }
+    // defmulti/defmethod: dispatch por (dispatch-fn args), casado por = sobre o
+    // valor. Cobre keyword, número, multi-argumento e :default.
+    let src = r#"(ns mm.core)
+(defmulti area (fn [s] (get s :shape)))
+(defmethod area :circle [s] (* 3 (* (get s :r) (get s :r))))
+(defmethod area :square [s] (* (get s :side) (get s :side)))
+(defmethod area :default [s] (str "?" (get s :shape)))
+(defmulti classify (fn [n] (mod n 2)))
+(defmethod classify 0 [n] "par")
+(defmethod classify 1 [n] "impar")
+(defmulti combine (fn [a b] (get a :op)))
+(defmethod combine :add [a b] (+ (get a :v) b))
+(defmethod combine :mul [a b] (* (get a :v) b))
+(defn -main []
+  (println (area {:shape :circle :r 10}) (area {:shape :square :side 5}))
+  (println (classify 4) (classify 7))
+  (println (combine {:op :add :v 10} 5) (combine {:op :mul :v 10} 5))
+  (println (area {:shape :triangle})))
+(-main)"#;
+    let expected = "300 25\npar impar\n15 50\n?:triangle\n";
+    assert_eq!(build_and_run("cljn_e2e_multi", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_multi_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_try_catch_finally() {
     if !have_cc() {
         return;

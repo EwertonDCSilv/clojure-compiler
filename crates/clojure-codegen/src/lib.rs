@@ -11,7 +11,7 @@
 //! int/bool/nil/string; primitivas `+ - * quot mod inc dec = < <= > >= not nil?
 //! empty? cons first rest count list str println print`.
 
-use clojure_analyzer::{Ast, Callee, FnMethod, Prim, Program};
+use clojure_analyzer::{Ast, Callee, Dispatch, FnMethod, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlags, Value as CValue};
@@ -165,6 +165,8 @@ struct Runtime {
     compare: FuncId,          // (a,b)->fixnum(-1/0/1)
     try_: FuncId,             // (body_fn,catch_fn|nil,finally_fn|nil)->v
     throw_: FuncId,           // (v)->! (longjmp)
+    multi_register: FuncId,   // (mid,dispatch_fn)->void
+    multi_call: FuncId,       // (mid,argc,argv)->v
     make_record: FuncId,      // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
@@ -486,6 +488,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         compare: bin(m, "cljn_compare"),
         try_: ternary(m, "cljn_try"),
         throw_: una(m, "cljn_throw"),
+        multi_register: bin_void(m, "cljn_multi_register"),
+        multi_call: ternary(m, "cljn_multi_call"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -656,7 +660,7 @@ impl<'a> FnGen<'a> {
                 _ => Heap,
             },
             Ast::CallValue { .. } | Ast::Apply { .. } => Heap,
-            Ast::RegisterMethod { .. } => Imm, // devolve nil
+            Ast::RegisterMethod { .. } | Ast::RegisterMulti { .. } => Imm, // devolve nil
         }
     }
 
@@ -743,7 +747,8 @@ impl<'a> FnGen<'a> {
             | Ast::Bool(_)
             | Ast::Nil
             | Ast::Recur(_)
-            | Ast::RegisterMethod { .. } => false,
+            | Ast::RegisterMethod { .. }
+            | Ast::RegisterMulti { .. } => false,
             Ast::Do(stmts) => stmts.last().is_some_and(|s| self.expr_pushes(s, extra)),
             Ast::Let { slots, body } => {
                 let mut e = extra.clone();
@@ -882,7 +887,7 @@ impl<'a> FnGen<'a> {
         mut self,
         methods: &[FnMethod],
         local_count: u32,
-        dispatch: Option<i64>,
+        dispatch: Dispatch,
     ) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
@@ -896,11 +901,21 @@ impl<'a> FnGen<'a> {
         let argc_v = block_vals[1];
         let argv_v = block_vals[2];
 
-        // Função-despacho de protocolo: encaminha argc/argv para a impl.
-        if let Some(mid) = dispatch {
-            self.gen_dispatch(mid, argc_v, argv_v);
-            self.builder.finalize();
-            return Ok(());
+        // Função-despacho (protocolo por tipo, ou multimethod por dispatch-fn).
+        match dispatch {
+            Dispatch::Protocol(mid) => {
+                self.gen_dispatch(mid, argc_v, argv_v);
+                self.builder.finalize();
+                return Ok(());
+            }
+            Dispatch::Multi(mid) => {
+                let mid_v = self.builder.ins().iconst(types::I64, mid);
+                let r = self.call3(self.rt.multi_call, mid_v, argc_v, argv_v);
+                self.builder.ins().return_(&[r]);
+                self.builder.finalize();
+                return Ok(());
+            }
+            Dispatch::None => {}
         }
 
         self.enter_frame(local_count);
@@ -1187,6 +1202,16 @@ impl<'a> FnGen<'a> {
                 self.call_void3(self.rt.register_method, mid_v, key_v, impl_v);
                 self.gc_popn(2);
                 Flow::Val(self.konst(NIL)) // nil imediato: não empurra
+            }
+            Ast::RegisterMulti {
+                method_id,
+                dispatch_fn,
+            } => {
+                let df = self.spill_arg(dispatch_fn)?; // +1
+                let mid_v = self.builder.ins().iconst(types::I64, *method_id);
+                self.call_void(self.rt.multi_register, &[mid_v, df]);
+                self.gc_popn(1);
+                Flow::Val(self.konst(NIL))
             }
             Ast::Capture(i) => {
                 let self_v = self.builder.use_var(self.self_var.expect("self"));

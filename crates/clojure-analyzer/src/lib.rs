@@ -70,11 +70,16 @@ pub enum Ast {
         type_name: String,
         fields: Vec<(String, Ast)>,
     },
-    /// Registra uma impl de protocolo em runtime: `(method_id, key) → impl`.
+    /// Registra uma impl de protocolo/multimethod em runtime: `(method_id, key) → impl`.
     RegisterMethod {
         method_id: i64,
         key: Box<Ast>,
         impl_fn: Box<Ast>,
+    },
+    /// Registra a função de dispatch de um multimethod: `(method_id) → dispatch-fn`.
+    RegisterMulti {
+        method_id: i64,
+        dispatch_fn: Box<Ast>,
     },
 }
 
@@ -152,9 +157,19 @@ pub struct Function {
     pub local_count: u32,
     /// Verdadeiro para lambdas (usam `self` para ler capturas); falso p/ defns de topo.
     pub is_lambda: bool,
-    /// Se `Some(method_id)`, é uma função-despacho de protocolo (encaminha argc/argv
-    /// para a impl encontrada por `(method_id, type_key(arg0))`).
-    pub dispatch: Option<i64>,
+    /// Tipo de despacho: nenhum, protocolo (por `type_key(arg0)`) ou multimethod
+    /// (por `(dispatch-fn args)`). Funções-despacho têm `methods` vazio.
+    pub dispatch: Dispatch,
+}
+
+/// Estratégia de despacho de uma função de topo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dispatch {
+    None,
+    /// Protocolo: `impl = lookup(mid, type_key(arg0))`.
+    Protocol(i64),
+    /// Multimethod: `impl = lookup(mid, (dispatch-fn args))`, com `:default`.
+    Multi(i64),
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +193,8 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     // Protocolos: nome do método → (method_id, aridade). Records: nomes de tipo.
     let mut protos: HashMap<String, (i64, usize)> = HashMap::new();
     let mut records: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Multimethods: nome → method_id.
+    let mut multis: HashMap<String, i64> = HashMap::new();
     let mut next_mid: i64 = 1;
     for f in forms {
         if let Some((name, decls)) = match_defn(f) {
@@ -197,6 +214,10 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 sigs.insert(mname, vec![(arity, false)]);
                 next_mid += 1;
             }
+        } else if let Some((name, _df)) = match_defmulti(f) {
+            multis.insert(name.clone(), next_mid);
+            sigs.insert(name, vec![(0, true)]); // variádico: encaminha qualquer aridade
+            next_mid += 1;
         }
     }
 
@@ -224,7 +245,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                     methods,
                     local_count: lc,
                     is_lambda: false,
-                    dispatch: None,
+                    dispatch: Dispatch::None,
                 }),
                 Err(d) => diags.push(d),
             }
@@ -247,7 +268,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 }],
                 local_count: fields.len() as u32,
                 is_lambda: false,
-                dispatch: None,
+                dispatch: Dispatch::None,
             });
         } else if let Some((_pname, methods)) = match_defprotocol(f) {
             // Cada método vira uma função-despacho.
@@ -258,7 +279,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                     methods: vec![],
                     local_count: 0,
                     is_lambda: false,
-                    dispatch: Some(mid),
+                    dispatch: Dispatch::Protocol(mid),
                 });
             }
         } else if let Some((typename, impls)) = match_extend_type(f) {
@@ -288,7 +309,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                             methods: lmethods,
                             local_count: lc,
                             is_lambda: true,
-                            dispatch: None,
+                            dispatch: Dispatch::None,
                         });
                         let make = Ast::MakeFn {
                             lambda: lname,
@@ -303,6 +324,65 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                     }
                     Err(d) => diags.push(d),
                 }
+            }
+        } else if let Some((name, df_form)) = match_defmulti(f) {
+            let mid = multis[&name];
+            // A função-despacho de topo: encaminha por (dispatch-fn args).
+            an.functions.push(Function {
+                name,
+                methods: vec![],
+                local_count: 0,
+                is_lambda: false,
+                dispatch: Dispatch::Multi(mid),
+            });
+            // Registra a função de dispatch em runtime (avaliada no init).
+            match an.analyze(&df_form, false) {
+                Ok(df) => main_body.push(Ast::RegisterMulti {
+                    method_id: mid,
+                    dispatch_fn: Box::new(df),
+                }),
+                Err(d) => diags.push(d),
+            }
+        } else if let Some((name, dv_form, params, body_forms)) = match_defmethod(f) {
+            let Some(&mid) = multis.get(&name) else {
+                diags.push(unsupported(
+                    format!("defmethod para multimethod desconhecido: {name}"),
+                    f.span,
+                ));
+                continue;
+            };
+            let key = match an.analyze(&dv_form, false) {
+                Ok(k) => k,
+                Err(d) => {
+                    diags.push(d);
+                    continue;
+                }
+            };
+            let decls = vec![(params, None, body_forms)];
+            match an.analyze_methods(&decls, true, f.span) {
+                Ok((lmethods, lc, caps)) => {
+                    let lname = format!("__method_{}", an.lam);
+                    an.lam += 1;
+                    let arity = lmethods[0].params.len();
+                    an.functions.push(Function {
+                        name: lname.clone(),
+                        methods: lmethods,
+                        local_count: lc,
+                        is_lambda: true,
+                        dispatch: Dispatch::None,
+                    });
+                    let make = Ast::MakeFn {
+                        lambda: lname,
+                        arity,
+                        captures: caps,
+                    };
+                    main_body.push(Ast::RegisterMethod {
+                        method_id: mid,
+                        key: Box::new(key),
+                        impl_fn: Box::new(make),
+                    });
+                }
+                Err(d) => diags.push(d),
             }
         } else {
             match an.analyze(f, false) {
@@ -441,6 +521,48 @@ fn match_extend_type(f: &SForm) -> Option<(String, Vec<(String, Vec<String>, Vec
         // Symbol (nome de protocolo) → ignorado.
     }
     Some((typename, impls))
+}
+
+/// `(defmulti nome dispatch-fn)` → nome + a forma da função de dispatch.
+fn match_defmulti(f: &SForm) -> Option<(String, SForm)> {
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else {
+        return None;
+    };
+    if n.ns.is_some() || n.name != "defmulti" {
+        return None;
+    }
+    let name = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
+        _ => return None,
+    };
+    Some((name, items.get(2)?.clone()))
+}
+
+/// `(defmethod nome dispatch-val [params] body...)` → nome, valor de dispatch,
+/// params e corpo.
+fn match_defmethod(f: &SForm) -> Option<(String, SForm, Vec<String>, Vec<SForm>)> {
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let Form::Symbol(n) = items.first()?.node.strip_meta() else {
+        return None;
+    };
+    if n.ns.is_some() || n.name != "defmethod" {
+        return None;
+    }
+    let name = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
+        _ => return None,
+    };
+    let dispatch_val = items.get(2)?.clone();
+    let (params, rest) = parse_params(items.get(3)?)?;
+    if rest.is_some() {
+        return None;
+    }
+    Some((name, dispatch_val, params, items[4..].to_vec()))
 }
 
 /// Chave de dispatch para um nome de tipo: records → keyword; builtins → fixnum.
@@ -694,7 +816,7 @@ impl<'a> Analyzer<'a> {
                     }],
                     local_count: arity as u32,
                     is_lambda: true,
-                    dispatch: None,
+                    dispatch: Dispatch::None,
                 });
                 return Ok(Ast::MakeFn {
                     lambda: lname,
@@ -1006,7 +1128,7 @@ impl<'a> Analyzer<'a> {
             methods,
             local_count: lc,
             is_lambda: true,
-            dispatch: None,
+            dispatch: Dispatch::None,
         });
         Ok(Ast::MakeFn {
             lambda: name,
@@ -1105,7 +1227,7 @@ impl<'a> Analyzer<'a> {
             methods,
             local_count: lc,
             is_lambda: true,
-            dispatch: None,
+            dispatch: Dispatch::None,
         });
         Ok(Ast::MakeFn {
             lambda: name,
