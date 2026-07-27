@@ -1,0 +1,11 @@
+id = "e.dependencies.external_library"
+level = "E"
+area = "ecosystem/dependencies"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "External source dependencies cannot be resolved by the current build command."
+tracking = "specs/COMPATIBILITY_SPEC.md"

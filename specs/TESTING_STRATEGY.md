@@ -55,15 +55,17 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 181 casos:
+O inventário atual contém 205 casos:
 
-- 141 `active`: executados e bloqueantes;
-- 9 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 154 `active`: executados e bloqueantes;
+- 20 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 31 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
-Níveis D–E mantêm visível o trabalho de bibliotecas puras e ecossistema sem afirmar
-suporte inexistente.
+O nível D executa bibliotecas puras autocontidas e registra lacunas de macros,
+namespaces, lazy seqs, metadata e exceções. O nível E executa aplicações autônomas de
+arquivo único e transforma dependências, JARs, Java, carregamento dinâmico e concorrência
+em `xfail` concretos. Projetos que exigem loader/packaging continuam `pending`.
 
 Cada caso é autocontido e tem `case.toml`, `input.clj` e a expectativa aplicável. O
 manifesto registra `status`, `class`, `target`, `oracle`, timeout, modo GC stress, razão

@@ -1,0 +1,11 @@
+id = "d.namespaces.cross_namespace_api"
+level = "D"
+area = "pure-libraries/namespaces"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "A library consumer cannot yet load another source namespace."
+tracking = "specs/COMPATIBILITY_SPEC.md"

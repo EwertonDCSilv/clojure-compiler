@@ -1,0 +1,11 @@
+id = "e.java_interop.static_method"
+level = "E"
+area = "ecosystem/java-interop"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Java static method interop has no native execution path."
+tracking = "specs/COMPATIBILITY_SPEC.md"

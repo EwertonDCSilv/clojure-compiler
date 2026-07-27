@@ -1,0 +1,11 @@
+id = "d.sequences.lazy_pipeline"
+level = "D"
+area = "pure-libraries/sequences"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Pure libraries using lazy or infinite sequences are not yet executable."
+tracking = "specs/COMPATIBILITY_SPEC.md"

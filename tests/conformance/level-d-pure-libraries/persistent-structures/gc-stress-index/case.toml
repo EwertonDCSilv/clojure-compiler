@@ -1,0 +1,11 @@
+id = "d.persistent_structures.gc_stress_index"
+level = "D"
+area = "pure-libraries/persistent-structures"
+status = "active"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = true
+reason = "This self-contained pure-library slice is executable on the current native path."
+tracking = "specs/COMPATIBILITY_SPEC.md"

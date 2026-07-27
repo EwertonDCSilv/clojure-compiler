@@ -41,8 +41,10 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 181 casos: 141 ativos, 9 falhas esperadas e 31 itens pendentes. A verificação
-é offline, não depende de JVM e gera relatórios em `target/conformance/`.
+Ela possui 205 casos: 154 ativos, 20 falhas esperadas e 31 itens pendentes. D inclui
+bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
+e lacunas executáveis de ecossistema. A verificação é offline, não depende de JVM e gera
+relatórios em `target/conformance/`.
 
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
 [`benchmarks/cormen/`](../benchmarks/cormen). Ambas exportam CSV com tempo de parede,

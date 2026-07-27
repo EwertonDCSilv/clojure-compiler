@@ -1359,6 +1359,40 @@ mod tests {
     }
 
     #[test]
+    fn tracked_levels_d_and_e_are_not_pending_only() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let cases = discover_cases(&root).expect("discover tracked conformance suite");
+        for (level, minimum_active, minimum_xfail) in
+            [(Level::D, 8_usize, 5_usize), (Level::E, 5_usize, 6_usize)]
+        {
+            let level_cases = cases
+                .iter()
+                .filter(|case| case.manifest.level == level)
+                .collect::<Vec<_>>();
+            let active = level_cases
+                .iter()
+                .filter(|case| case.manifest.status == CaseStatus::Active)
+                .count();
+            let xfail = level_cases
+                .iter()
+                .filter(|case| case.manifest.status == CaseStatus::Xfail)
+                .count();
+            assert!(
+                active >= minimum_active,
+                "level {level:?} needs executable passing coverage"
+            );
+            assert!(
+                xfail >= minimum_xfail,
+                "level {level:?} needs executable gap coverage"
+            );
+            assert!(level_cases.iter().all(|case| {
+                case.manifest.status == CaseStatus::Pending
+                    || case.manifest.target != Target::Project
+            }));
+        }
+    }
+
+    #[test]
     fn normalizes_newline_styles() {
         assert_eq!(normalize_newlines("a\r\nb\rc\n"), "a\nb\nc\n");
     }

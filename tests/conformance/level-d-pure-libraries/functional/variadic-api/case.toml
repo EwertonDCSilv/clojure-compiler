@@ -1,0 +1,11 @@
+id = "d.functional.variadic_api"
+level = "D"
+area = "pure-libraries/functional"
+status = "active"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "This self-contained pure-library slice is executable on the current native path."
+tracking = "specs/COMPATIBILITY_SPEC.md"

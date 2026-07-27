@@ -1,0 +1,5 @@
+(ns d.closure-api)
+(defn make-affine [a b] (fn [x] (+ (* a x) b)))
+(defn apply-all [f xs] (mapv f xs))
+(defn -main [] (println (apply-all (make-affine 3 2) [1 2 3 4])))
+(-main)

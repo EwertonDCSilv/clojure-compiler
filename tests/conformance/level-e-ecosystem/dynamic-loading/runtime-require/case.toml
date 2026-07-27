@@ -1,0 +1,11 @@
+id = "e.dynamic_loading.runtime_require"
+level = "E"
+area = "ecosystem/dynamic-loading"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Runtime require and namespace loading are not implemented."
+tracking = "specs/COMPATIBILITY_SPEC.md"

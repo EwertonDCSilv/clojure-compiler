@@ -455,6 +455,80 @@ fn pending_project(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+fn higher_level_build(
+    level: char,
+    area_directory: &'static str,
+    slug: &'static str,
+    area: &'static str,
+    body: &'static str,
+    expected: &'static str,
+    gc_stress: bool,
+) -> Fixture {
+    let reason = match level {
+        'D' => "This self-contained pure-library slice is executable on the current native path.",
+        'E' => "This self-contained application slice builds and runs as a standalone native executable.",
+        _ => panic!("higher-level build requires level D or E"),
+    };
+    fixture(
+        level,
+        area_directory,
+        slug,
+        leak(format!(
+            "{}.{}.{}",
+            level.to_ascii_lowercase(),
+            area_directory.replace('-', "_"),
+            slug.replace('-', "_")
+        )),
+        area,
+        "active",
+        "official",
+        "build-run",
+        "equal",
+        gc_stress,
+        reason,
+        "specs/COMPATIBILITY_SPEC.md",
+        None,
+        body,
+        Expected::Stdout(expected),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn higher_level_xfail(
+    level: char,
+    area_directory: &'static str,
+    slug: &'static str,
+    area: &'static str,
+    body: &'static str,
+    desired: &'static str,
+    oracle: &'static str,
+    reason: &'static str,
+) -> Fixture {
+    fixture(
+        level,
+        area_directory,
+        slug,
+        leak(format!(
+            "{}.{}.{}",
+            level.to_ascii_lowercase(),
+            area_directory.replace('-', "_"),
+            slug.replace('-', "_")
+        )),
+        area,
+        "xfail",
+        "unsupported",
+        "build-run",
+        oracle,
+        false,
+        reason,
+        "specs/COMPATIBILITY_SPEC.md",
+        None,
+        body,
+        Expected::Stdout(desired),
+    )
+}
+
 fn leak(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
@@ -794,14 +868,421 @@ fn fixtures() -> Vec<Fixture> {
         cases.push(pending_stdlib(directory, namespace, function, input));
     }
 
-    // Level D — pure-library project inventory.
+    // Level D — executable pure-library slices.
     cases.extend([
-        pending_project('D', "functional-library", "pure-libraries/functional", "Requires a multi-file project loader for a pure functional library.", "(ns fixture.functional)\n(defn transform [xs] (map inc xs))\n"),
-        pending_project('D', "macro-library", "pure-libraries/macros", "Requires build-time loading of macros from another namespace.", "(ns fixture.macros)\n(defmacro unless [p x] `(if ~p nil ~x))\n"),
-        pending_project('D', "multiple-namespaces", "pure-libraries/namespaces", "Requires dependency ordering across multiple source files.", "(ns fixture.app (:require [fixture.lib :as lib]))\n(lib/value)\n"),
-        pending_project('D', "protocol-record-library", "pure-libraries/protocols-records", "Requires project-level protocol and record definitions.", "(ns fixture.protocols)\n(defprotocol P (value [x]))\n"),
-        pending_project('D', "persistent-structure-library", "pure-libraries/persistent-structures", "Requires a reusable project that builds a persistent data structure.", "(ns fixture.tree)\n(defn node [v l r] {:value v :left l :right r})\n"),
-        // Level E — ecosystem inventory.
+        higher_level_build(
+            'D',
+            "functional",
+            "collection-pipeline",
+            "pure-libraries/functional",
+            "(ns d.functional-pipeline)\n\
+             (defn transform [xs]\n\
+               (mapv (fn [x] (+ (* x x) 1)) (filter odd? xs)))\n\
+             (defn -main [] (println (transform (range 8))))\n\
+             (-main)\n",
+            "[2 10 26 50]\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "functional",
+            "closure-api",
+            "pure-libraries/functional",
+            "(ns d.closure-api)\n\
+             (defn make-affine [a b] (fn [x] (+ (* a x) b)))\n\
+             (defn apply-all [f xs] (mapv f xs))\n\
+             (defn -main [] (println (apply-all (make-affine 3 2) [1 2 3 4])))\n\
+             (-main)\n",
+            "[5 8 11 14]\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "functional",
+            "variadic-api",
+            "pure-libraries/functional",
+            "(ns d.variadic-api)\n\
+             (defn total [x & xs] (reduce + x xs))\n\
+             (defn -main []\n\
+               (println (total 1) (total 1 2 3 4) (apply total [10 20 12])))\n\
+             (-main)\n",
+            "1 10 42\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "persistent-structures",
+            "tree-library",
+            "pure-libraries/persistent-structures",
+            "(ns d.tree-library)\n\
+             (defn node [value left right] {:value value :left left :right right})\n\
+             (defn total [tree]\n\
+               (if (nil? tree)\n\
+                 0\n\
+                 (+ (:value tree) (total (:left tree)) (total (:right tree)))))\n\
+             (defn depth [tree]\n\
+               (if (nil? tree)\n\
+                 0\n\
+                 (inc (max (depth (:left tree)) (depth (:right tree))))))\n\
+             (defn -main []\n\
+               (let [tree (node 5 (node 3 (node 1 nil nil) nil) (node 6 nil nil))]\n\
+                 (println (total tree) (depth tree))))\n\
+             (-main)\n",
+            "15 3\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "persistent-structures",
+            "index-library",
+            "pure-libraries/persistent-structures",
+            "(ns d.index-library)\n\
+             (defn build-index [pairs]\n\
+               (reduce (fn [index pair]\n\
+                         (assoc index (first pair) (second pair)))\n\
+                       {}\n\
+                       pairs))\n\
+             (defn -main []\n\
+               (let [index (build-index [[:a 10] [:b 20] [:c 30]])]\n\
+                 (println (count index) (get index :b) (contains? index :c)\n\
+                          (count (dissoc index :a)))))\n\
+             (-main)\n",
+            "3 20 true 2\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "protocols-records",
+            "domain-model",
+            "pure-libraries/protocols-records",
+            "(ns d.domain-model)\n\
+             (defprotocol Costed (cost [item]))\n\
+             (defrecord LineItem [price quantity])\n\
+             (extend-type LineItem Costed\n\
+               (cost [item] (* (:price item) (:quantity item))))\n\
+             (defn total-cost [items]\n\
+               (reduce (fn [sum item] (+ sum (cost item))) 0 items))\n\
+             (defn -main []\n\
+               (let [items [(->LineItem 10 2) (->LineItem 7 3) (->LineItem 99 0)]]\n\
+                 (println (mapv cost items) (total-cost items))))\n\
+             (-main)\n",
+            "[20 21 0] 41\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "protocols-records",
+            "builtin-extension",
+            "pure-libraries/protocols-records",
+            "(ns d.builtin-extension)\n\
+             (defprotocol Summarized (summary [value]))\n\
+             (extend-type List Summarized\n\
+               (summary [value] (reduce + 0 value)))\n\
+             (defn -main []\n\
+               (println (summary (list)) (summary (list 1 2 3 4))))\n\
+             (-main)\n",
+            "0 10\n",
+            false,
+        ),
+        higher_level_build(
+            'D',
+            "persistent-structures",
+            "gc-stress-index",
+            "pure-libraries/persistent-structures",
+            "(ns d.gc-stress-index)\n\
+             (defn build-index [n]\n\
+               (loop [i 0 index {}]\n\
+                 (if (< i n)\n\
+                   (recur (inc i) (assoc index i [i (* i i)]))\n\
+                   index)))\n\
+             (defn -main []\n\
+               (let [index (build-index 80)]\n\
+                 (println (count index) (get index 79) (contains? index 40))))\n\
+             (-main)\n",
+            "80 [79 6241] true\n",
+            true,
+        ),
+    ]);
+
+    // Level D — executable gaps in otherwise pure Clojure libraries.
+    cases.extend([
+        higher_level_xfail(
+            'D',
+            "macros",
+            "user-macro-api",
+            "pure-libraries/macros",
+            "(ns d.user-macro)\n\
+             (defmacro unless [predicate value] `(if ~predicate nil ~value))\n\
+             (defn -main [] (println (unless false 42)))\n\
+             (-main)\n",
+            "42\n",
+            "equal",
+            "Pure libraries that define macros still require user macro expansion.",
+        ),
+        higher_level_xfail(
+            'D',
+            "namespaces",
+            "cross-namespace-api",
+            "pure-libraries/namespaces",
+            "(ns d.consumer (:require [d.math-library :as math]))\n\
+             (defn -main [] (println (math/answer)))\n\
+             (-main)\n",
+            "42\n",
+            "not-applicable",
+            "A library consumer cannot yet load another source namespace.",
+        ),
+        higher_level_xfail(
+            'D',
+            "sequences",
+            "lazy-pipeline",
+            "pure-libraries/sequences",
+            "(ns d.lazy-pipeline)\n\
+             (defn -main [] (println (take 5 (iterate inc 0))))\n\
+             (-main)\n",
+            "(0 1 2 3 4)\n",
+            "equal",
+            "Pure libraries using lazy or infinite sequences are not yet executable.",
+        ),
+        higher_level_xfail(
+            'D',
+            "metadata",
+            "metadata-api",
+            "pure-libraries/metadata",
+            "(ns d.metadata-api)\n\
+             (defn -main []\n\
+               (println (:role (meta (with-meta [] {:role :data})))))\n\
+             (-main)\n",
+            ":data\n",
+            "equal",
+            "Runtime metadata functions are not available on compiled values.",
+        ),
+        higher_level_xfail(
+            'D',
+            "errors",
+            "exception-api",
+            "pure-libraries/errors",
+            "(ns d.exception-api)\n\
+             (defn -main []\n\
+               (println (try (quot 1 0) (catch Exception error :caught))))\n\
+             (-main)\n",
+            ":caught\n",
+            "equal",
+            "Catchable language exceptions are not implemented on the native path.",
+        ),
+    ]);
+
+    // Level D — project-shaped inventory that still requires a loader.
+    cases.extend([
+        pending_project(
+            'D',
+            "functional-library",
+            "pure-libraries/functional",
+            "Requires a multi-file project loader for a pure functional library.",
+            "(ns fixture.functional)\n(defn transform [xs] (map inc xs))\n",
+        ),
+        pending_project(
+            'D',
+            "macro-library",
+            "pure-libraries/macros",
+            "Requires build-time loading of macros from another namespace.",
+            "(ns fixture.macros)\n(defmacro unless [p x] `(if ~p nil ~x))\n",
+        ),
+        pending_project(
+            'D',
+            "multiple-namespaces",
+            "pure-libraries/namespaces",
+            "Requires dependency ordering across multiple source files.",
+            "(ns fixture.app (:require [fixture.lib :as lib]))\n(lib/value)\n",
+        ),
+        pending_project(
+            'D',
+            "protocol-record-library",
+            "pure-libraries/protocols-records",
+            "Requires project-level protocol and record definitions.",
+            "(ns fixture.protocols)\n(defprotocol P (value [x]))\n",
+        ),
+        pending_project(
+            'D',
+            "persistent-structure-library",
+            "pure-libraries/persistent-structures",
+            "Requires a reusable project that builds a persistent data structure.",
+            "(ns fixture.tree)\n(defn node [v l r] {:value v :left l :right r})\n",
+        ),
+    ]);
+
+    // Level E — self-contained native application baseline.
+    cases.extend([
+        higher_level_build(
+            'E',
+            "applications",
+            "invoice-cli",
+            "ecosystem/application",
+            "(ns e.invoice-cli)\n\
+             (defrecord Item [price quantity])\n\
+             (defn line-total [item] (* (:price item) (:quantity item)))\n\
+             (defn invoice-total [items]\n\
+               (reduce (fn [sum item] (+ sum (line-total item))) 0 items))\n\
+             (defn -main []\n\
+               (let [items [(->Item 12 2) (->Item 5 3) (->Item 9 1)]]\n\
+                 (println \"invoice\" (count items) (invoice-total items))))\n\
+             (-main)\n",
+            "invoice 3 48\n",
+            false,
+        ),
+        higher_level_build(
+            'E',
+            "applications",
+            "analytics-cli",
+            "ecosystem/application",
+            "(ns e.analytics-cli)\n\
+             (defn positives [values] (filter pos? values))\n\
+             (defn -main []\n\
+               (let [values [-2 0 3 4 -1 5]]\n\
+                 (println \"report\" (count values) (reduce + 0 values)\n\
+                          (mapv (fn [x] (* x x)) (positives values)))))\n\
+             (-main)\n",
+            "report 6 9 [9 16 25]\n",
+            false,
+        ),
+        higher_level_build(
+            'E',
+            "applications",
+            "polymorphic-service",
+            "ecosystem/application",
+            "(ns e.polymorphic-service)\n\
+             (defprotocol Handler (handle [request]))\n\
+             (defrecord AddRequest [left right])\n\
+             (defrecord MultiplyRequest [left right])\n\
+             (extend-type AddRequest Handler\n\
+               (handle [request] (+ (:left request) (:right request))))\n\
+             (extend-type MultiplyRequest Handler\n\
+               (handle [request] (* (:left request) (:right request))))\n\
+             (defn -main []\n\
+               (println (mapv handle [(->AddRequest 20 22)\n\
+                                      (->MultiplyRequest 6 7)])))\n\
+             (-main)\n",
+            "[42 42]\n",
+            false,
+        ),
+        higher_level_build(
+            'E',
+            "applications",
+            "graph-report",
+            "ecosystem/application",
+            "(ns e.graph-report)\n\
+             (defn reachable-count [graph start]\n\
+               (loop [queue (list start) seen #{}]\n\
+                 (if (empty? queue)\n\
+                   (count seen)\n\
+                   (let [node (first queue) remaining (rest queue)]\n\
+                     (if (contains? seen node)\n\
+                       (recur remaining seen)\n\
+                       (recur (concat remaining (get graph node))\n\
+                              (conj seen node)))))))\n\
+             (defn -main []\n\
+               (println \"reachable\"\n\
+                        (reachable-count {0 [1 2] 1 [3] 2 [3 4] 3 [] 4 []} 0)))\n\
+             (-main)\n",
+            "reachable 5\n",
+            false,
+        ),
+        higher_level_build(
+            'E',
+            "applications",
+            "gc-stress-workload",
+            "ecosystem/application",
+            "(ns e.gc-stress-workload)\n\
+             (defn squares [n] (mapv (fn [x] (* x x)) (range n)))\n\
+             (defn -main []\n\
+               (let [values (squares 200)]\n\
+                 (println (count values) (reduce + 0 values))))\n\
+             (-main)\n",
+            "200 2646700\n",
+            true,
+        ),
+    ]);
+
+    // Level E — concrete ecosystem gaps.
+    cases.extend([
+        higher_level_xfail(
+            'E',
+            "dependencies",
+            "external-library",
+            "ecosystem/dependencies",
+            "(ns e.external-library (:require [cheshire.core :as json]))\n\
+             (defn -main [] (println (json/generate-string {:ok true})))\n\
+             (-main)\n",
+            "{\"ok\":true}\n",
+            "not-applicable",
+            "External source dependencies cannot be resolved by the current build command.",
+        ),
+        higher_level_xfail(
+            'E',
+            "jar-classpath",
+            "foreign-class",
+            "ecosystem/jar-classpath",
+            "(ns e.foreign-class)\n\
+             (defn -main []\n\
+               (println (org.apache.commons.lang3.StringUtils/upperCase \"clojure\")))\n\
+             (-main)\n",
+            "CLOJURE\n",
+            "not-applicable",
+            "JAR classpath lookup is outside the native runtime.",
+        ),
+        higher_level_xfail(
+            'E',
+            "java-interop",
+            "static-method",
+            "ecosystem/java-interop",
+            "(ns e.java-static)\n\
+             (defn -main [] (println (Math/abs -7)))\n\
+             (-main)\n",
+            "7\n",
+            "equal",
+            "Java static method interop has no native execution path.",
+        ),
+        higher_level_xfail(
+            'E',
+            "dynamic-loading",
+            "runtime-require",
+            "ecosystem/dynamic-loading",
+            "(ns e.runtime-require)\n\
+             (defn -main []\n\
+               (require 'clojure.set)\n\
+               (println (clojure.set/union #{1 2} #{2 3})))\n\
+             (-main)\n",
+            "#{1 2 3}\n",
+            "not-applicable",
+            "Runtime require and namespace loading are not implemented.",
+        ),
+        higher_level_xfail(
+            'E',
+            "dynamic-loading",
+            "runtime-eval",
+            "ecosystem/dynamic-loading",
+            "(ns e.runtime-eval)\n\
+             (defn -main [] (println (eval '(+ 20 22))))\n\
+             (-main)\n",
+            "42\n",
+            "equal",
+            "Runtime eval is not part of the AOT executable.",
+        ),
+        higher_level_xfail(
+            'E',
+            "concurrency",
+            "future-api",
+            "ecosystem/concurrency",
+            "(ns e.future-api)\n\
+             (defn -main [] (println @(future (+ 20 22))))\n\
+             (-main)\n",
+            "42\n",
+            "equal",
+            "Threads and futures are outside the current single-threaded runtime.",
+        ),
+    ]);
+
+    // Level E — project/ecosystem inventory without an execution path yet.
+    cases.extend([
         pending_project('E', "external-dependency", "ecosystem/dependencies", "No dependency resolver exists in the native project path.", "(ns fixture.external (:require [external.lib :as ext]))\n(ext/run)\n"),
         pending_project('E', "jar-classpath", "ecosystem/jar-classpath", "JAR and JVM classpath loading are outside the native runtime.", "(ns fixture.jar)\n"),
         pending_project('E', "java-interop", "ecosystem/java-interop", "Java interop has no native equivalent.", "(ns fixture.java)\n(System/currentTimeMillis)\n"),

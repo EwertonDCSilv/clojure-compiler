@@ -1,0 +1,11 @@
+id = "d.macros.user_macro_api"
+level = "D"
+area = "pure-libraries/macros"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Pure libraries that define macros still require user macro expansion."
+tracking = "specs/COMPATIBILITY_SPEC.md"

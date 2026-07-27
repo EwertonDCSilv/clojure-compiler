@@ -6,7 +6,7 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **181 cases** — 141 active, 9 expected failures, and 31 pending.
+Current inventory: **205 cases** — 154 active, 20 expected failures, and 31 pending.
 
 ## Run it
 
@@ -33,8 +33,8 @@ run concurrently. The machine-readable report is
 | A | `level-a-syntax` | Reader syntax, trivia, metadata, macros, and diagnostics |
 | B | `level-b-semantics` | Native execution, errors, records/protocols, and GC stress |
 | C | `level-c-stdlib` | Current compiled `clojure.core`; documented namespaces remain visible |
-| D | `level-d-pure-libraries` | Pending project fixtures for pure libraries |
-| E | `level-e-ecosystem` | Pending ecosystem, classpath, interop, and application fixtures |
+| D | `level-d-pure-libraries` | Executable single-file pure libraries, concrete gaps, and pending multi-file projects |
+| E | `level-e-ecosystem` | Standalone native applications, executable ecosystem gaps, and pending integrated projects |
 
 Every active function in the embedded `clojure.core` subset has normal, boundary, and
 alternate-input calls plus a separate invalid-arity diagnostic case.

@@ -1,0 +1,11 @@
+id = "e.jar_classpath.foreign_class"
+level = "E"
+area = "ecosystem/jar-classpath"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "JAR classpath lookup is outside the native runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md"

@@ -1,0 +1,11 @@
+id = "e.applications.gc_stress_workload"
+level = "E"
+area = "ecosystem/application"
+status = "active"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = true
+reason = "This self-contained application slice builds and runs as a standalone native executable."
+tracking = "specs/COMPATIBILITY_SPEC.md"
