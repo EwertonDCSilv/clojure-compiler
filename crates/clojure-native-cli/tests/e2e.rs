@@ -293,6 +293,32 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_transients() {
+    if !have_cc() {
+        return;
+    }
+    // transient/persistent!/conj!/assoc!/dissoc!: construção em lote mutável.
+    // Vetor transiente usa buffer mutável (conj! O(1)); mapa/set via caixa.
+    let src = r#"(ns tr.core)
+(defn bvec [n] (loop [i 0 t (transient [])] (if (< i n) (recur (+ i 1) (conj! t i)) (persistent! t))))
+(defn bmap [n] (loop [i 0 t (transient {})] (if (< i n) (recur (+ i 1) (assoc! t i (* i i))) (persistent! t))))
+(defn bset [n] (loop [i 0 t (transient #{})] (if (< i n) (recur (+ i 1) (conj! t (mod i 100))) (persistent! t))))
+(defn -main []
+  (let [v (bvec 1000)] (println (count v) (nth v 0) (nth v 999) (get v 500)))
+  (let [t (assoc! (transient [10 20 30]) 1 99)] (println (persistent! (conj! t 40))))
+  (let [m (bmap 500)] (println (count m) (get m 20) (get m 999)))
+  (println (persistent! (dissoc! (transient {:a 1 :b 2 :c 3}) :b)))
+  (let [s (bset 500)] (println (count s) (contains? s 42) (contains? s 200))))
+(-main)"#;
+    let expected = "1000 0 999 500\n[10 99 30 40]\n500 400 nil\n{:a 1, :c 3}\n100 true false\n";
+    assert_eq!(build_and_run("cljn_e2e_trans", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_trans_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_multimethods() {
     if !have_cc() {
         return;

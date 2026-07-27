@@ -131,6 +131,11 @@ pub enum Prim {
     Compare,
     Throw,
     Try,
+    Transient,
+    PersistentBang,
+    ConjBang,
+    AssocBang,
+    DissocBang,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -1278,6 +1283,11 @@ fn prim_of(name: &str) -> Option<Prim> {
         "sorted-set" => Prim::SortedSet,
         "compare" => Prim::Compare,
         "throw" => Prim::Throw,
+        "transient" => Prim::Transient,
+        "persistent!" => Prim::PersistentBang,
+        "conj!" => Prim::ConjBang,
+        "assoc!" => Prim::AssocBang,
+        "dissoc!" => Prim::DissocBang,
         _ => return None,
     })
 }
@@ -1296,6 +1306,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Count
         | Prim::Keys
         | Prim::Throw
+        | Prim::Transient
+        | Prim::PersistentBang
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1313,8 +1325,10 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Dissoc
         | Prim::Contains
         | Prim::Compare
+        | Prim::ConjBang
+        | Prim::DissocBang
         | Prim::Conj => 2,
-        Prim::Assoc => 3,
+        Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
         | Prim::List
         | Prim::Vector
@@ -1338,8 +1352,10 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Nth
         | Prim::Dissoc
         | Prim::Contains
+        | Prim::ConjBang
+        | Prim::DissocBang
         | Prim::Conj => n == 2,
-        Prim::Assoc => n == 3,
+        Prim::Assoc | Prim::AssocBang => n == 3,
         Prim::Inc
         | Prim::Dec
         | Prim::Not
@@ -1350,6 +1366,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Count
         | Prim::Keys
         | Prim::Throw
+        | Prim::Transient
+        | Prim::PersistentBang
         | Prim::Vals => n == 1,
         Prim::Try => n == 3,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,

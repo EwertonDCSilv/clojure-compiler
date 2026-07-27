@@ -37,7 +37,7 @@ typedef intptr_t Value;
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
-       T_TNODE = 14, T_SMAP = 15, T_SSET = 16 };
+       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18 };
 
 typedef struct Obj {
     uint8_t type;
@@ -67,6 +67,11 @@ typedef struct { Obj h; uint32_t hash; int64_t n; Value pairs[]; } MColl; /* 2n 
  * sorted-set guarda val==key. Ordem por cljn_compare (ordem total de Clojure). */
 typedef struct { Obj h; Value key; Value val; Value left; Value right; int64_t red; } TNode;
 typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET */
+/* Transients (mutação em lote). Vetor transiente = buffer mutável crescente
+ * (conj! O(1) amortizado); mapa/set transiente = caixa mutável sobre o valor
+ * persistente (semântica correta; persistent! O(1)). */
+typedef struct { Obj h; int64_t len; int64_t cap; Value *items; } TVec; /* T_TVEC */
+typedef struct { Obj h; Value inner; } TBox;                            /* T_TBOX */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
  * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
@@ -110,6 +115,11 @@ static void gc_collect(void);
 
 static void *xalloc(size_t n) {
     void *p = malloc(n);
+    if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
+    return p;
+}
+static void *xrealloc(void *old, size_t n) {
+    void *p = realloc(old, n);
     if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
     return p;
 }
@@ -178,6 +188,12 @@ static void gc_mark(Value v) {
         } else if (o->type == T_SMAP || o->type == T_SSET) {
             gc_mark(((Sorted *)v)->root);
             return;
+        } else if (o->type == T_TVEC) {
+            TVec *tv = (TVec *)v;
+            for (int64_t i = 0; i < tv->len; i++) gc_mark(tv->items[i]);
+            return;
+        } else if (o->type == T_TBOX) {
+            v = ((TBox *)v)->inner; /* itera o valor interno */
         } else if (o->type == T_TNODE) {
             TNode *nd = (TNode *)v;
             gc_mark(nd->key);
@@ -214,6 +230,7 @@ static void gc_sweep(void) {
         } else {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
+            if (o->type == T_TVEC) free(((TVec *)o)->items);
             free(o);
         }
     }
@@ -1181,6 +1198,8 @@ Value cljn_get(Value coll, Value key) {
         case T_HSET: return (node_get(((HMap *)coll)->root, 0, cljn_hash(key), key) != MNOTFOUND) ? key : NIL;
         case T_SMAP: return cljn_sorted_get(coll, key);
         case T_SSET: return (tn_get(((Sorted *)coll)->root, key) != MNOTFOUND) ? key : NIL;
+        case T_TVEC: { TVec *tv = (TVec *)coll; if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < tv->len) return tv->items[i]; } return NIL; }
+        case T_TBOX: return cljn_get(((TBox *)coll)->inner, key);
         default: return NIL;
     }
 }
@@ -1191,6 +1210,8 @@ Value cljn_contains(Value coll, Value key) {
         case T_SET: case T_HSET: return cljn_set_contains(coll, key);
         case T_SMAP: case T_SSET: return cljn_sorted_contains(coll, key);
         case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
+        case T_TBOX: return cljn_contains(((TBox *)coll)->inner, key);
+        case T_TVEC: { TVec *tv = (TVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < tv->len); }
         default: return FALSEV;
     }
 }
@@ -1240,10 +1261,97 @@ Value cljn_nth(Value coll, Value idx) {
     if (i < 0) die("nth: índice inválido");
     switch (obj_type(coll)) {
         case T_VEC: { PVec *v = (PVec *)coll; if (i < v->count) return pv_nth(v, i); break; }
+        case T_TVEC: { TVec *tv = (TVec *)coll; if (i < tv->len) return tv->items[i]; break; }
         case T_CONS: { Value c = coll; while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail; if (obj_type(c) == T_CONS) return ((Cons *)c)->head; break; }
     }
     die("nth: índice fora dos limites");
     return NIL;
+}
+
+/* ---------- transients (mutação em lote) ---------- */
+Value cljn_transient(Value coll) {
+    if (obj_type(coll) == T_VEC) {
+        PVec *v = (PVec *)coll;
+        cljn_gc_push(coll); /* rooteia durante o obj_alloc */
+        TVec *tv = (TVec *)obj_alloc(sizeof(TVec), T_TVEC);
+        cljn_gc_popn(1);
+        int64_t n = v->count;
+        int64_t cap = n < 8 ? 8 : n;
+        tv->items = (Value *)xalloc((size_t)cap * sizeof(Value));
+        tv->len = n; tv->cap = cap;
+        v = (PVec *)coll; /* revalida (não-móvel) */
+        for (int64_t i = 0; i < n; i++) tv->items[i] = pv_nth(v, i);
+        return (Value)tv;
+    }
+    /* mapas/sets: caixa mutável sobre o valor persistente */
+    cljn_gc_push(coll);
+    TBox *b = (TBox *)obj_alloc(sizeof(TBox), T_TBOX);
+    cljn_gc_popn(1);
+    b->inner = coll;
+    return (Value)b;
+}
+static void tvec_grow(TVec *tv) {
+    if (tv->len < tv->cap) return;
+    int64_t ncap = tv->cap * 2;
+    tv->items = (Value *)xrealloc(tv->items, (size_t)ncap * sizeof(Value));
+    tv->cap = ncap;
+}
+Value cljn_conj_bang(Value t, Value x) {
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        tvec_grow(tv); /* realloc: sem obj_alloc, sem GC no meio */
+        tv->items[tv->len++] = x;
+        return t;
+    }
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_conj(b->inner, x); /* b rooteado pelo caller; inner idem */
+        return t;
+    }
+    die("conj!: não é um transient");
+    return t;
+}
+Value cljn_assoc_bang(Value t, Value k, Value v) {
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        if (!IS_FIX(k)) die("assoc!: índice de vetor deve ser inteiro");
+        int64_t i = FIX(k);
+        if (i >= 0 && i < tv->len) { tv->items[i] = v; return t; }
+        if (i == tv->len) { tvec_grow(tv); tv->items[tv->len++] = v; return t; }
+        die("assoc!: índice fora dos limites");
+    }
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_assoc(b->inner, k, v);
+        return t;
+    }
+    die("assoc!: não é um transient");
+    return t;
+}
+Value cljn_dissoc_bang(Value t, Value k) {
+    if (obj_type(t) == T_TBOX) {
+        TBox *b = (TBox *)t;
+        b->inner = cljn_map_dissoc(b->inner, k);
+        return t;
+    }
+    die("dissoc!: requer um mapa transiente");
+    return t;
+}
+Value cljn_persistent_bang(Value t) {
+    if (obj_type(t) == T_TBOX) return ((TBox *)t)->inner;
+    if (obj_type(t) == T_TVEC) {
+        TVec *tv = (TVec *)t;
+        Value acc = cljn_vec_empty();
+        cljn_gc_push(acc); /* acc rooteado; t rooteado pelo caller */
+        for (int64_t i = 0; i < tv->len; i++) {
+            acc = cljn_vec_conj(acc, ((TVec *)t)->items[i]);
+            gc_stack[gc_sp - 1] = acc;
+        }
+        cljn_gc_popn(1);
+        return acc;
+    }
+    die("persistent!: não é um transient");
+    return t;
 }
 
 /* ---------- aritmética ---------- */
@@ -1418,6 +1526,8 @@ Value cljn_count(Value v) {
         case T_MAP: return MK_FIX(((Map *)v)->n);
         case T_HMAP: return MK_FIX(((HMap *)v)->count);
         case T_SMAP: case T_SSET: return MK_FIX(((Sorted *)v)->count);
+        case T_TVEC: return MK_FIX(((TVec *)v)->len);
+        case T_TBOX: return cljn_count(((TBox *)v)->inner);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }
     long n = 0;

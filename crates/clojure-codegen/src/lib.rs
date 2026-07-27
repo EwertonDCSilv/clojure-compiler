@@ -167,6 +167,11 @@ struct Runtime {
     throw_: FuncId,           // (v)->! (longjmp)
     multi_register: FuncId,   // (mid,dispatch_fn)->void
     multi_call: FuncId,       // (mid,argc,argv)->v
+    transient: FuncId,        // (coll)->transient
+    persistent_bang: FuncId,  // (t)->coll
+    conj_bang: FuncId,        // (t,x)->t
+    assoc_bang: FuncId,       // (t,k,v)->t
+    dissoc_bang: FuncId,      // (t,k)->t
     make_record: FuncId,      // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
@@ -490,6 +495,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         throw_: una(m, "cljn_throw"),
         multi_register: bin_void(m, "cljn_multi_register"),
         multi_call: ternary(m, "cljn_multi_call"),
+        transient: una(m, "cljn_transient"),
+        persistent_bang: una(m, "cljn_persistent_bang"),
+        conj_bang: bin(m, "cljn_conj_bang"),
+        assoc_bang: ternary(m, "cljn_assoc_bang"),
+        dissoc_bang: bin(m, "cljn_dissoc_bang"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -1940,6 +1950,11 @@ impl<'a> FnGen<'a> {
             Prim::Compare => self.bin(self.rt.compare, args),
             Prim::Throw => self.una(self.rt.throw_, args), // noreturn (longjmp)
             Prim::Try => self.tern(self.rt.try_, args),
+            Prim::Transient => self.una(self.rt.transient, args),
+            Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
+            Prim::ConjBang => self.bin(self.rt.conj_bang, args),
+            Prim::AssocBang => self.tern(self.rt.assoc_bang, args),
+            Prim::DissocBang => self.bin(self.rt.dissoc_bang, args),
         }
     }
 
