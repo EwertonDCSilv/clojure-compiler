@@ -1,3 +1,4 @@
+// Client-side translations for the static GitHub Pages site.
 (() => {
   "use strict";
 
