@@ -1056,6 +1056,8 @@ impl<'a> Analyzer<'a> {
         let fr = self.top();
         fr.locals.truncate(saved);
         fr.next_slot = saved_next;
+        let mut body = body;
+        linearize_loop(&mut slots, &mut body); // ADR-0009: auto-transient de acumuladores
         Ok(Ast::Loop {
             slots,
             body: Box::new(body),
@@ -1265,6 +1267,161 @@ impl<'a> Analyzer<'a> {
             arity,
             captures,
         })
+    }
+}
+
+// ===== Auto-transient de acumuladores de loop (ADR-0009) =====
+// Reescreve slots de `loop` cujo acumulador é um vetor literal fresco usado de
+// forma LINEAR (só conj/assoc no próprio slot, leituras nth/get/count/contains,
+// e recur/escape do próprio slot — nunca passado a função, capturado, guardado,
+// ou religado a outro slot). Nesses casos, o acumulador vira transiente (mutação
+// in-place O(1)) e é congelado com `persistent!` nas saídas. É SÃO por construção:
+// qualquer uso não reconhecido cancela a transformação daquele slot (fallback ao
+// caminho persistente). A semântica é idêntica; só muda a representação interna.
+
+fn ast_is_local(e: &Ast, s: u32) -> bool {
+    matches!(e, Ast::Local(x) if *x == s)
+}
+/// `e` é um valor derivado do acumulador `s`? (o próprio `s`, ou uma cadeia de
+/// conj/assoc enraizada em `s`).
+fn s_derived(e: &Ast, s: u32) -> bool {
+    match e {
+        Ast::Local(x) => *x == s,
+        Ast::Call { callee: Callee::Prim(Prim::Conj | Prim::Assoc), args } => {
+            args.first().is_some_and(|r| s_derived(r, s))
+        }
+        _ => false,
+    }
+}
+/// Verdadeiro se TODA ocorrência de `Local(s)` em `e` está numa posição linear
+/// válida. `tail` indica que um valor derivado de `s` pode escapar/religar aqui.
+/// `pos` é a posição do slot `s` na lista de slots do loop (para `recur`).
+fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool) -> bool {
+    match e {
+        Ast::Local(x) => *x != s || tail, // `s` puro só é válido em cauda (escape/recur-s)
+        Ast::Int(_) | Ast::Bool(_) | Ast::Nil | Ast::Str(_) | Ast::Keyword(_)
+        | Ast::Capture(_) | Ast::FnRef(_) => true,
+        Ast::Call { callee: Callee::Prim(p), args }
+            if matches!(p, Prim::Conj | Prim::Assoc) && args.first().is_some_and(|r| s_derived(r, s)) =>
+        {
+            // mutação enraizada em `s`: válida só em cauda; args seguintes podem LER `s`
+            tail && args[1..].iter().all(|a| linear_ok(a, s, pos, false))
+        }
+        Ast::Call { callee: Callee::Prim(p), args }
+            if matches!(p, Prim::Nth | Prim::Get | Prim::Count | Prim::Contains)
+                && args.first().is_some_and(|r| ast_is_local(r, s)) =>
+        {
+            // leitura de `s`: válida em qualquer posição
+            args[1..].iter().all(|a| linear_ok(a, s, pos, false))
+        }
+        Ast::Call { args, .. } => args.iter().all(|a| linear_ok(a, s, pos, false)),
+        Ast::CallValue { f, args } => {
+            linear_ok(f, s, pos, false) && args.iter().all(|a| linear_ok(a, s, pos, false))
+        }
+        Ast::Apply { f, fixed, coll } => {
+            linear_ok(f, s, pos, false)
+                && fixed.iter().all(|a| linear_ok(a, s, pos, false))
+                && linear_ok(coll, s, pos, false)
+        }
+        Ast::Recur(args) => args
+            .iter()
+            .enumerate()
+            .all(|(i, a)| linear_ok(a, s, pos, i == pos)),
+        Ast::If(t, then, els) => {
+            linear_ok(t, s, pos, false) && linear_ok(then, s, pos, tail) && linear_ok(els, s, pos, tail)
+        }
+        Ast::Do(stmts) => stmts
+            .iter()
+            .enumerate()
+            .all(|(i, st)| linear_ok(st, s, pos, tail && i + 1 == stmts.len())),
+        Ast::Let { slots, body } => {
+            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false)) && linear_ok(body, s, pos, tail)
+        }
+        Ast::Loop { slots, body } => {
+            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false)) && linear_ok(body, s, pos, false)
+        }
+        Ast::MakeFn { captures, .. } => captures.iter().all(|c| linear_ok(c, s, pos, false)),
+        Ast::MakeRecord { fields, .. } => fields.iter().all(|(_, v)| linear_ok(v, s, pos, false)),
+        Ast::VecLit(items) | Ast::SetLit(items) => items.iter().all(|i| linear_ok(i, s, pos, false)),
+        Ast::MapLit(pairs) => pairs
+            .iter()
+            .all(|(k, v)| linear_ok(k, s, pos, false) && linear_ok(v, s, pos, false)),
+        Ast::RegisterMethod { key, impl_fn, .. } => {
+            linear_ok(key, s, pos, false) && linear_ok(impl_fn, s, pos, false)
+        }
+        Ast::RegisterMulti { dispatch_fn, .. } => linear_ok(dispatch_fn, s, pos, false),
+    }
+}
+/// Reescreve conj/assoc enraizados em `s` para conj!/assoc! (segue a cadeia).
+fn rewrite_bang(e: &mut Ast, s: u32) {
+    if let Ast::Call { callee: Callee::Prim(p), args } = e {
+        if matches!(p, Prim::Conj | Prim::Assoc) && args.first().is_some_and(|r| s_derived(r, s)) {
+            rewrite_bang(&mut args[0], s);
+            *p = if *p == Prim::Conj { Prim::ConjBang } else { Prim::AssocBang };
+        }
+    }
+}
+/// Valor que continua transiente (arg de recur do próprio slot): desce em
+/// `if`/`do`/`let` até os valores-folha e reescreve conj/assoc → conj!/assoc!.
+fn rewrite_transient_value(e: &mut Ast, s: u32) {
+    match e {
+        Ast::If(_, then, els) => {
+            rewrite_transient_value(then, s);
+            rewrite_transient_value(els, s);
+        }
+        Ast::Do(stmts) => {
+            if let Some(last) = stmts.last_mut() {
+                rewrite_transient_value(last, s);
+            }
+        }
+        Ast::Let { body, .. } => rewrite_transient_value(body, s),
+        _ => rewrite_bang(e, s),
+    }
+}
+/// Transforma o corpo: nas saídas (cauda) congela valores derivados de `s` com
+/// `persistent!`; nos recur do próprio slot reescreve conj/assoc → conj!/assoc!.
+fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool) {
+    match e {
+        Ast::If(_, then, els) => {
+            transform_body(then, s, pos, tail);
+            transform_body(els, s, pos, tail);
+        }
+        Ast::Do(stmts) => {
+            if let Some(last) = stmts.last_mut() {
+                transform_body(last, s, pos, tail);
+            }
+        }
+        Ast::Let { body, .. } => transform_body(body, s, pos, tail),
+        Ast::Recur(args) => {
+            if let Some(a) = args.get_mut(pos) {
+                rewrite_transient_value(a, s); // desce em if/do/let (recur mantém transiente)
+            }
+        }
+        other if tail && s_derived(other, s) => {
+            let mut inner = std::mem::replace(other, Ast::Nil);
+            rewrite_bang(&mut inner, s);
+            *other = Ast::Call {
+                callee: Callee::Prim(Prim::PersistentBang),
+                args: vec![inner],
+            };
+        }
+        _ => {}
+    }
+}
+fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast) {
+    let n = slots.len();
+    // Decide todos os slots elegíveis sobre o corpo ORIGINAL, depois transforma.
+    let eligible: Vec<usize> = (0..n)
+        .filter(|&pos| matches!(slots[pos].1, Ast::VecLit(_)) && linear_ok(body, slots[pos].0, pos, true))
+        .collect();
+    for pos in eligible {
+        let s = slots[pos].0;
+        let init = std::mem::replace(&mut slots[pos].1, Ast::Nil);
+        slots[pos].1 = Ast::Call {
+            callee: Callee::Prim(Prim::Transient),
+            args: vec![init],
+        };
+        transform_body(body, s, pos, true);
     }
 }
 

@@ -355,6 +355,35 @@ fn compiles_transients() {
 }
 
 #[test]
+fn auto_transient_loop_accumulators() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0009: acumuladores de loop com init de vetor literal, usados de forma
+    // linear, viram transientes automaticamente (semântica idêntica). Cobre os
+    // padrões que exercitam o transform: conj no recur, conj num ramo de `if`
+    // (regressão do bug de descida), bare-unchanged, assoc, escape encadeado e
+    // leituras via nth/count.
+    let src = r#"(ns at.core)
+(defn buildv [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (conj v (* i i))) v)))
+(defn evens [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (if (= 0 (mod i 2)) (conj v i) v)) v)))
+(defn zero-init [n] (loop [i 0 v [0 0 0 0 0]] (if (< i n) (recur (+ i 1) (assoc v (mod i 5) (+ (nth v (mod i 5)) 1))) v)))
+(defn -main []
+  (let [v (buildv 100)] (println (count v) (nth v 0) (nth v 99)))
+  (let [e (evens 10)] (println e (count e)))
+  (let [h (zero-init 23)] (println h))
+  ;; escape encadeado (padrão do sieve initial-flags)
+  (println (loop [i 0 v []] (if (< i 5) (recur (+ i 1) (conj v i)) (assoc (assoc v 0 :a) 4 :z)))))
+(-main)"#;
+    let expected = "100 0 9801\n[0 2 4 6 8] 5\n[5 5 5 4 4]\n[:a 1 2 3 :z]\n";
+    assert_eq!(build_and_run("cljn_e2e_autotrans", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_autotrans_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn structural_transients_preserve_persistence() {
     if !have_cc() {
         return;
