@@ -164,19 +164,19 @@ benchmarks-charts: $(BENCHMARK_CHART_RENDERER)
 	$(BENCHMARK_CHART_RENDERER) \
 		benchmarks/cracking/results/extreme.csv \
 		benchmarks/cracking/results/charts \
-		"Cracking — 60 casos"
+		"Cracking"
 	$(BENCHMARK_CHART_RENDERER) \
 		benchmarks/cormen/results/extreme.csv \
 		benchmarks/cormen/results/charts \
-		"Cormen/CLRS — 30 casos"
+		"Cormen/CLRS"
 	$(BENCHMARK_CHART_RENDERER) \
 		benchmarks/cracking/results/extreme.csv \
 		docs/assets/benchmarks/cracking \
-		"Cracking — 60 casos"
+		"Cracking"
 	$(BENCHMARK_CHART_RENDERER) \
 		benchmarks/cormen/results/extreme.csv \
 		docs/assets/benchmarks/cormen \
-		"Cormen/CLRS — 30 casos"
+		"Cormen/CLRS"
 
 benchmarks-ci: release
 	benchmarks/cracking/run.sh --chapter 01

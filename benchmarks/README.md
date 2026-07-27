@@ -360,7 +360,10 @@ O alvo atualiza `benchmarks/*/results/charts/` e
 [`render-benchmark-charts.rs`](render-benchmark-charts.rs) usa somente a biblioteca
 padrão e aceita um CSV, um diretório de saída e um título, permitindo visualizar
 resultados experimentais sem substituir os gráficos oficiais. O `Makefile` recompila o
-binário apenas quando o fonte muda.
+binário apenas quando o fonte muda. Os SVGs usam somente identificadores neutros
+(`CLJN` para o executável nativo, `JVM`, `WALL`, `CPU`, `RSS`, unidades e símbolos);
+na página do projeto, títulos, legendas e explicações ficam no HTML e acompanham o
+idioma selecionado.
 
 Quando já existe uma referência JVM válida e apenas o compilador nativo mudou, é
 possível atualizar somente as colunas nativas:

@@ -18,8 +18,10 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 A apresentação pública fica em [index.html](index.html), com traduções em
 [i18n.js](i18n.js). Ela inclui um painel interativo dos benchmarks Cormen e Cracking;
 os SVGs versionados ficam em [`assets/benchmarks/`](assets/benchmarks/) e são
-regenerados por `make benchmarks-charts`. O arquivo `.nojekyll` permite que o conteúdo
-desta pasta seja publicado diretamente pelo GitHub Pages.
+regenerados por `make benchmarks-charts`. Os gráficos permanecem neutros em relação ao
+idioma; títulos, legendas e descrições acessíveis são traduzidos pelo HTML. O arquivo
+`.nojekyll` permite que o conteúdo desta pasta seja publicado diretamente pelo GitHub
+Pages.
 
 ## Fonte de verdade
 

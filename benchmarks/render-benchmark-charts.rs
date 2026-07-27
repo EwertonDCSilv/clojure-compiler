@@ -29,10 +29,10 @@ enum TimeMetric {
 }
 
 impl TimeMetric {
-    fn title(self) -> &'static str {
+    fn code(self) -> &'static str {
         match self {
-            Self::Wall => "tempo de parede",
-            Self::Cpu => "tempo total de CPU",
+            Self::Wall => "WALL",
+            Self::Cpu => "CPU",
         }
     }
 
@@ -264,7 +264,7 @@ fn render_ratio_chart(benchmarks: &[Benchmark], suite_title: &str, metric: TimeM
     let total_clojure: f64 = values.iter().map(|(_, clojure)| clojure).sum();
     let (native_wins, clojure_wins, ties) = winner_counts(&values);
     let escaped_suite = xml_escape(suite_title);
-    let escaped_metric = xml_escape(metric.title());
+    let metric_code = metric.code();
     let mut svg = String::new();
 
     writeln!(svg, r#"<?xml version="1.0" encoding="UTF-8"?>"#).unwrap();
@@ -275,12 +275,15 @@ fn render_ratio_chart(benchmarks: &[Benchmark], suite_title: &str, metric: TimeM
     .unwrap();
     writeln!(
         svg,
-        r#"  <title id="chart-title">{escaped_suite} — {escaped_metric}</title>"#
+        r#"  <title id="chart-title">{escaped_suite} · {metric_code} · CLJN/JVM</title>"#
     )
     .unwrap();
-    svg.push_str(
-        "  <desc id=\"chart-desc\">Comparação por caso. Barras à esquerda favorecem Clojure/JVM; barras à direita favorecem o executável nativo.</desc>\n",
-    );
+    writeln!(
+        svg,
+        r#"  <desc id="chart-desc">metric={metric_code}; series=CLJN,JVM; unit=s; scale=log2; n={}</desc>"#,
+        benchmarks.len()
+    )
+    .unwrap();
     push_styles(&mut svg);
     writeln!(
         svg,
@@ -289,33 +292,31 @@ fn render_ratio_chart(benchmarks: &[Benchmark], suite_title: &str, metric: TimeM
     .unwrap();
     writeln!(
         svg,
-        r#"  <text x="24" y="42" class="title">{escaped_suite} — {escaped_metric}</text>"#
+        r#"  <text x="24" y="42" class="title">{escaped_suite} · n={} · {metric_code}</text>"#,
+        benchmarks.len()
     )
     .unwrap();
-    svg.push_str(
-        "  <text x=\"24\" y=\"70\" class=\"subtitle\">Razão = Clojure/JVM ÷ nativo. Quanto maior a barra à direita, maior a vantagem nativa.</text>\n",
-    );
+    svg.push_str("  <text x=\"24\" y=\"70\" class=\"subtitle\">ratio = JVM / CLJN · log₂</text>\n");
     writeln!(
         svg,
-        r#"  <text x="24" y="101" class="summary">Total nativo: {total_native:.2} s · JVM: {total_clojure:.2} s · Vitórias: nativo {native_wins}, JVM {clojure_wins}, empates {ties}</text>"#
+        r#"  <text x="24" y="101" class="summary">Σ CLJN {total_native:.2} s · JVM {total_clojure:.2} s · W CLJN/JVM/= {native_wins}/{clojure_wins}/{ties}</text>"#
     )
     .unwrap();
     svg.push_str(
         "  <rect x=\"24\" y=\"122\" width=\"14\" height=\"14\" rx=\"3\" fill=\"#34d399\"/>\n\
-         <text x=\"46\" y=\"134\" class=\"subtitle\">nativo mais rápido</text>\n\
-         <rect x=\"205\" y=\"122\" width=\"14\" height=\"14\" rx=\"3\" fill=\"#fb923c\"/>\n\
-         <text x=\"227\" y=\"134\" class=\"subtitle\">JVM mais rápida</text>\n\
-         <text x=\"24\" y=\"174\" class=\"axis\">Caso</text>\n",
+         <text x=\"46\" y=\"134\" class=\"subtitle\">CLJN</text>\n\
+         <rect x=\"132\" y=\"122\" width=\"14\" height=\"14\" rx=\"3\" fill=\"#fb923c\"/>\n\
+         <text x=\"154\" y=\"134\" class=\"subtitle\">JVM</text>\n",
     );
     writeln!(
         svg,
-        r#"  <text x="{:.0}" y="174" class="axis" text-anchor="middle">JVM mais rápida ← paridade → nativo mais rápido</text>"#,
+        r#"  <text x="{:.0}" y="174" class="axis" text-anchor="middle">JVM ← 1× → CLJN</text>"#,
         ratio_x(1.0)
     )
     .unwrap();
     writeln!(
         svg,
-        r#"  <text x="{VALUE_X}" y="174" class="axis">Vantagem</text>"#
+        r#"  <text x="{VALUE_X}" y="174" class="axis">×</text>"#
     )
     .unwrap();
     push_ratio_axis(&mut svg, height);
@@ -367,7 +368,7 @@ fn render_ratio_chart(benchmarks: &[Benchmark], suite_title: &str, metric: TimeM
         }
         write!(
             svg,
-            "<title>{escaped_name}: nativo {native:.2} s; JVM {clojure:.2} s; {advantage}</title>"
+            "<title>{escaped_name}: CLJN {native:.2} s; JVM {clojure:.2} s; {advantage}</title>"
         )
         .unwrap();
         if bar_width < 2.0 {
@@ -384,7 +385,7 @@ fn render_ratio_chart(benchmarks: &[Benchmark], suite_title: &str, metric: TimeM
 
     writeln!(
         svg,
-        r#"  <text x="24" y="{}" class="footer">Menor é melhor. Escala log₂; barras limitadas às bordas do gráfico. * Valor nativo abaixo da resolução de 0,01 s do runner.</text>"#,
+        r#"  <text x="24" y="{}" class="footer">log₂ · ratio = JVM / CLJN · * CLJN &lt; 0.01 s</text>"#,
         height - 20
     )
     .unwrap();
@@ -416,12 +417,15 @@ fn render_memory_chart(benchmarks: &[Benchmark], suite_title: &str) -> String {
     .unwrap();
     writeln!(
         svg,
-        r#"  <title id="chart-title">{escaped_suite} — pico de memória RSS</title>"#
+        r#"  <title id="chart-title">{escaped_suite} · RSS · CLJN/JVM</title>"#
     )
     .unwrap();
-    svg.push_str(
-        "  <desc id=\"chart-desc\">Comparação do pico de memória residente em MiB por caso, em escala logarítmica.</desc>\n",
-    );
+    writeln!(
+        svg,
+        r#"  <desc id="chart-desc">metric=RSS; series=CLJN,JVM; unit=MiB; scale=log2; n={}</desc>"#,
+        benchmarks.len()
+    )
+    .unwrap();
     push_styles(&mut svg);
     writeln!(
         svg,
@@ -430,28 +434,26 @@ fn render_memory_chart(benchmarks: &[Benchmark], suite_title: &str) -> String {
     .unwrap();
     writeln!(
         svg,
-        r#"  <text x="24" y="42" class="title">{escaped_suite} — pico de memória RSS</text>"#
+        r#"  <text x="24" y="42" class="title">{escaped_suite} · n={} · RSS</text>"#,
+        benchmarks.len()
     )
     .unwrap();
-    svg.push_str(
-        "  <text x=\"24\" y=\"70\" class=\"subtitle\">Valores absolutos por processo; pontos mais à esquerda consomem menos memória.</text>\n",
-    );
+    svg.push_str("  <text x=\"24\" y=\"70\" class=\"subtitle\">MiB · log₂</text>\n");
     writeln!(
         svg,
-        r#"  <text x="24" y="101" class="summary">Mediana nativa: {median_native:.1} MiB · JVM: {median_clojure:.1} MiB · Menor RSS: nativo {native_wins}, JVM {clojure_wins}, empates {ties}</text>"#
+        r#"  <text x="24" y="101" class="summary">P50 CLJN {median_native:.1} MiB · JVM {median_clojure:.1} MiB · W CLJN/JVM/= {native_wins}/{clojure_wins}/{ties}</text>"#
     )
     .unwrap();
     svg.push_str(
         "  <circle cx=\"31\" cy=\"129\" r=\"6\" fill=\"#38bdf8\"/>\n\
-         <text x=\"46\" y=\"134\" class=\"subtitle\">nativo</text>\n\
-         <path d=\"M 201 122 L 208 129 L 201 136 L 194 129 Z\" fill=\"#c084fc\"/>\n\
-         <text x=\"218\" y=\"134\" class=\"subtitle\">Clojure/JVM</text>\n\
-         <text x=\"24\" y=\"174\" class=\"axis\">Caso</text>\n\
-         <text x=\"930\" y=\"174\" class=\"axis\" text-anchor=\"middle\">Pico de RSS em MiB (escala log₂)</text>\n",
+         <text x=\"46\" y=\"134\" class=\"subtitle\">CLJN</text>\n\
+         <path d=\"M 116 122 L 123 129 L 116 136 L 109 129 Z\" fill=\"#c084fc\"/>\n\
+         <text x=\"133\" y=\"134\" class=\"subtitle\">JVM</text>\n\
+         <text x=\"930\" y=\"174\" class=\"axis\" text-anchor=\"middle\">RSS · MiB · log₂</text>\n",
     );
     writeln!(
         svg,
-        r#"  <text x="{VALUE_X}" y="174" class="axis">Menor consumo</text>"#
+        r#"  <text x="{VALUE_X}" y="174" class="axis">×</text>"#
     )
     .unwrap();
     push_memory_axis(&mut svg, height);
@@ -484,7 +486,7 @@ fn render_memory_chart(benchmarks: &[Benchmark], suite_title: &str) -> String {
         .unwrap();
         writeln!(
             svg,
-            r##"  <circle cx="{native_x:.1}" cy="{row_center:.1}" r="5" fill="#38bdf8"><title>{escaped_name}: nativo {native:.1} MiB</title></circle>"##
+            r##"  <circle cx="{native_x:.1}" cy="{row_center:.1}" r="5" fill="#38bdf8"><title>{escaped_name}: CLJN {native:.1} MiB</title></circle>"##
         )
         .unwrap();
         writeln!(
@@ -506,7 +508,7 @@ fn render_memory_chart(benchmarks: &[Benchmark], suite_title: &str) -> String {
 
     writeln!(
         svg,
-        r#"  <text x="24" y="{}" class="footer">Menor é melhor. A coluna final mostra quantas vezes o vencedor consumiu menos RSS no caso.</text>"#,
+        r#"  <text x="24" y="{}" class="footer">log₂ · ratio = JVM / CLJN</text>"#,
         height - 20
     )
     .unwrap();
@@ -538,7 +540,7 @@ fn push_ratio_axis(svg: &mut String, height: i32) {
                 if exponent < 0 {
                     Some(format!("JVM {}×", 2_i32.pow((-exponent) as u32)))
                 } else {
-                    Some(format!("Nativo {}×", 2_i32.pow(exponent as u32)))
+                    Some(format!("CLJN {}×", 2_i32.pow(exponent as u32)))
                 }
             } else {
                 None
@@ -655,23 +657,23 @@ fn memory_x(memory_mib: f64) -> f64 {
 
 fn advantage_label(ratio: f64, limited: bool) -> String {
     if limited {
-        format!("Nativo >{ratio:.0}×*")
+        format!("CLJN >{ratio:.0}×*")
     } else if ratio > 1.005 {
-        format!("Nativo {ratio:.2}×")
+        format!("CLJN {ratio:.2}×")
     } else if ratio < 0.995 {
         format!("JVM {:.2}×", 1.0 / ratio)
     } else {
-        "empate".to_owned()
+        "1.00×".to_owned()
     }
 }
 
 fn memory_advantage_label(ratio: f64) -> String {
     if ratio > 1.005 {
-        format!("Nativo {ratio:.1}×")
+        format!("CLJN {ratio:.1}×")
     } else if ratio < 0.995 {
         format!("JVM {:.1}×", 1.0 / ratio)
     } else {
-        "empate".to_owned()
+        "1.0×".to_owned()
     }
 }
 
@@ -727,9 +729,9 @@ mod tests {
 
     #[test]
     fn labels_both_sides_of_parity() {
-        assert_eq!(advantage_label(4.0, false), "Nativo 4.00×");
+        assert_eq!(advantage_label(4.0, false), "CLJN 4.00×");
         assert_eq!(advantage_label(0.25, false), "JVM 4.00×");
-        assert_eq!(advantage_label(36.0, true), "Nativo >36×*");
+        assert_eq!(advantage_label(36.0, true), "CLJN >36×*");
     }
 
     #[test]
@@ -741,15 +743,19 @@ mod tests {
         );
         assert!(chart.contains(r#"role="img""#));
         assert!(chart.contains("01-group/01-case.clj"));
-        assert!(chart.contains("Total nativo: 1.00 s"));
-        assert!(chart.contains("Nativo 2.00×"));
+        assert!(chart.contains("Σ CLJN 1.00 s"));
+        assert!(chart.contains("CLJN 2.00×"));
+        assert!(!chart.contains("nativo"));
+        assert!(!chart.contains("mais rápido"));
     }
 
     #[test]
     fn renders_absolute_memory_values() {
         let chart = render_memory_chart(&[benchmark("01-group/01-case.clj")], "Suite");
-        assert!(chart.contains("nativo 16.0 MiB"));
+        assert!(chart.contains("CLJN 16.0 MiB"));
         assert!(chart.contains("JVM 256.0 MiB"));
-        assert!(chart.contains("Nativo 16.0×"));
+        assert!(chart.contains("CLJN 16.0×"));
+        assert!(!chart.contains("memória"));
+        assert!(!chart.contains("Menor"));
     }
 }
