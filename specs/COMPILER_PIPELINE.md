@@ -72,8 +72,10 @@ selecionado é parte da metodologia dos benchmarks.
 
 ## 5. Runtime e link
 
-`crates/clojure-codegen/runtime.c` é compilado pelo compilador definido em `CC` ou por
-`cc`. A CLI liga o objeto C ao objeto Cranelift e produz um executável do host.
+Os módulos em `crates/clojure-codegen/runtime/` são amalgamados, na ordem declarada pelo
+codegen, e compilados como uma única unidade pelo compilador definido em `CC` ou por
+`cc`. `crates/clojure-codegen/runtime.c` oferece a mesma unidade para ferramentas C
+diretas. A CLI liga o objeto C ao objeto Cranelift e produz um executável do host.
 
 O runtime implementa:
 

@@ -12,6 +12,7 @@ dependência da CI, do runner `verify` nem do binário produzido.
 | Lints Rust | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
 | Lints Clojure | `scripts/lint-clojure.sh` | zero erros e zero warnings |
 | Unitários/integração | `cargo test --workspace` | todos verdes |
+| Runtime C | `scripts/test-runtime-c.sh` | invariantes internos, ABI, erros e GC stress |
 | Cobertura | `scripts/coverage.sh` | gates globais e por arquivo |
 | Conformidade | `scripts/conformance.sh verify` | ativos/xfail/checksums corretos |
 | GC | casos com `CLJN_GC_STRESS=1` | coleta a cada alocação sem corrupção |
@@ -21,6 +22,17 @@ dependência da CI, do runner `verify` nem do binário produzido.
 Property testing, fuzzing, Miri, sanitizers e uma matriz multiplataforma mais ampla
 continuam recomendados para as fases que introduzirem novas superfícies de `unsafe`,
 concorrência e FFI.
+
+O runtime C possui harnesses próprios em `crates/clojure-codegen/tests/c/`. O harness
+unitário inclui `runtime.c` na mesma unidade de tradução para observar invariantes
+internos sem ampliar a ABI de produção. O harness de integração é compilado e linkado
+separadamente, consumindo somente os símbolos públicos; os contratos fatais são
+executados em subprocessos para validar status e `stderr`. As suítes rodam normalmente e
+com `CLJN_GC_STRESS=1`. Para executar também ASan e UBSan:
+
+```bash
+scripts/test-runtime-c.sh --sanitize
+```
 
 ## Suíte de conformidade
 

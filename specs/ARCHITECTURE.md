@@ -53,8 +53,10 @@ com o programa do usuário em todo `build`.
 - O reader não depende do analyzer nem do codegen.
 - O interpretador usa `clojure-value`; ele não compartilha a ABI de `Value` do runtime C.
 - O analyzer recebe forms e produz a representação consumida pelo codegen.
-- O codegen incorpora `runtime.c`, compila-o com o compilador C do host e liga esse
-  objeto ao objeto Cranelift.
+- O codegen incorpora os fragmentos de `clojure-codegen/runtime/` na ordem declarada,
+  formando uma única unidade C, compila-a com o compilador do host e liga esse objeto ao
+  objeto Cranelift. `clojure-codegen/runtime.c` permanece como entrada amalgamada
+  compatível para compilação e ferramentas C diretas.
 - A CLI fica no topo e orquestra os caminhos de leitura, interpretação e build.
 - `clojure-test-support` executa o produto pela interface pública da CLI.
 

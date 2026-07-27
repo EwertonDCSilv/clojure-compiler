@@ -24,8 +24,44 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use target_lexicon::Triple;
 
-/// Fonte C do runtime, compilada junto ao objeto no passo de link.
-pub const RUNTIME_C: &str = include_str!("../runtime.c");
+macro_rules! embed_runtime_modules {
+    ($(($name:literal, $path:literal)),+ $(,)?) => {
+        /// Fonte C amalgamada do runtime, compilada junto ao objeto no passo de link.
+        ///
+        /// Os módulos permanecem em arquivos separados para revisão e testes, mas são
+        /// concatenados na ordem original. O compilador C continua recebendo uma única
+        /// unidade de tradução, preservando visibilidade interna, ABI e oportunidades
+        /// de otimização entre subsistemas.
+        pub const RUNTIME_C: &str = concat!($(include_str!($path)),+);
+
+        #[cfg(test)]
+        const RUNTIME_MODULES: &[(&str, &str)] = &[
+            $(($name, include_str!($path))),+
+        ];
+    };
+}
+
+embed_runtime_modules!(
+    ("types", "../runtime/00_types.c"),
+    ("gc", "../runtime/10_gc.c"),
+    (
+        "values-and-functions",
+        "../runtime/20_values_and_functions.c"
+    ),
+    ("vector", "../runtime/30_vector.c"),
+    ("hash-collections", "../runtime/40_hash_collections.c"),
+    ("sorted-collections", "../runtime/50_sorted_collections.c"),
+    (
+        "records-and-dispatch",
+        "../runtime/60_records_and_dispatch.c"
+    ),
+    ("transients", "../runtime/70_transients.c"),
+    ("core-operations", "../runtime/80_core_operations.c"),
+    ("print", "../runtime/90_print.c"),
+    ("exceptions", "../runtime/100_exceptions.c"),
+    ("multimethods", "../runtime/110_multimethods.c"),
+    ("test-introspection", "../runtime/120_test_introspection.c"),
+);
 
 /// Nível de otimização aplicado pelo Cranelift ao código gerado.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2287,6 +2323,18 @@ fn single_d(msg: impl Into<String>) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embedded_runtime_is_the_ordered_concatenation_of_unique_modules() {
+        let mut concatenated = String::new();
+        let mut names = std::collections::BTreeSet::new();
+        for (name, source) in RUNTIME_MODULES {
+            assert!(names.insert(*name), "módulo duplicado: {name}");
+            assert!(!source.is_empty(), "módulo vazio: {name}");
+            concatenated.push_str(source);
+        }
+        assert_eq!(RUNTIME_C, concatenated);
+    }
 
     #[test]
     fn collects_strings_from_every_nested_ast_container() {
