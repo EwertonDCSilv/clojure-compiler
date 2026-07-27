@@ -524,7 +524,7 @@
       "nav.start": "Начало работы",
       "nav.github": "GitHub",
       "hero.eyebrow": "Экспериментальная нативная компиляция",
-      "hero.titleHtml": "Clojure, <span class=\"accent\">скомпилирован.</span> Без JVM.",
+      "hero.titleHtml": "Clojure. <span class=\"accent\">Нативно.</span> Без JVM.",
       "hero.descriptionHtml":
         "<strong>clojure-native</strong> превращает документированное подмножество Clojure в автономные нативные исполняемые файлы с помощью Rust, Cranelift и компактного runtime на C.",
       "hero.primaryCta": "Скомпилировать первую программу",
