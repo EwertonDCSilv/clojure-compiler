@@ -1,19 +1,22 @@
 # Plano de otimização do codegen numérico e do rooting de GC
 
-Status: **proposto**
+Status: **parcialmente implementado**
 
 Escopo principal: `clojure-codegen`, ABI do runtime compilado e testes e2e.
 
 Decisão arquitetural: [ADR-0006](adr/0006-codegen-optimization.md).
 
-Problemas-alvo:
+Problemas-alvo originais:
 
-1. `+`, `-`, `*`, `<`, `<=`, `>`, `>=`, `inc` e `dec` sempre atravessam a ABI C
-   (`cljn_add`, `cljn_le`, `cljn_inc` etc.), mesmo quando os operandos são fixnums.
-2. O contrato atual de `expr` empurra todo resultado no shadow-stack, todo binding chama
-   `cljn_gc_set` e todo descarte chama `cljn_gc_popn`, inclusive em regiões que não
-   alocam. Em loops numéricos isso gera milhões de chamadas sem contribuir para a
-   correção do GC.
+1. `+`, `-`, `*`, `quot`, `mod`, `<`, `<=`, `>`, `>=`, `inc` e `dec` atravessavam a
+   ABI C mesmo quando os operandos eram fixnums.
+2. O contrato de `expr` fazia cada atualização da shadow stack por chamadas
+   `cljn_gc_set`, `cljn_gc_push` e `cljn_gc_popn`.
+
+Fast paths para essas operações e loads/stores diretos de roots já foram entregues. O
+rooting continua eager; as seções de liveness/safepoints descrevem o principal trabalho
+restante. `CodegenOptions` também já expõe `none`, `speed` e `speed-and-size`, mas
+`none` permanece padrão após regressão medida no gate Cormen.
 
 Este plano mantém a representação tagged e o coletor mark-sweep preciso, não-móvel e
 single-thread. Não troca o GC nem muda a semântica da linguagem.
@@ -229,7 +232,8 @@ backend.
 
 ### 3.5 Configuração do Cranelift
 
-O codegen hoje fixa `opt_level = "none"`. Introduzir `CodegenOptions`:
+O codegen originalmente fixava `opt_level = "none"`. `CodegenOptions` e a CLI já
+expõem:
 
 ```text
 Debug   -> opt_level none

@@ -7,7 +7,7 @@ Cada risco liga-se a decisões/fases relevantes.
 | --: | --- | :--: | :--: | --- | --- |
 | R1 | Complexidade excessiva da semântica de Clojure (escopo real maior que o previsto) | Alta | Alto | tarefas da Fase 3/7 estouram estimativa | escopo travado em LANGUAGE_SCOPE; fora-de-escopo vira **erro**, não silêncio; cortar por níveis A/B/C |
 | R2 | Execução de macros (determinismo, isolamento, ordem de carga) | Alta | Alto | flakiness em `conformance/macros` | interpretador dedicado + sandbox + cache por hash (ADR-0004); macros base em Rust primeiro |
-| R3 | Gerenciamento de memória (precisão de roots, vazamentos, ciclos de lazy-seq) | Alta | Alto | testes de retenção/ciclo, Miri | shadow-stack roots precisos; protótipos #5/#6 antes de produção; mark-sweep não-móvel simples (ADR-0002) |
+| R3 | Gerenciamento de memória (precisão de roots, vazamentos; ciclos quando lazy-seq chegar) | Alta | Alto | GC stress, retenção e checksums | shadow-stack precisa já entregue; mark-sweep não-móvel; avançar rooting por liveness (ADR-0002/0006) |
 | R4 | Performance de chamadas dinâmicas / dispatch | Média | Médio | benchmarks Criterion | chamada direta quando estático; dispatch de protocol direto `[FUTURO]`; não otimizar cedo |
 | R5 | Compatibilidade com bibliotecas (Nível D) menor que o esperado | Média | Médio | tentar compilar libs puras reais na Fase 12 | metas honestas (D é `[FUTURO]`); política de incompatibilidade clara |
 | R6 | **Crescimento descontrolado de escopo** | Alta | Alto | backlog inchando; fases sem fim | "menor caminho até o binário" como norte; congelar subconjuntos por fase; ADRs travam decisões |
@@ -23,10 +23,10 @@ Cada risco liga-se a decisões/fases relevantes.
 | R16 | Tempo de compilação do próprio compilador/projetos do usuário | Média | Médio | tempo de build no CI | Cranelift é rápido; medir; caching/incremental `[FUTURO]` |
 | R17 | Tamanho dos executáveis | Baixa | Médio | métrica de tamanho no CI | link estático enxuto; medir; strip/otimização `[FUTURO]` |
 | R18 | Manutenção por equipe pequena | Alta | Alto | velocity | módulos com fronteiras claras; specs vivas; decisões em ADR; testes como contrato |
-| R19 | Migração de representação de valor (enum → tagged/NaN) invasiva | Média | Médio | perf estagnada exige troca | `Value` atrás de API trocável (ADR-0003); adiar até dados de bench |
+| R19 | Divergência entre o `Value` Rust do interpretador e o `Value` tagged da ABI nativa | Média | Médio | diferenças interpreter/native | manter fronteiras explícitas e conformidade em ambos os caminhos |
 | R20 | Panics do Rust vazando como "erros" da linguagem | Média | Médio | fuzz/asserts | fronteira captura panic → "internal compiler error"; nunca como exceção normal |
 | R21 | Sandbox de macro insuficiente (I/O/rede em build-time) | Média | Médio | auditoria de FFI/IO no interp | negar por padrão; permitir só caminhos do projeto declarados |
-| R22 | Oracle indisponível/instável no CI (Clojure/JVM) | Baixa | Médio | CI de differential | fixar versão do oracle; snapshots dos resultados esperados versionados |
+| R22 | Oracle manual indisponível ou atualizado sem controle | Baixa | Médio | revisão de `oracle --check` | fixar Clojure 1.12.5; manter snapshots/checksums; CI nativa não depende da JVM |
 
 ## Política de `unsafe` (start_spec §25)
 
@@ -37,9 +37,10 @@ Todo bloco `unsafe` deve ter, sem exceção:
 - **revisão** por segundo par de olhos;
 - **documentação** na API pública se a invariante vaza para o chamador.
 
-`unsafe` é concentrado em `clojure-gc`, `clojure-value` (se/quando migrar p/ tagged
-pointers) e `clojure-ffi`. Demais crates devem ser `#![forbid(unsafe_code)]` sempre que
-possível. CI roda Miri nos crates com `unsafe`.
+No corte atual, a parte mais sensível fica no runtime C embutido em `clojure-codegen`.
+Crates futuros de GC/FFI devem concentrar `unsafe`; os demais devem usar
+`#![forbid(unsafe_code)]` quando possível. Miri se aplica ao Rust `unsafe`; ASan/UBSan
+são necessários para o runtime C quando esses jobs forem adicionados.
 
 ## Segurança de supply chain e build
 

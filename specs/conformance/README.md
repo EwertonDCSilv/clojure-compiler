@@ -6,6 +6,8 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
+Current inventory: **181 cases** — 141 active, 9 expected failures, and 31 pending.
+
 ## Run it
 
 ```bash

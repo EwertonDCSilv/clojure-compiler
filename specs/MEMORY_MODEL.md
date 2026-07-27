@@ -33,7 +33,9 @@ lazy-seq/closure e sofre churn no sharing). É necessário um **coletor tracing*
 ## Decisão MVP
 
 **Coletor tracing mark-sweep, preciso, não-móvel, single-thread**, com **shadow-stack de
-roots** (rooting explícito por handles), no crate `clojure-gc`.
+roots** (rooting explícito por handles). O plano original previa um crate
+`clojure-gc`; o corte executável atual implementa o coletor no runtime C embutido em
+`clojure-codegen`.
 
 Por que essas propriedades:
 - **Preciso** (não conservativo): sem vazamentos por falsos ponteiros; requer conhecer os
@@ -70,8 +72,9 @@ Por que essas propriedades:
   de coleção) é `[FUTURO]`.
 - **Pausas:** stop-the-world; medir no benchmark de GC pause (PERF). Objetivo MVP: pausas
   aceitáveis para CLIs/serverless; não otimizar prematuramente.
-- **Integração com código compilado:** via ABI C — `cljn_gc_push_frame`/`pop_frame`,
-  `cljn_alloc(type, size)`; alocação pode disparar coleta em safepoints (nas alocações).
+- **Integração com código compilado:** via ABI C — `cljn_gc_enter`/`cljn_gc_leave`
+  delimitam frames. Os slots e o stack pointer são atualizados diretamente pelo objeto
+  gerado; alocações no runtime podem disparar coleta.
 - **Integração com FFI:** objetos passados a C são **pinados/rooteados** durante a chamada;
   ponteiros crus obtidos de C não são gerenciados (ver
   [NATIVE_INTEROP.md](NATIVE_INTEROP.md)).
@@ -98,10 +101,11 @@ Testes de stress/ciclos/retenção e uso de **Miri** nos blocos `unsafe` do GC �
 **coletor mark-sweep preciso, não-móvel, single-thread com shadow-stack de roots**
 descrito acima:
 
-- **Roots**: o código gerado (`clojure-codegen`) mantém um shadow-stack — cada função
-  reserva `local_count` slots (locais, espelhados junto às variáveis Cranelift) via
-  `cljn_gc_enter`/`leave`, e empurra/retira temporários (`cljn_gc_push`/`popn`) em volta
-  de cada alocação. O coletor varre `[0, gc_sp)`; **nunca** escaneia a pilha nativa.
+- **Roots**: o código gerado (`clojure-codegen`) mantém uma shadow stack — cada função
+  reserva `local_count` slots via `cljn_gc_enter`/`leave`. Locais e temporários usam
+  loads/stores diretos em `gc_stack`/`gc_sp`; o objeto gerado não importa
+  `cljn_gc_push`, `cljn_gc_popn` nem `cljn_gc_set` no caminho comum. O coletor varre
+  `[0, gc_sp)` e **nunca** escaneia a pilha nativa.
 - **Objetos** têm header (`mark` + lista global) para o sweep; `mark` itera a cauda de
   listas (não recursa) para não estourar a pilha em listas longas.
 - **Gatilho**: a cada `N` alocações; `CLJN_GC_STRESS=1` coleta a cada alocação
@@ -113,7 +117,8 @@ descrito acima:
 
 Ainda `[FUTURO]` (conforme o caminho de evolução): geracional/write-barriers, móvel/
 compactação, multi-thread/concorrente (possivelmente MMTk). O interpretador de bootstrap
-segue com `Rc` (conforme previsto).
+segue com `Rc` (conforme previsto). O rooting do código compilado ainda é eager; o
+próximo refinamento posiciona roots usando liveness somente nos safepoints de alocação.
 
 ## Caminho de evolução
 

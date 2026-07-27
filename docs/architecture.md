@@ -1,41 +1,79 @@
-# Arquitetura do clojure-native
+# Arquitetura
 
-O projeto é organizado como um workspace Cargo com crates especializados em cada parte da pilha.
+O `clojure-compiler` é um workspace Cargo. O executável entregue pelo workspace se chama
+`clojure-native`.
 
 ## Crates principais
 
-- `clojure-native-cli`
-  - CLI de usuário para `read`, `eval`, `run` e `build`
-  - Comando `build` compila um programa Clojure para binário nativo via Cranelift e depois invoca o linker C
-- `clojure-reader`
-  - Leitor Clojure que converte texto em AST, com suporte a spans para diagnósticos
-- `clojure-syntax`
-  - Definição de AST e estruturas sintáticas do compilador
-- `clojure-analyzer`
-  - Analisa forms Clojure, resolve vars, valida `recur`, e produz um `Program` para o codegen
-- `clojure-codegen`
-  - Gera um objeto nativo Cranelift do `Program`
-  - Importa runtime C para operações semânticas e GC
-- `clojure-interp`
-  - Interpretador usado durante bootstrap e testes de validação
-- `clojure-value`
-  - Representação de valores Clojure em Rust
-- `clojure-diagnostics`
-  - Diagnósticos e mensagens de erro legíveis
-- `clojure-span`
-  - Gerenciamento de spans de fonte
+| Crate | Responsabilidade |
+| --- | --- |
+| `clojure-span` | Posições e intervalos de código-fonte |
+| `clojure-diagnostics` | Erros determinísticos e renderização de diagnósticos |
+| `clojure-syntax` | Forms e estruturas sintáticas |
+| `clojure-reader` | Tokenização, reader macros e parsing |
+| `clojure-value` | Valores usados pelo interpretador |
+| `clojure-interp` | Interpretador de bootstrap |
+| `clojure-analyzer` | Resolução, macroexpansão, closures, `recur`, records e protocolos |
+| `clojure-codegen` | IR Cranelift, objeto nativo e runtime C embutido |
+| `clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
+| `clojure-test-support` | Runner, schema, checksums, oracle e relatórios de conformidade |
 
 ## Fluxo de compilação
 
-1. O CLI lê o arquivo-fonte e o `core` compilável.
-2. O leitor (`clojure-reader`) converte o texto em forms Clojure.
-3. O analisador (`clojure-analyzer`) transforma forms em `Program` com AST analisado.
-4. O codegen (`clojure-codegen`) converte o `Program` para objeto nativo Cranelift.
-5. O runtime C embutido é gravado e o linker C produz o executável final.
+```text
+fonte .clj
+   │
+   ▼
+reader ──► forms com spans
+   │
+   ▼
+macroexpansão + analyzer ──► programa analisado
+   │
+   ▼
+codegen Cranelift ──► objeto nativo
+   │
+   ▼
+cc + runtime C embutido ──► executável do host
+```
+
+O CLI carrega primeiro o subconjunto compilável de `clojure.core`, analisa o core e o
+programa do usuário como uma unidade, gera o objeto e invoca o linker C do sistema.
+
+## Modelo de valores e chamadas
+
+No código compilado, fixnums são valores tagueados e os demais valores são ponteiros
+para objetos rastreados pelo GC. As operações inteiras mais frequentes (`+`, `-`, `*`,
+`quot`, `mod`, `inc`, `dec` e comparações) têm fast paths no código gerado, com guards
+de tipo e overflow. Casos inválidos seguem para funções verificadas do runtime.
+
+Todas as funções compiladas usam a convenção uniforme `(self, argc, argv)`. Isso permite
+aridades múltiplas, variádicas, closures, chamadas indiretas e `apply`. `loop/recur`
+vira um backedge nativo e não cresce a pilha.
+
+## Coleções
+
+- Lista: células cons ligadas.
+- Vetor: trie bitmap persistente de 32 vias.
+- Mapa: array-map pequeno que promove para HAMT de 32 vias.
+- Set: array-set pequeno que promove para a representação HAMT.
+- Record: nome nominal e campos com semântica associativa.
+
+As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP,
+sorted collections e transients continuam planejados.
 
 ## Runtime e GC
 
-- Valores são representados como `i64` tagueado para fixnums, com ponteiros para strings e listas.
-- Operações semânticas são implementadas em runtime C e chamadas pelo código gerado.
-- O GC atual usa shadow-stack de roots via chamadas `gc_enter`, `gc_leave`, `gc_push`, `gc_popn` e `gc_set`.
-- `loop/recur` é compilado como salto para o bloco de loop/fn, evitando crescimento da pilha.
+O runtime C embutido fornece alocação, coleções, strings, impressão, dispatch de
+protocolos e slow paths. O coletor é mark-sweep preciso, não móvel e single-thread.
+
+Cada função compilada abre um frame na shadow stack. O codegen faz loads/stores diretos
+nos slots de roots e no stack pointer, em vez de chamar `gc_push`, `gc_popn` ou `gc_set`
+para cada expressão. A entrada e a saída do frame continuam delimitadas pelo runtime.
+O modo `CLJN_GC_STRESS=1` força coleta em toda alocação para validar rooting.
+
+## Testes
+
+Além dos testes de cada crate, `clojure-test-support` descobre e executa os casos de
+[`tests/conformance/`](../tests/conformance). Casos `active` bloqueiam em divergências;
+`xfail` bloqueia se passar inesperadamente; `pending` valida schema e checksum sem
+executar. O runner reutiliza um único CLI release e limita a concorrência a quatro casos.

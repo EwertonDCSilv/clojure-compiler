@@ -1,5 +1,10 @@
 # VISION.md
 
+> Este documento descreve a visão de longo prazo. Para não confundir meta com suporte
+> atual, consulte o snapshot executável em [README.md](README.md) e a matriz em
+> [tests/conformance](../tests/conformance). Macros de usuário, namespaces
+> multi-arquivo e FFI nativa citados abaixo ainda não foram entregues.
+
 ## Problema
 
 Clojure hoje depende da JVM. Isso traz três custos que limitam categorias inteiras
@@ -26,11 +31,13 @@ diretamente para código nativo, produzindo **um executável autônomo** que:
 - distribui-se como arquivo único;
 - preserva a semântica de Clojure dentro do escopo documentado (ver
   [LANGUAGE_SCOPE.md](LANGUAGE_SCOPE.md));
-- oferece estruturas de dados persistentes reais, macros, GC e FFI nativa.
+- oferece estruturas de dados persistentes reais e GC; no alvo completo, inclui macros
+  de usuário e FFI nativa.
 
 Não é uma transpilação superficial: é uma implementação real de linguagem com reader,
-analisador, expansão de macros, namespaces, runtime, coleções persistentes e sistema
-de build próprios (ver [ARCHITECTURE.md](ARCHITECTURE.md)).
+analisador, expansão de macros conhecidas, runtime, coleções persistentes e build
+próprios. Namespaces multi-arquivo e macroexpansão de usuário continuam no roteiro (ver
+[ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## Casos de uso prioritários (MVP)
 

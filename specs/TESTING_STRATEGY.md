@@ -1,95 +1,135 @@
-# TESTING_STRATEGY.md
+# Estratégia de testes
 
-Estratégia baseada em **equivalência semântica** contra a implementação oficial de
-Clojure/JVM usada **apenas como oracle de desenvolvimento** — nunca como dependência do
-binário final (start_spec §22).
+A estratégia combina testes Rust, execução nativa end-to-end, conformidade versionada,
+GC stress, cobertura e benchmarks. Clojure/JVM é apenas um oracle manual: não é
+dependência da CI, do runner `verify` nem do binário produzido.
 
-> **Fato local**: Java 21 está disponível no ambiente; a CLI `clojure`/`clj` **não**.
-> Para usar o oracle é preciso instalar Clojure (ou usar um jar do `clojure.main`) no
-> ambiente de dev/CI. O binário produzido **não** depende disso.
+## Camadas
 
-## Diferencial (oracle) — o método central
-
-Para cada fragmento de código no subconjunto suportado:
-
-1. Executa no **oracle** (Clojure/JVM) → captura valor (`pr-str`), tipo, stdout/stderr,
-   erro (classe+mensagem), metadata, ordem, efeitos.
-2. Executa no **binário nativo** (ou no interpretador de bootstrap) → captura o mesmo.
-3. **Compara**, com **normalização** que ignora *acidentes* da JVM (start_spec §30):
-   - ignorar diferenças de `hash` numérico e ordem de iteração de `hash-map` **não
-     especificada** (comparar como conjuntos/mapas, não como texto);
-   - ignorar formatação de exceção específica da JVM; comparar **categoria** de erro e
-     mensagem essencial;
-   - divergências **declaradas** em [COMPATIBILITY_SPEC.md](COMPATIBILITY_SPEC.md) são
-     marcadas como *expected-diff* (o teste afirma a divergência, não a igualdade).
-
-Distinguir sempre: **spec** (deve casar) × **comportamento oficial** × **acidente**
-(não casar exige justificativa) — cada caso de teste declara em qual categoria está.
-
-## Tipos de teste e ferramentas Rust (com justificativa)
-
-| Teste | Ferramenta | Por quê |
+| Camada | Comando ou ferramenta | Contrato |
 | --- | --- | --- |
-| Unitário / integração | `cargo test` | base |
-| Parser / golden de forms e AST | `insta` (snapshots) | detecta regressão de estrutura/erros com revisão fácil |
-| Golden de mensagens de erro | `insta` | diagnósticos são contrato de UX |
-| Property-based (leis de `=`/`hash`, coleções persistentes vs. modelo) | `proptest` | cobre espaço de entrada que exemplos não cobrem |
-| (alternativa/《complemento》 property) | `quickcheck` | avaliar; provavelmente **só `proptest`** p/ não duplicar — decisão: `proptest` |
-| Differential (oracle) | harness próprio em `clojure-test-support` | equivalência semântica |
-| Fuzzing do reader | `cargo-fuzz` | reader é superfície de entrada não confiável; achar panics/hangs |
-| Fuzzing de coleções persistentes | `cargo-fuzz` + modelo | sequências aleatórias de ops vs. `Vec`/`BTreeMap` de referência |
-| GC: stress, ciclos, retenção | testes próprios | correção do coletor e ausência de vazamento |
-| Segurança de memória em `unsafe` (GC, value, ffi) | **Miri** | detecta UB em código `unsafe` |
-| Sanitizers (ASan/UBSan) no binário nativo | build flags | UB no código gerado/runtime linkado |
-| Concorrência (`atom`/CAS; futuro multi-thread) | **Loom** | modela intercalações; só onde há concorrência (MVP: mínimo) |
-| Benchmarks | **Criterion** | medir startup/dispatch/coleções/GC (PERF) |
-| ABI / FFI | testes de integração C | contratos `extern "C"` estáveis |
-| End-to-end / build limpo | scripts de CI | `clojure-native build` em ambiente limpo |
-| Cross-platform | matriz de CI | Linux **e** Windows verdes (requisito de aceite) |
+| Formatação | `cargo fmt --all --check` | nenhuma divergência |
+| Lints | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
+| Unitários/integração | `cargo test --workspace` | todos verdes |
+| Cobertura | `scripts/coverage.sh` | gates globais e por arquivo |
+| Conformidade | `scripts/conformance.sh verify` | ativos/xfail/checksums corretos |
+| GC | casos com `CLJN_GC_STRESS=1` | coleta a cada alocação sem corrupção |
+| Benchmarks | runners Cracking e Cormen | checksum e métricas comparáveis |
+| Oracle JVM | `scripts/conformance.sh oracle ...` | operação exclusivamente manual |
 
-Justificativa de exclusão: `quickcheck` redundante com `proptest` (adotar um só). Loom só
-onde há real concorrência (evitar custo sem concorrência no MVP).
+Property testing, fuzzing, Miri, sanitizers e uma matriz multiplataforma mais ampla
+continuam recomendados para as fases que introduzirem novas superfícies de `unsafe`,
+concorrência e FFI.
 
 ## Suíte de conformidade
 
-Programas `.clj` versionados que servem de contrato executável (ver
-[conformance/README.md](conformance/README.md)):
+As fixtures executáveis vivem em [`tests/conformance/`](../tests/conformance):
 
 ```text
-specs/conformance/
-├── reader/          # literais, coleções, quoting, metadata, discard
-├── arithmetic/      # + - * / (erros de ratio/overflow declarados)
-├── control-flow/    # if do when cond case loop/recur try/catch/finally
-├── functions/       # multi-aridade, variádica, apply, HOF
-├── closures/        # captura, escopo léxico
-├── recur/           # tail loops, limites
-├── macros/          # defmacro, syntax-quote, gensym, macroexpand
-├── namespaces/      # ns/require/refer/alias/privados
-├── collections/     # vector/map/set/list, assoc/conj/get, equality/hash
-├── sequences/       # lazy, infinite, take/map/filter/reduce, retenção
-├── metadata/        # meta/with-meta/vary-meta
-└── errors/          # mensagens: arquivo:linha:coluna, categorias de exceção
+tests/conformance/
+├── level-a-syntax/
+│   ├── literals/
+│   ├── collections/
+│   ├── reader-macros/
+│   ├── metadata/
+│   ├── trivia/
+│   └── diagnostics/
+├── level-b-semantics/
+│   ├── arithmetic/
+│   ├── control-flow/
+│   ├── functions/
+│   ├── closures/
+│   ├── macros/
+│   ├── collections/
+│   ├── records-protocols/
+│   ├── errors/
+│   └── gc/
+├── level-c-stdlib/
+│   ├── clojure-core/
+│   ├── clojure-string/
+│   ├── clojure-set/
+│   ├── clojure-walk/
+│   ├── clojure-edn/
+│   └── clojure-test/
+├── level-d-pure-libraries/
+└── level-e-ecosystem/
 ```
 
-Cada caso tem: entrada `.clj`, resultado esperado (do oracle) e classificação
-(spec/oficial/acidente/expected-diff). O runner roda oracle + nativo e compara.
+O inventário atual contém 181 casos:
 
-## Portões de qualidade (CI)
+- 141 `active`: executados e bloqueantes;
+- 9 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 31 `pending`: schema e checksum são validados, mas o caso não é executado.
 
-- Todo PR: `cargo test`, `clippy` sem warnings, `fmt`, Miri nos crates `unsafe`, suíte de
-  conformidade (subconjunto atual), golden snapshots.
-- Cobertura Rust bloqueante com `cargo-llvm-cov`: mínimo global de **82%** para linhas,
-  funções e regiões, além de **30% de linhas por arquivo**. O comando local
-  `scripts/coverage.sh` aplica os mesmos limites do CI.
-- Matriz de plataformas: Linux x86_64 (bloqueante) + Windows x86_64 (bloqueante).
-- Fuzz/bench: jobs periódicos (não bloqueantes por corrida, mas monitorados).
-- Cobertura de conformidade é métrica de sucesso (VISION): 100% dos casos declarados
-  passam para o subconjunto suportado (critério de aceite #15).
+Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
+Níveis D–E mantêm visível o trabalho de bibliotecas puras e ecossistema sem afirmar
+suporte inexistente.
 
-## Faseamento dos testes (acompanha IMPLEMENTATION_PLAN)
+Cada caso é autocontido e tem `case.toml`, `input.clj` e a expectativa aplicável. O
+manifesto registra `status`, `class`, `target`, `oracle`, timeout, modo GC stress, razão
+e tracking. Mapas e sets são comparados estruturalmente; newlines e caminhos temporários
+são normalizados.
 
-- Fase 1: golden do reader + fuzz do reader.
-- Fase 2: differential do interpretador (literais/`if`/`let`/`fn`/calls).
-- Fase 4: property de `=`/`hash` e coleções persistentes vs. modelo.
-- Fase 5: e2e do primeiro binário (`hello`), build limpo.
-- Fase 6+: conformidade de macros; depois collections/sequences/namespaces/errors.
+`verify` compila o CLI release uma vez, reutiliza o artefato, executa no máximo quatro
+casos em paralelo e grava:
+
+- `target/conformance/report.json`;
+- `target/conformance/report-summary.txt`.
+
+Os checksums em `tests/conformance/checksums.sha256` tornam alterações acidentais nas
+fixtures bloqueantes. O contrato completo está em
+[`conformance/README.md`](conformance/README.md).
+
+## Oracle Clojure/JVM
+
+O oracle é fixado em Clojure 1.12.5, não faz downloads e só roda quando o mantenedor
+fornece `CLOJURE_CLASSPATH`.
+
+```bash
+CLOJURE_CLASSPATH=/caminho/clojure-1.12.5.jar:/caminho/spec.alpha.jar:/caminho/core.specs.alpha.jar \
+  scripts/conformance.sh oracle --check
+```
+
+`oracle --bless` altera expectativas somente quando solicitado explicitamente, apenas
+em casos `oracle = "equal"`, e atualiza os checksums. Divergências declaradas nunca são
+sobrescritas pelo resultado da JVM.
+
+Na comparação diferencial:
+
+- maps e sets são comparados estruturalmente, sem depender de ordem de hash;
+- erros são comparados por categoria e fragmento estável;
+- diferenças documentadas usam `expected-diff`;
+- acidentes de implementação da JVM não são promovidos a contrato.
+
+## Gates de cobertura
+
+`scripts/coverage.sh` usa `cargo-llvm-cov` e aplica:
+
+- no mínimo 82% de regiões;
+- no mínimo 82% de funções;
+- no mínimo 82% de linhas;
+- no mínimo 30% de linhas em cada arquivo medido.
+
+No último resultado registrado, o workspace atingiu 85,86% de regiões, 84,98% de
+funções e 85,22% de linhas.
+
+## Benchmarks
+
+Os benchmarks validam o resultado antes de aceitar métricas:
+
+- [`benchmarks/cracking/`](../benchmarks/cracking): 60 casos por capítulo;
+- [`benchmarks/cormen/`](../benchmarks/cormen): 30 casos CLRS.
+
+Os CSVs registram, por caso e implementação, tempo de parede, CPU e pico de memória. A
+comparação JVM deve manter versões, warmup, repetição e escala registrados para evitar
+comparar Cranelift frio com HotSpot aquecido sem contexto.
+
+## Aceite
+
+Uma mudança está pronta quando:
+
+1. `fmt`, `clippy` e testes Rust passam;
+2. os gates de cobertura permanecem acima dos limites;
+3. `scripts/conformance.sh verify` passa sem rede e sem JVM;
+4. casos novos têm status, razão, tracking e checksum;
+5. mudanças de desempenho relevantes incluem checksum e metodologia reproduzível.

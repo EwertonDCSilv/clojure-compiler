@@ -2,6 +2,11 @@
 
 Define **precisamente** o subconjunto suportado. Legenda das colunas:
 
+> As colunas abaixo congelam o **alvo do MVP**, não o estado de cada commit. A fonte de
+> verdade executável é [`tests/conformance/`](../tests/conformance): `active` existe,
+> `xfail` registra uma lacuna conhecida e `pending` é somente inventário. O snapshot
+> legível fica em [README.md](README.md).
+
 - **MVP** — deve funcionar no primeiro release.
 - **Depois** — planejado, pós-MVP.
 - **Fora (inicial)** — não no roadmap de curto prazo (pode entrar depois).

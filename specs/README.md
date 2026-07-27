@@ -1,87 +1,107 @@
-# Especificações — `clojure-native`
+# Especificações — `clojure-compiler`
 
-Implementação nativa de Clojure em Rust: compila código-fonte Clojure para **binários nativos autônomos**, sem JVM em tempo de execução, sem bytecode `.class`, sem GraalVM como solução principal.
+Este diretório registra a arquitetura, o escopo e as decisões do compilador nativo. O
+nome do produto e do binário é `clojure-native`; o repositório se chama
+`clojure-compiler`.
 
-> **Status atual do repositório (fato observado, 2026-07-26):** greenfield.
-> Conteúdo existente: `start_spec.md` (briefing) e diretórios de config vazios
-> `.clj-kondo/`, `.lsp/`. **Não há** código, crates, git ou testes. Toolchain
-> local detectado: Java 21 (usável só como *oracle* de teste), clang 20 / LLVM 20;
-> **Rust/Cargo ainda não instalados**. Nada a reaproveitar além do briefing.
+## Estado executável
 
-> **PROGRESSO (2026-07-26).** A implementação já saiu do papel:
-> - **Fase 0** ✅ workspace Cargo + git + toolchain; **protótipo #1 (Cranelift→exe)** validado (portão passou).
-> - **Fase 1 — Reader** ✅ tokenizer/parser, spans, desugar de reader-macros, diagnósticos `arquivo:linha:coluna`.
-> - **Fase 2 — Interpretador de bootstrap** ✅ formas especiais, closures, `recur`, macros base em Rust, primitivas + `core.clj` embutido; roda programas via `clojure-native run`.
-> - **Fase 3+5 (corte vertical)** ✅ analyzer + **codegen Cranelift** → **primeiro binário nativo compilado** (`clojure-native build`, sem JVM).
-> - **Fase 4 (representação de valor, parcial)** ✅ **valores tagged** no código nativo (int, nil, bool, **string**, **lista**) via runtime C (ABI C); primitivas `+ - * quot mod inc dec = < <= > >= not nil? empty? cons first rest count list str println print`; strings e listas de primeira classe (concat, `count`, igualdade estrutural). Alocação por `malloc` **sem coletor** ainda (GC mark-sweep é a próxima etapa — ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26)).
-> - **`loop`/`recur` compilado** ✅ backedge nativo com validação de tail-position (rastreio de divergência `Flow` no codegen). `(conta 1000000 0)` roda sem estourar a pilha — prova que é loop, não recursão.
-> - **GC mark-sweep preciso** ✅ (fecha a Fase 4) coletor tracing não-móvel single-thread com **shadow-stack de roots** gerado pelo codegen (`enter/leave/push/popn/set`); sem escanear a pilha nativa. Validado sob `CLJN_GC_STRESS=1` (coleta a cada alocação, saída correta) e reclamação medida: loop de 10M cons → ~6 MB com GC vs. ~470 MB sem. Ver [MEMORY_MODEL.md](MEMORY_MODEL.md#estado-da-implementacao-2026-07-26).
-> - **Macros no caminho compilado** ✅ (ADR-0004) pré-passo de expansão no analyzer: `when when-not if-not cond and or -> ->>` funcionam em `build` (expandidos para as formas especiais antes da análise; `and`/`or` com gensym, sem duplo-eval).
-> - **Closures / funções de 1ª classe** ✅ (protótipos #2/#3) `fn` com captura léxica (incl. **transitiva/aninhada**), HOF (`my-map`/`my-reduce` em Clojure compilado), fn de topo como valor (`FnRef`), **chamada indireta** (`call_indirect`) com checagem de aridade em runtime. Closures são objetos GC-traçados (`free[]` marcado). Convenção: toda fn recebe `self` (a closure) como 1º arg.
-> - **Coleções: vetores, mapas, sets, keywords** ✅ literais `[]`/`{}`/`#{}`, keywords (`:k`, `(:k m)`), imutáveis com semântica de valor. **Vetor = bitmapped vector trie 32-way** (structural sharing; `conj`/`assoc`/`nth` O(log₃₂ n)): 100k `conj` em ~0,04s (era O(n²)). Mapa = array-map, set = array (HAMT/CHAMP futuros). Ops: `get nth assoc dissoc conj contains? keys vals count first rest empty? =`. Ops multi-alocação usam "no-GC zone" (`gc_disabled`) com safepoint na entrada. GC rastreia todos; validado sob `CLJN_GC_STRESS=1`.
-> - **`clojure.core` compilável (bootstrap, ADR-0005)** ✅ um `core.clj` no subconjunto compilável é pré-carregado em todo `build`: `map filter reduce remove reverse take drop range into mapv every? some comp identity second last zero? pos? neg? even? odd? max min` — **sem** o usuário defini-los. **Primitivas como valor** (`(map inc ...)`, `(reduce + 0 ...)`) via wrapper sintetizado.
-> - **Variádicos, multi-aridade e `apply`** ✅ convenção de chamada uniforme `(self, argc, argv)` (args no shadow-stack, `argv` = ponteiro pra lá, GC-safe). `(fn [a & rest] ...)`, `defn`/`fn` multi-aridade com dispatch por `argc` em runtime, `(apply f a b coll)` (coll lista ou vetor). Validado normal + GC-stress.
-> - **`defrecord` + `defprotocol`/`extend-type`** ✅ records tipados (`T_RECORD` = nome + mapa): construtor `->Name`, `(:campo r)`, `assoc`/`keys`/`count`/`=`/print `#Name{...}`. **Protocols com dispatch por tipo**: `defprotocol` gera funções-despacho que encaminham `(argc,argv)` para a impl achada por `(method_id, type_key(arg0))`; `extend-type` para records **e builtins** (List/String/Int/...); polimórfico inclusive via HOF (`(map area ...)`). Tabela de métodos é raiz permanente do GC. Validado sob GC-stress.
-> - **Fast paths de fixnum (ADR-0006, Fases 1-2)** ✅ `+ - inc dec < <= > >=` compilam para operações inteiras nativas (guard de tag → unbox → op → range-check `±2^62` → retag; slow path = runtime p/ tipo inválido/overflow). Runtime endurecido (`mk_fix_checked`, unsigned).
-> - **Stores diretos de root (ADR-0006, Fase 3)** ✅ `gc_push/popn/set` viram load/store diretos nos globais `gc_stack`/`gc_sp` (o objeto **não importa** mais esses símbolos). Ganho combinado: benchmark de 100M iterações **3,02s → 0,66s (~4,6x)**; **meta de 2x do ADR-0006 superada**. Rooting ainda **eager** (Fase 4 muda a frequência p/ só-safepoints); reclamação de GC preservada (10M cons → ~6 MB) e correto sob `CLJN_GC_STRESS=1`.
-> - ~53 testes verdes (closures/HOF, coleções, stdlib, variádicos/apply, records, fixnum; normal + GC-stress).
->
-> Próximo (ADR-0006 Fases 4-5): rooting só em safepoints (liveness); depois protocols, `*` fast path, structural sharing.
+Em 2026-07-26, o workspace já possui um corte vertical funcional:
 
-O planejamento original abaixo permanece a fonte de verdade das decisões. Protótipos
-descartáveis são permitidos e devem ser marcados como não-produtivos.
+- Reader com spans, reader macros e diagnósticos com arquivo, linha e coluna.
+- Interpretador de bootstrap para `eval`, `run` e infraestrutura de macros.
+- Analyzer e codegen Cranelift capazes de gerar executáveis nativos sem JVM.
+- Fixnums tagueados, strings, listas, keywords, vetores, mapas, sets, closures e
+  records rastreados pelo runtime nativo.
+- `loop/recur` como backedge nativo, closures transitivas, HOF, aridades
+  fixas/múltiplas/variádicas e `apply`.
+- Expansão compilada de `when`, `when-not`, `if-not`, `cond`, `and`, `or`, `->` e
+  `->>`.
+- Vetores persistentes em trie bitmap de 32 vias. Mapas e sets começam em representação
+  compacta e promovem para HAMT de 32 vias.
+- `defrecord`, `defprotocol` e `extend-type`, com dispatch para records e tipos
+  embutidos.
+- `clojure.core` compilável com 26 funções pré-carregadas em todo `build`.
+- Fast paths nativos verificados para `+`, `-`, `*`, `quot`, `mod`, `inc`, `dec`,
+  `<`, `<=`, `>` e `>=`; igualdade estrutural permanece no runtime.
+- GC mark-sweep preciso, não móvel e single-thread, validado com
+  `CLJN_GC_STRESS=1`.
+- Operações diretas na shadow stack substituem `gc_push`, `gc_popn` e `gc_set` no
+  caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
+
+A suíte Rust possui 105 testes. A matriz em [`tests/conformance/`](../tests/conformance)
+possui 181 casos: 141 ativos, 9 falhas esperadas e 31 itens pendentes. O gate de
+cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
+arquivo.
+
+O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
+fast paths e os stores diretos de roots. Os resultados completos e as ressalvas de
+medição estão na [ADR-0006](adr/0006-codegen-optimization.md).
+
+## Limites atuais
+
+As specs descrevem tanto o que existe quanto o alvo futuro; marcações de fase e
+`[FUTURO]` não devem ser lidas como funcionalidade entregue. O caminho nativo ainda não
+oferece bignums, ratios, ponto flutuante compilado, macros definidas pelo usuário,
+lazy-seq, exceções, namespaces dinâmicos, projetos multi-arquivo ou interop Java.
 
 ## Como ler estes documentos
 
-Ordem sugerida de leitura:
+Ordem sugerida:
 
-1. [VISION.md](VISION.md) — problema, proposta de valor, escopo, métricas de sucesso.
-2. [LANGUAGE_SCOPE.md](LANGUAGE_SCOPE.md) — matriz precisa do subconjunto da linguagem (MVP / depois / fora).
-3. [COMPATIBILITY_SPEC.md](COMPATIBILITY_SPEC.md) — níveis A–E de compatibilidade e política de incompatibilidades.
-4. [ARCHITECTURE.md](ARCHITECTURE.md) — crates, fronteiras e fluxo de dados.
-5. [COMPILER_PIPELINE.md](COMPILER_PIPELINE.md) — reader → macroexpand → analyzer → IR → codegen.
-6. [RUNTIME_SPEC.md](RUNTIME_SPEC.md) — representação de valores, funções, Vars, protocols, seqs.
-7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — modelo de GC, roots, ownership no runtime.
-8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — quais namespaces/funções e onde são implementados.
-9. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI C ABI.
-10. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — differential testing contra Clojure/JVM como oracle.
-11. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — plano incremental verificável, Fases 0–12.
-12. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos, probabilidade, impacto, mitigação.
+1. [VISION.md](VISION.md) — problema, proposta de valor e métricas de sucesso.
+2. [LANGUAGE_SCOPE.md](LANGUAGE_SCOPE.md) — matriz do subconjunto da linguagem.
+3. [COMPATIBILITY_SPEC.md](COMPATIBILITY_SPEC.md) — níveis A–E e incompatibilidades.
+4. [ARCHITECTURE.md](ARCHITECTURE.md) — fronteiras e fluxo de dados planejados.
+5. [COMPILER_PIPELINE.md](COMPILER_PIPELINE.md) — reader, expansão, análise e codegen.
+6. [RUNTIME_SPEC.md](RUNTIME_SPEC.md) — implementação atual e modelo futuro do runtime.
+7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — GC, roots e ownership.
+8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — biblioteca entregue e alvo.
+9. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+10. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+11. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+12. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
-Decisões arquiteturais fundamentais (imutáveis sem novo ADR):
+Documentos operacionais:
 
-- [adr/0001-code-generation-backend.md](adr/0001-code-generation-backend.md) — **Cranelift** (AOT) + backend-C fallback.
-- [adr/0002-memory-management.md](adr/0002-memory-management.md) — **GC tracing precisa mark-sweep** com shadow-stack roots.
-- [adr/0003-value-representation.md](adr/0003-value-representation.md) — **enum `Value`** com imediatos + `Gc<T>`.
-- [adr/0004-macro-execution.md](adr/0004-macro-execution.md) — **interpretador tree-walking** em tempo de compilação.
-- [adr/0005-bootstrap-strategy.md](adr/0005-bootstrap-strategy.md) — primitivas em Rust + `clojure.core` progressivo em Clojure.
-- [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — fast paths de fixnum + rooting somente em safepoints.
+- [conformance/README.md](conformance/README.md) — suíte executável A–E.
+- [optime.md](optime.md) — plano de otimização.
+- [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — decisão e
+  resultados de otimização.
 
-Testes de conformidade: [conformance/README.md](conformance/README.md).
+## ADRs
+
+- [0001](adr/0001-code-generation-backend.md) — Cranelift como backend primário.
+- [0002](adr/0002-memory-management.md) — GC tracing mark-sweep com shadow stack.
+- [0003](adr/0003-value-representation.md) — modelo inicial de representação de valores.
+- [0004](adr/0004-macro-execution.md) — interpretador de bootstrap para macros.
+- [0005](adr/0005-bootstrap-strategy.md) — primitivas + core progressivo em Clojure.
+- [0006](adr/0006-codegen-optimization.md) — fast paths de fixnum, roots e opt-level.
+
+ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
+fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
+
+## Resumo das decisões
+
+| Área | Implementação atual | Alvo |
+| --- | --- | --- |
+| Backend | Cranelift AOT + link pelo `cc` do sistema | backend C opcional |
+| Macros | expansão de macros de core conhecidas | macros de usuário no bootstrap |
+| Valor nativo | fixnums tagueados + ponteiros para objetos GC | especialização/unboxing medidos |
+| Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
+| Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
+| Otimização | fast paths inteiros e stores diretos de roots | safepoints e otimização do IR |
+| Coleções | lista, trie vetorial, array-map/set com promoção HAMT | CHAMP, sorted e transients |
+| Plataforma | compilação e link para o host | matriz multiplataforma ampliada |
 
 ## Convenções
 
-- **Marcações de confiança** usadas em todo o texto:
-  `[FATO]` observado/verificável · `[JVM]` comportamento da implementação oficial ·
-  `[DECISÃO]` escolha proposta neste projeto · `[HIPÓTESE]` a validar ·
-  `[RISCO]` · `[FUTURO]` fora do MVP.
-- Nome do produto/binário: `clojure-native`.
-- Estas specs são **vivas**: cada fase do [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
-  pode refiná-las. Toda mudança de decisão fundamental exige um novo ADR (nunca editar
-  um ADR aceito — cria-se um sucessor que o marca como *Superseded*).
+- `[FATO]`: observado ou verificável.
+- `[JVM]`: comportamento da implementação oficial.
+- `[DECISÃO]`: escolha arquitetural do projeto.
+- `[HIPÓTESE]`: item ainda a validar.
+- `[RISCO]`: risco registrado.
+- `[FUTURO]`: fora do caminho executável atual.
 
-## Resumo executivo das decisões
-
-| Área | Decisão MVP | Alvo de longo prazo | ADR |
-| --- | --- | --- | --- |
-| Backend de codegen | Cranelift (objeto + link via `lld`) | + backend C p/ portabilidade/otimização | 0001 |
-| Execução de macros | Interpretador tree-walking em build-time | JIT Cranelift opcional | 0004 |
-| Representação de valor | `enum Value` (imediatos) + `Gc<T>` | tagged pointers / NaN-boxing | 0003 |
-| Memória | Mark-sweep precisa, não-móvel, shadow-stack roots, single-thread | Geracional/móvel (MMTk) | 0002 |
-| Bootstrap | Primitivas Rust + core em Clojure, staged | Self-hosting parcial | 0005 |
-| Otimização | Fast paths de fixnum + roots vivos em safepoints | Unboxing/stack maps se medidos | 0006 |
-| Coleções | array-map + HAMT + bitmapped vector trie | CHAMP + sorted + transients | RUNTIME_SPEC |
-| Plataforma inicial | Linux x86_64 (oficial) + Windows x86_64 (1ª classe) | + arm64, macOS | ARCHITECTURE |
-
-O **menor caminho até o primeiro binário nativo** está descrito no fim de
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md#menor-caminho-ate-o-primeiro-binario).
+Estas specs são vivas. A classificação executável da compatibilidade é sempre baseada
+no código e nas fixtures atuais, não em itens aspiracionais.

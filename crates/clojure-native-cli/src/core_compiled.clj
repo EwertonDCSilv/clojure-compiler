@@ -1,7 +1,7 @@
 ;; core_compiled.clj — parte de clojure.core escrita no subconjunto COMPILÁVEL,
 ;; pré-carregada em todo `clojure-native build` (ADR-0005: bootstrap progressivo).
 ;; Usa apenas o que o codegen nativo suporta: defn/fn/if/cond/let/loop/recur,
-;; primitivas e coleções. Sem variádicos, sem multi-aridade.
+;; primitivas e coleções, incluindo variádicos quando necessário.
 
 (ns clojure.core)
 

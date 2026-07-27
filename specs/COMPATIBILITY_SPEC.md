@@ -21,8 +21,9 @@ Divergências deliberadas (números, interop, etc.) são catalogadas abaixo.
 
 ### Nível C — Biblioteca padrão (subconjunto)
 Funções selecionadas de `clojure.core` e alguns namespaces auxiliares estão disponíveis
-com semântica de Nível B. O conjunto exato é a coluna MVP de
-[STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md).
+com semântica de Nível B. O conjunto executável exato é o inventário `active` de
+[`tests/conformance/level-c-stdlib`](../tests/conformance/level-c-stdlib); o alvo
+progressivo está em [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md).
 
 ### Nível D — Bibliotecas Clojure puras `[FUTURO]`
 Bibliotecas de terceiros **sem** dependência de Java compilam com pouca ou nenhuma
@@ -32,7 +33,8 @@ regex, etc.). Não é meta do MVP.
 ### Nível E — Ecossistema amplo `[FUTURO/aspiracional]`
 Grande parte do ecossistema. **Não é um compromisso**; serve de norte de longo prazo.
 
-**Meta declarada do MVP: A + B + C (subconjunto).** Ver
+**Meta declarada do MVP: A + B + C (subconjunto).** A situação atual por recurso é
+`active`, `xfail` ou `pending` na suíte executável. Ver
 [VISION.md](VISION.md#nivel-de-compatibilidade-desejado).
 
 ---

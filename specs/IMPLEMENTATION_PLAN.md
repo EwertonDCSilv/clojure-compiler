@@ -4,6 +4,13 @@ Plano incremental e **verificável**. Cada tarefa declara: **objetivo · crates 
 implementação esperada · testes · riscos · critério de aceite · resultado observável**
 (start_spec §26). Nada de roadmap genérico.
 
+> **Leitura em 2026-07-26:** este é o plano histórico de fases, não uma lista do que
+> está ausente. O corte vertical já entrega reader, interpretador, analyzer, Cranelift,
+> runtime C com GC, coleções persistentes, core compilado, closures, aridades,
+> records/protocols e a suíte A–E. Consulte [README.md](README.md) para o snapshot
+> executável. Nomes de crates ainda não existentes abaixo representam a arquitetura
+> originalmente planejada, não dependências atuais.
+
 Regras: não implementar nada de produção antes das specs aprovadas; não começar por
 otimização; primeiro binário o quanto antes; protótipos descartáveis marcados como
 não-produtivos.
@@ -12,7 +19,7 @@ Legenda de dependência: "→ Fase N" = depende da fase N.
 
 ---
 
-## Fase 0 — Pesquisa e Especificação (**estamos aqui**)
+## Fase 0 — Pesquisa e Especificação (**entregue no corte inicial**)
 
 - **0.1 Specs** — *Objetivo:* estas specs. *Resultado:* `specs/*` aprovado. **Feito** (este documento).
 - **0.2 Setup do workspace** — *Objetivo:* instalar Rust/Cargo, criar `git init`, workspace Cargo vazio com crates-esqueleto (só `lib.rs` + `//! doc`), CI (Linux+Windows) rodando `cargo build`/`test`/`clippy`/`fmt`. *Crates:* todos (stubs). *Deps:* —. *Testes:* CI verde vazio. *Risco:* toolchain Windows (MSVC/lld). *Aceite:* `cargo test` verde nas 2 plataformas. *Resultado:* workspace compila.
@@ -40,13 +47,19 @@ Legenda de dependência: "→ Fase N" = depende da fase N.
 
 - **1.1 Tipos base** — *Crates:* `clojure-span`, `clojure-syntax`. *Impl:* `Span`, `Form`, interner de `Symbol`/`Keyword`, metadata de leitura. *Testes:* unit + interning. *Aceite:* igualdade/identidade de símbolos O(1).
 - **1.2 Tokenizer + Parser** — *Crates:* `clojure-reader`, `clojure-diagnostics`. *Deps:* 1.1. *Impl:* tokens, parser recursivo, desugar de macros de leitura (`' @ #' #( ^ #_` e syntax-quote), spans em todo nó, recuperação de erro. *Testes:* golden (`insta`) + **fuzz** (`cargo-fuzz`). *Risco:* syntax-quote correto (gensym/resolução). *Aceite:* `clojure-native read examples/basic.clj` dá dump determinístico; erros com arquivo:linha:coluna.
-- **Resultado observável (Fase 1):** comando `read` funcionando; suíte `conformance/reader` verde.
+- **Resultado observável (Fase 1):** comando `read` funcionando; nível A em
+  [`tests/conformance/`](../tests/conformance) verde para os casos ativos.
 
 ---
 
 ## Fase 2 — Interpretador de bootstrap (evaluator)
 
-- **2.1 Núcleo do interpretador** — *Crates:* `clojure-interp`, `clojure-value`, `clojure-runtime` (mínimo). *Deps:* Fase 1. *Impl:* avaliar literais, locais, `if`, `do`, `let*`, `fn*`, chamadas de função, closures, operações primitivas (aritmética, comparação, coleções básicas), Vars/`def`. *Testes:* **differential** contra oracle. *Risco:* semântica de truthiness/igualdade. *Aceite:* avalia os exemplos de `conformance/{arithmetic,control-flow,functions,closures}`.
+- **2.1 Núcleo do interpretador** — *Crates:* `clojure-interp`, `clojure-value`,
+  `clojure-runtime` (nome planejado). *Deps:* Fase 1. *Impl:* avaliar literais, locais,
+  `if`, `do`, `let*`, `fn*`, chamadas de função, closures, operações primitivas
+  (aritmética, comparação, coleções básicas), Vars/`def`. *Testes:* differential contra
+  oracle quando disponível. *Risco:* semântica de truthiness/igualdade. *Aceite:* casos
+  correspondentes do nível B em [`tests/conformance/`](../tests/conformance).
 - **Papel:** este interpretador existe para **bootstrap e macro expansion** (ADR-0004), não é o produto. Pode usar `Rc` internamente (ADR-0002) para andar rápido.
 - **Resultado observável:** `clojure-native eval '(let [a 1 b 2] (+ a b))'` → `3`.
 
@@ -105,9 +118,14 @@ Legenda de dependência: "→ Fase N" = depende da fase N.
 
 ---
 
-## Fase 10 — Protocols e records `[FUTURO próximo]`
+## Fase 10 — Protocols e records (**subconjunto entregue**)
 
-- *Crates:* `clojure-runtime`, `clojure-analyzer`, `clojure-codegen`. *Impl:* `defprotocol`/`extend*`, dispatch por tipo + cache, `defrecord`/`deftype`/`reify` (sem interfaces Java), `defmulti`/`defmethod` + hierarquias, dispatch direto quando estático (otimização). *Testes:* `conformance/protocols`. *Aceite:* protocolos/records/multimethods equivalentes ao oracle no subconjunto.
+- *Entregue:* `defprotocol`, `defrecord` e `extend-type`, dispatch pelo tipo do primeiro
+  argumento, suporte a records e builtins e casos de conformidade/GC stress.
+- *Restante:* `extend-protocol`, impls inline, `deftype`, `reify`,
+  `defmulti`/`defmethod`, hierarquias, cache e devirtualização.
+- *Aceite final:* protocols, records e multimethods equivalentes ao oracle no
+  subconjunto declarado.
 
 ---
 
