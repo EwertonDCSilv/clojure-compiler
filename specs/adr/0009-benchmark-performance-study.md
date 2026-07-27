@@ -6,7 +6,8 @@
 - Relacionadas: [ADR-0002](0002-memory-management.md),
   [ADR-0003](0003-value-representation.md),
   [ADR-0006](0006-codegen-optimization.md),
-  [ADR-0008](0008-associative-indexed-dispatch.md) e
+  [ADR-0008](0008-associative-indexed-dispatch.md),
+  [ADR-0010](0010-interprocedural-ephemeral-vectors.md) e
   [results/README](../../benchmarks/cormen/results/README.md)
 
 ## 1. Pergunta
@@ -203,3 +204,27 @@ a favor) e usa ~20× menos memória; o gap de **parede** é ~metade throughput d
 (escape analysis para tuplas; auto-transient para acumuladores lineares), não mexer no
 coletor. Ambas merecem ADR de decisão própria antes da implementação, pela exigência de
 uma análise de escape/linearidade correta.
+
+## 9. Acompanhamento após os ganhos intraprocedurais
+
+As recomendações intraprocedurais foram medidas novamente no commit de código
+`663d2d4`: auto-transient de acumuladores de `loop` e `mapv`/`into` construindo por
+transiente estrutural. A coleta usou a mesma escala 25× e `--opt-level none`, preservou
+integralmente as colunas JVM e publicou a execução mediana de três rodadas completas.
+
+| Métrica Cormen | Baseline `8012102` | `663d2d4` | Variação |
+| --- | ---: | ---: | ---: |
+| Tempo de parede acumulado | 39,04 s | 36,21 s | -7,25% |
+| Tempo de CPU acumulado | 38,87 s | 36,07 s | -7,20% |
+| Mediana `wall_speedup` | 0,637× | 0,726× | +14,0% |
+| Mediana `cpu_speedup` | 1,310× | 1,515× | +15,6% |
+| Mediana da razão RSS JVM/nativo | 19,709× | 20,297× | +3,0% |
+
+O ganho não elimina a causa-raiz: o total nativo de parede ainda é 2,14× o JVM e os
+piores padrões continuam atravessando fronteiras de função. Ele confirma, porém, que
+reduzir operações persistentes e alocações intermediárias é uma alavanca real: 18 dos
+30 casos Cormen melhoraram, incluindo `counting-sort` (-43,9%), `merge-sort` (-23,3%),
+`prefix-range-sums` (-34,0%) e o crivo de Eratóstenes (-15,9%). A ADR-0010 permanece
+necessária para os vetores efêmeros interprocedurais restantes. A fotografia completa,
+as três repetições e os valores por caso estão no
+[relatório Cormen](../../benchmarks/cormen/results/README.md).
