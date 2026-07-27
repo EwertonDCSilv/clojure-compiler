@@ -7,18 +7,31 @@
     <meta name="theme-color" content="#0b1612">
     <meta
       name="description"
+      data-i18n-content="meta.description"
       content="clojure-native compila um subconjunto documentado de Clojure em executáveis nativos autônomos — sem JVM em tempo de execução."
     >
     <meta property="og:type" content="website">
     <meta property="og:locale" content="pt_BR">
-    <meta property="og:title" content="clojure-native — Clojure compilado. Sem JVM.">
+    <meta
+      property="og:title"
+      data-i18n-content="meta.title"
+      content="clojure-native — Clojure compilado. Sem JVM."
+    >
     <meta
       property="og:description"
+      data-i18n-content="meta.description"
       content="Um compilador nativo experimental construído com Rust, Cranelift e um runtime C compacto."
     >
     <meta property="og:url" content="https://ewertondcsilv.github.io/clojure-compiler/">
     <meta name="twitter:card" content="summary">
     <link rel="canonical" href="https://ewertondcsilv.github.io/clojure-compiler/">
+    <link rel="alternate" hreflang="pt-BR" href="?lang=pt">
+    <link rel="alternate" hreflang="es" href="?lang=es">
+    <link rel="alternate" hreflang="en" href="?lang=en">
+    <link rel="alternate" hreflang="fr" href="?lang=fr">
+    <link rel="alternate" hreflang="ru" href="?lang=ru">
+    <link rel="alternate" hreflang="zh-CN" href="?lang=ch">
+    <link rel="alternate" hreflang="x-default" href="?lang=pt">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -29,7 +42,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%230b1612'/%3E%3Cpath d='M26 17c-8 3-12 8-12 15s4 12 12 15M38 17c8 3 12 8 12 15s-4 12-12 15' fill='none' stroke='%23b8f34b' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='4' fill='%23f5f1e8'/%3E%3C/svg%3E"
     >
-    <title>clojure-native — Clojure compilado. Sem JVM.</title>
+    <title data-i18n="meta.title">clojure-native — Clojure compilado. Sem JVM.</title>
 
     <style>
       :root {
@@ -165,7 +178,7 @@
 
       .nav-links {
         display: flex;
-        gap: 30px;
+        gap: 22px;
         align-items: center;
         margin: 0;
         padding: 0;
@@ -199,6 +212,77 @@
       .nav-links .nav-cta:focus-visible {
         color: var(--ink);
         background: var(--lime);
+      }
+
+      .language-item {
+        display: flex;
+        align-items: center;
+      }
+
+      .language-switcher {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        color: rgba(244, 241, 232, 0.72);
+      }
+
+      .language-switcher svg {
+        position: absolute;
+        z-index: 1;
+        left: 10px;
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
+      }
+
+      .language-switcher select {
+        min-width: 74px;
+        height: 38px;
+        padding: 0 24px 0 30px;
+        color: var(--paper);
+        border: 1px solid rgba(244, 241, 232, 0.18);
+        border-radius: 999px;
+        outline: 0;
+        background: rgba(244, 241, 232, 0.05);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 500;
+        cursor: pointer;
+        appearance: none;
+      }
+
+      .language-switcher::after {
+        position: absolute;
+        right: 10px;
+        width: 5px;
+        height: 5px;
+        content: "";
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        pointer-events: none;
+        transform: translateY(-2px) rotate(45deg);
+      }
+
+      .language-switcher select:hover,
+      .language-switcher select:focus-visible {
+        border-color: rgba(184, 243, 75, 0.58);
+        background: rgba(244, 241, 232, 0.09);
+      }
+
+      .language-switcher option {
+        color: var(--ink);
+        background: var(--paper);
+      }
+
+      .visually-hidden {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
       }
 
       .menu-button {
@@ -299,6 +383,11 @@
 
       h1 .accent {
         color: var(--lime);
+      }
+
+      html:lang(ru) h1 {
+        font-size: clamp(3.25rem, 5.6vw, 5.2rem);
+        letter-spacing: -0.06em;
       }
 
       .hero-copy {
@@ -568,7 +657,7 @@
         border-right: 0;
       }
 
-      .proof-list span {
+      .proof-list li > span:first-child {
         color: var(--lime);
         font-size: 17px;
       }
@@ -1362,6 +1451,19 @@
           justify-content: center;
         }
 
+        .language-item {
+          padding: 7px 12px;
+        }
+
+        .language-switcher,
+        .language-switcher select {
+          width: 100%;
+        }
+
+        .language-switcher select {
+          height: 44px;
+        }
+
         .menu-button[aria-expanded="true"] span {
           opacity: 0;
         }
@@ -1382,6 +1484,15 @@
 
         h1 {
           font-size: clamp(3.25rem, 17vw, 5.2rem);
+        }
+
+        html:lang(ru) h1 {
+          font-size: clamp(2.8rem, 14vw, 4.6rem);
+        }
+
+        html:lang(zh-CN) h1 {
+          font-size: clamp(3rem, 15vw, 4.8rem);
+          line-height: 0.98;
         }
 
         .hero-visual {
@@ -1535,11 +1646,20 @@
   </head>
 
   <body>
-    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+    <a class="skip-link" href="#conteudo" data-i18n="a11y.skip">Pular para o conteúdo</a>
 
     <header class="site-header">
-      <nav class="nav shell" aria-label="Navegação principal">
-        <a class="brand" href="#inicio" aria-label="clojure-native — início">
+      <nav
+        class="nav shell"
+        aria-label="Navegação principal"
+        data-i18n-aria-label="a11y.mainNav"
+      >
+        <a
+          class="brand"
+          href="#inicio"
+          aria-label="clojure-native — início"
+          data-i18n-aria-label="a11y.home"
+        >
           <span class="brand-mark" aria-hidden="true">()</span>
           <span>clojure-native</span>
         </a>
@@ -1550,15 +1670,41 @@
           aria-expanded="false"
           aria-controls="nav-links"
           aria-label="Abrir menu"
+          data-i18n-aria-label="a11y.menuOpen"
         >
           <span></span>
         </button>
 
         <ul class="nav-links" id="nav-links">
-          <li><a href="#projeto">O projeto</a></li>
-          <li><a href="#pipeline">Pipeline</a></li>
-          <li><a href="#recursos">Recursos</a></li>
-          <li><a href="#comecar">Começar</a></li>
+          <li><a href="#projeto" data-i18n="nav.project">O projeto</a></li>
+          <li><a href="#pipeline" data-i18n="nav.pipeline">Pipeline</a></li>
+          <li><a href="#recursos" data-i18n="nav.features">Recursos</a></li>
+          <li><a href="#comecar" data-i18n="nav.start">Começar</a></li>
+          <li class="language-item">
+            <div class="language-switcher">
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M3 10h14M10 3c2 2 3 4.3 3 7s-1 5-3 7c-2-2-3-4.3-3-7s1-5 3-7Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+              <label
+                class="visually-hidden"
+                for="language-select"
+                data-i18n="language.label"
+              >Idioma</label>
+              <select
+                id="language-select"
+                aria-label="Idioma"
+                data-i18n-aria-label="language.label"
+              >
+                <option value="pt">PT</option>
+                <option value="es">ES</option>
+                <option value="en">EN</option>
+                <option value="fr">FR</option>
+                <option value="ru">RU</option>
+                <option value="ch">中文</option>
+              </select>
+            </div>
+          </li>
           <li>
             <a
               class="nav-cta"
@@ -1566,7 +1712,7 @@
               target="_blank"
               rel="noreferrer"
             >
-              GitHub
+              <span data-i18n="nav.github">GitHub</span>
               <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
                 <path d="M6 14 14 6M8 6h6v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -1580,16 +1726,16 @@
       <section class="hero" id="inicio">
         <div class="hero-grid shell">
           <div>
-            <span class="eyebrow">Compilação nativa experimental</span>
-            <h1>Clojure, <span class="accent">compilado.</span> Sem JVM.</h1>
-            <p class="hero-copy">
+            <span class="eyebrow" data-i18n="hero.eyebrow">Compilação nativa experimental</span>
+            <h1 data-i18n-html="hero.titleHtml">Clojure, <span class="accent">compilado.</span> Sem JVM.</h1>
+            <p class="hero-copy" data-i18n-html="hero.descriptionHtml">
               <strong>clojure-native</strong> transforma um subconjunto documentado de
               Clojure em executáveis nativos autônomos, usando Rust, Cranelift e um
               runtime C compacto.
             </p>
             <div class="button-row">
               <a class="button button-primary" href="#comecar">
-                Compilar o primeiro programa
+                <span data-i18n="hero.primaryCta">Compilar o primeiro programa</span>
                 <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
                   <path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -1600,12 +1746,16 @@
                 target="_blank"
                 rel="noreferrer"
               >
-                Ver código-fonte
+                <span data-i18n="hero.source">Ver código-fonte</span>
               </a>
             </div>
           </div>
 
-          <div class="hero-visual" aria-label="Exemplo de compilação de Clojure para um executável nativo">
+          <div
+            class="hero-visual"
+            aria-label="Exemplo de compilação de Clojure para um executável nativo"
+            data-i18n-aria-label="a11y.heroVisual"
+          >
             <div class="orbit" aria-hidden="true">
               <span class="orbit-dot"></span>
             </div>
@@ -1616,7 +1766,7 @@
                 <span class="window-dot"></span>
                 <span class="window-title">hello.clj</span>
               </div>
-              <pre class="terminal-code"><span class="muted">;; código Clojure</span>
+              <pre class="terminal-code"><span class="muted" data-i18n="hero.codeComment">;; código Clojure</span>
 (<span class="green">defn</span> <span class="blue">-main</span> []
   (<span class="green">println</span> <span class="orange">"Hello, native."</span>))
 
@@ -1624,7 +1774,7 @@
 
 <span class="muted">$</span> clojure-native build hello.clj
 <span class="green">✓</span> linked <span class="blue">./hello-native</span></pre>
-              <div class="compile-status">executável pronto · JVM 0%</div>
+              <div class="compile-status" data-i18n="hero.status">executável pronto · JVM 0%</div>
             </div>
             <span class="float-label rust">RUST + CRANELIFT</span>
             <span class="float-label native">AOT → NATIVE</span>
@@ -1632,24 +1782,28 @@
         </div>
       </section>
 
-      <div class="proof-strip" aria-label="Tecnologias e características principais">
+      <div
+        class="proof-strip"
+        aria-label="Tecnologias e características principais"
+        data-i18n-aria-label="a11y.proof"
+      >
         <ul class="proof-list shell">
-          <li><span>01</span> Sem JVM em runtime</li>
-          <li><span>02</span> Codegen Cranelift</li>
-          <li><span>03</span> GC preciso</li>
-          <li><span>04</span> Open source</li>
+          <li><span>01</span><span data-i18n="proof.noJvm">Sem JVM em runtime</span></li>
+          <li><span>02</span><span data-i18n="proof.cranelift">Codegen Cranelift</span></li>
+          <li><span>03</span><span data-i18n="proof.gc">GC preciso</span></li>
+          <li><span>04</span><span data-i18n="proof.open">Open source</span></li>
         </ul>
       </div>
 
       <section class="section" id="projeto">
         <div class="manifesto-grid shell">
           <div class="manifesto-sticky reveal">
-            <span class="section-kicker">Por que existe</span>
+            <span class="section-kicker" data-i18n="project.kicker">Por que existe</span>
             <div class="big-parens" aria-hidden="true">( )</div>
           </div>
 
           <div class="manifesto-copy reveal">
-            <blockquote>
+            <blockquote data-i18n-html="project.quoteHtml">
               A expressividade de Clojure, explorando um caminho
               <span>inteiramente nativo.</span>
             </blockquote>
@@ -1657,32 +1811,32 @@
             <div class="principles">
               <article class="principle">
                 <span class="principle-number">/ 01</span>
-                <h3>Binário autônomo</h3>
-                <p>
+                <h3 data-i18n="project.binaryTitle">Binário autônomo</h3>
+                <p data-i18n="project.binaryBody">
                   O objeto gerado pelo Cranelift é linkado ao runtime C embutido. O
                   programa final não depende da JVM para executar.
                 </p>
               </article>
               <article class="principle">
                 <span class="principle-number">/ 02</span>
-                <h3>Escopo explícito</h3>
-                <p>
+                <h3 data-i18n="project.scopeTitle">Escopo explícito</h3>
+                <p data-i18n="project.scopeBody">
                   Compatibilidade, limites e decisões arquiteturais são documentados
                   como parte do produto — sem prometer uma implementação completa.
                 </p>
               </article>
               <article class="principle">
                 <span class="principle-number">/ 03</span>
-                <h3>Runtime enxuto</h3>
-                <p>
+                <h3 data-i18n="project.runtimeTitle">Runtime enxuto</h3>
+                <p data-i18n="project.runtimeBody">
                   Valores tagueados, coleções persistentes e GC mark-sweep preciso em
                   um runtime C compacto, single-thread e não móvel.
                 </p>
               </article>
               <article class="principle">
                 <span class="principle-number">/ 04</span>
-                <h3>Laboratório aberto</h3>
-                <p>
+                <h3 data-i18n="project.labTitle">Laboratório aberto</h3>
+                <p data-i18n="project.labBody">
                   Implementação, testes de conformidade, benchmarks e ADRs vivem no
                   mesmo repositório para tornar a evolução verificável.
                 </p>
@@ -1694,9 +1848,9 @@
 
       <section class="section section-dark" id="pipeline">
         <div class="shell">
-          <span class="section-kicker">Do texto à máquina</span>
-          <h2 class="section-title reveal">Um pipeline pequeno. Cada etapa visível.</h2>
-          <p class="section-lead reveal">
+          <span class="section-kicker" data-i18n="pipeline.kicker">Do texto à máquina</span>
+          <h2 class="section-title reveal" data-i18n="pipeline.title">Um pipeline pequeno. Cada etapa visível.</h2>
+          <p class="section-lead reveal" data-i18n="pipeline.lead">
             A CLI reúne leitura, interpretação e compilação antecipada. No caminho
             nativo, o código atravessa quatro camadas bem definidas.
           </p>
@@ -1704,36 +1858,36 @@
           <div class="pipeline">
             <article class="stage reveal">
               <span class="stage-icon">01</span>
-              <span class="stage-label">Entrada</span>
+              <span class="stage-label" data-i18n="pipeline.input">Entrada</span>
               <h3>Reader</h3>
-              <p>
+              <p data-i18n="pipeline.readerBody">
                 Transforma o fonte em forms com spans, macros de leitura, Unicode e
                 diagnósticos determinísticos.
               </p>
             </article>
             <article class="stage reveal">
               <span class="stage-icon">02</span>
-              <span class="stage-label">Semântica</span>
+              <span class="stage-label" data-i18n="pipeline.semantics">Semântica</span>
               <h3>Analyzer</h3>
-              <p>
+              <p data-i18n="pipeline.analyzerBody">
                 Expande as macros de core suportadas e resolve funções, closures,
                 records, protocolos e controle de fluxo.
               </p>
             </article>
             <article class="stage reveal">
               <span class="stage-icon">03</span>
-              <span class="stage-label">Código</span>
+              <span class="stage-label" data-i18n="pipeline.code">Código</span>
               <h3>Cranelift</h3>
-              <p>
+              <p data-i18n="pipeline.craneliftBody">
                 Emite código de máquina com fast paths nativos para fixnums e acesso
                 direto à shadow stack de roots.
               </p>
             </article>
             <article class="stage reveal">
               <span class="stage-icon">04</span>
-              <span class="stage-label">Saída</span>
-              <h3>Linker nativo</h3>
-              <p>
+              <span class="stage-label" data-i18n="pipeline.output">Saída</span>
+              <h3 data-i18n="pipeline.linkerTitle">Linker nativo</h3>
+              <p data-i18n="pipeline.linkerBody">
                 Combina o objeto gerado com o runtime C e entrega um executável para a
                 plataforma host.
               </p>
@@ -1744,18 +1898,18 @@
 
       <section class="section" id="recursos">
         <div class="shell">
-          <span class="section-kicker">O que já funciona</span>
-          <h2 class="section-title reveal">Mais do que um experimento de “hello world”.</h2>
-          <p class="section-lead reveal">
+          <span class="section-kicker" data-i18n="features.kicker">O que já funciona</span>
+          <h2 class="section-title reveal" data-i18n="features.title">Mais do que um experimento de “hello world”.</h2>
+          <p class="section-lead reveal" data-i18n="features.lead">
             Um recorte crescente da linguagem, acompanhado por testes executáveis e
             documentação de compatibilidade.
           </p>
 
           <div class="bento">
             <article class="feature-card large reveal">
-              <span class="card-tag">Memória gerenciada</span>
-              <h3>GC preciso com shadow stack de roots</h3>
-              <p>
+              <span class="card-tag" data-i18n="features.memoryTag">Memória gerenciada</span>
+              <h3 data-i18n="features.memoryTitle">GC preciso com shadow stack de roots</h3>
+              <p data-i18n="features.memoryBody">
                 Mark-sweep não móvel e single-thread, com loads e stores de roots
                 emitidos diretamente no código gerado.
               </p>
@@ -1763,9 +1917,9 @@
             </article>
 
             <article class="feature-card medium reveal">
-              <span class="card-tag">Dados imutáveis</span>
-              <h3>Coleções persistentes de verdade</h3>
-              <p>
+              <span class="card-tag" data-i18n="features.collectionsTag">Dados imutáveis</span>
+              <h3 data-i18n="features.collectionsTitle">Coleções persistentes de verdade</h3>
+              <p data-i18n="features.collectionsBody">
                 Vetores em trie, mapas e sets híbridos com HAMT, estruturas ordenadas
                 em árvore rubro-negra e operações transientes.
               </p>
@@ -1777,18 +1931,18 @@
             </article>
 
             <article class="feature-card small reveal">
-              <span class="card-tag">Linguagem</span>
-              <h3>Funções &amp; closures</h3>
-              <p>
+              <span class="card-tag" data-i18n="features.languageTag">Linguagem</span>
+              <h3 data-i18n="features.functionsTitle">Funções &amp; closures</h3>
+              <p data-i18n-html="features.functionsBody">
                 Ordem superior, aridades fixas, múltiplas e variádicas, recursão,
                 <code>apply</code> e <code>loop/recur</code>.
               </p>
             </article>
 
             <article class="feature-card small reveal">
-              <span class="card-tag">Abstrações</span>
-              <h3>Protocols &amp; records</h3>
-              <p>
+              <span class="card-tag" data-i18n="features.abstractionsTag">Abstrações</span>
+              <h3 data-i18n="features.protocolsTitle">Protocols &amp; records</h3>
+              <p data-i18n-html="features.protocolsBody">
                 <code>defrecord</code>, <code>defprotocol</code>,
                 <code>extend-type</code> e dispatch sobre tipos embutidos.
               </p>
@@ -1796,8 +1950,8 @@
 
             <article class="feature-card small reveal">
               <span class="card-tag">clojure.core</span>
-              <h3>Core compilado</h3>
-              <p>
+              <h3 data-i18n="features.coreTitle">Core compilado</h3>
+              <p data-i18n-html="features.coreBody">
                 26 funções, incluindo <code>map</code>, <code>filter</code>,
                 <code>reduce</code>, <code>range</code>, <code>into</code> e
                 <code>comp</code>.
@@ -1807,14 +1961,14 @@
 
           <aside class="honesty reveal">
             <div>
-              <span class="honesty-label">Experimental por design</span>
-              <p>
+              <span class="honesty-label" data-i18n="honesty.label">Experimental por design</span>
+              <p data-i18n-html="honesty.bodyHtml">
                 <strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong>
                 Interop Java, bignums, sequências lazy, namespaces dinâmicos e projetos
                 multi-arquivo continuam fora do caminho nativo atual.
               </p>
             </div>
-            <span class="honesty-status">v0.0.1 · em evolução</span>
+            <span class="honesty-status" data-i18n="honesty.status">v0.0.1 · em evolução</span>
           </aside>
         </div>
       </section>
@@ -1822,38 +1976,42 @@
       <section class="section section-dark" id="comecar">
         <div class="demo-grid shell">
           <div class="demo-copy reveal">
-            <span class="section-kicker">Comece em minutos</span>
-            <h2 class="section-title">Do clone ao binário nativo.</h2>
-            <p>
+            <span class="section-kicker" data-i18n="start.kicker">Comece em minutos</span>
+            <h2 class="section-title" data-i18n="start.title">Do clone ao binário nativo.</h2>
+            <p data-i18n="start.lead">
               Compile a CLI em modo release e transforme qualquer exemplo compatível em
               um executável autônomo para a sua plataforma host.
             </p>
-            <div class="requirements" aria-label="Requisitos">
+            <div
+              class="requirements"
+              aria-label="Requisitos"
+              data-i18n-aria-label="a11y.requirements"
+            >
               <span>Rust 1.74+</span>
               <span>Cargo</span>
-              <span>Compilador C</span>
+              <span data-i18n="start.cCompiler">Compilador C</span>
             </div>
           </div>
 
           <div class="code-window reveal">
             <div class="code-tabs">
-              <span class="code-tab active">terminal</span>
+              <span class="code-tab active" data-i18n="code.terminal">terminal</span>
               <button class="copy-button" type="button" data-copy-target="quickstart-code">
                 <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
                   <rect x="5.5" y="5.5" width="7" height="7" rx="1.5" stroke="currentColor"/>
                   <path d="M10.5 5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1" stroke="currentColor"/>
                 </svg>
-                <span>copiar</span>
+                <span data-i18n="code.copy">copiar</span>
               </button>
             </div>
-            <pre class="demo-code" id="quickstart-code"><span class="comment"># 1. Obtenha o projeto</span>
+            <pre class="demo-code" id="quickstart-code"><span class="comment" data-i18n="code.step1"># 1. Obtenha o projeto</span>
 <span class="prompt">$</span> <span class="command">git clone https://github.com/EwertonDCSilv/clojure-compiler.git</span>
 <span class="prompt">$</span> <span class="command">cd clojure-compiler</span>
 
-<span class="comment"># 2. Compile a CLI</span>
+<span class="comment" data-i18n="code.step2"># 2. Compile a CLI</span>
 <span class="prompt">$</span> <span class="command">cargo build --release -p clojure-native-cli</span>
 
-<span class="comment"># 3. Gere e execute um binário</span>
+<span class="comment" data-i18n="code.step3"># 3. Gere e execute um binário</span>
 <span class="prompt">$</span> <span class="command">./target/release/clojure-native build examples/hello.clj -o hello-native</span>
 <span class="prompt">$</span> <span class="command">./hello-native</span>
 <span class="output">Hello from native Clojure</span></pre>
@@ -1863,11 +2021,11 @@
 
       <section class="section" aria-labelledby="quality-title">
         <div class="shell">
-          <span class="section-kicker">Evolução mensurável</span>
-          <h2 class="section-title reveal" id="quality-title">
+          <span class="section-kicker" data-i18n="stats.kicker">Evolução mensurável</span>
+          <h2 class="section-title reveal" id="quality-title" data-i18n="stats.title">
             Compatibilidade testada, não presumida.
           </h2>
-          <p class="section-lead reveal">
+          <p class="section-lead reveal" data-i18n="stats.lead">
             A matriz de conformidade registra recursos entregues, lacunas conhecidas e
             itens ainda em inventário — tudo verificável offline.
           </p>
@@ -1875,22 +2033,22 @@
           <div class="stats-grid reveal">
             <div class="stat">
               <span class="stat-value">447</span>
-              <span class="stat-label">casos na matriz A–E</span>
+              <span class="stat-label" data-i18n="stats.cases">casos na matriz A–E</span>
             </div>
             <div class="stat">
-              <span class="stat-value">170<sup>ATIVOS</sup></span>
-              <span class="stat-label">comportamentos implementados</span>
+              <span class="stat-value">170<sup data-i18n="stats.active">ATIVOS</sup></span>
+              <span class="stat-label" data-i18n="stats.behaviors">comportamentos implementados</span>
             </div>
             <div class="stat">
               <span class="stat-value">90</span>
-              <span class="stat-label">benchmarks de algoritmos</span>
+              <span class="stat-label" data-i18n="stats.benchmarks">benchmarks de algoritmos</span>
             </div>
             <div class="stat">
               <span class="stat-value">0<sup>JVM</sup></span>
-              <span class="stat-label">no runtime do binário</span>
+              <span class="stat-label" data-i18n="stats.jvm">no runtime do binário</span>
             </div>
           </div>
-          <p class="metric-note">
+          <p class="metric-note" data-i18n="stats.note">
             números documentados no repositório · versão 0.0.1
           </p>
         </div>
@@ -1899,8 +2057,8 @@
       <section class="cta">
         <div class="cta-grid shell">
           <div>
-            <h2>Explore. Compile. Contribua.</h2>
-            <p>
+            <h2 data-i18n="cta.title">Explore. Compile. Contribua.</h2>
+            <p data-i18n="cta.body">
               O código, as especificações, os benchmarks e as decisões arquiteturais
               estão abertos. Veja o estado atual e ajude a construir o próximo passo.
             </p>
@@ -1911,7 +2069,7 @@
             target="_blank"
             rel="noreferrer"
           >
-            Abrir no GitHub
+            <span data-i18n="cta.button">Abrir no GitHub</span>
             <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
               <path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1928,33 +2086,62 @@
             <span>clojure-native</span>
           </a>
           <p class="footer-note">
-            Projeto experimental sob licenças MIT ou Apache-2.0 · <span id="year">2026</span>
+            <span data-i18n="footer.note">Projeto experimental sob licenças MIT ou Apache-2.0 ·</span>
+            <span id="year">2026</span>
           </p>
         </div>
-        <nav class="footer-links" aria-label="Links do rodapé">
-          <a href="https://github.com/EwertonDCSilv/clojure-compiler/blob/master/README.pt-BR.md">Documentação</a>
-          <a href="https://github.com/EwertonDCSilv/clojure-compiler/tree/master/specs">Especificações</a>
-          <a href="https://github.com/EwertonDCSilv/clojure-compiler/tree/master/benchmarks">Benchmarks</a>
-          <a href="https://github.com/EwertonDCSilv/clojure-compiler/issues">Issues</a>
+        <nav
+          class="footer-links"
+          aria-label="Links do rodapé"
+          data-i18n-aria-label="a11y.footerNav"
+        >
+          <a
+            href="https://github.com/EwertonDCSilv/clojure-compiler/blob/master/README.pt-BR.md"
+            data-i18n="footer.docs"
+          >Documentação</a>
+          <a
+            href="https://github.com/EwertonDCSilv/clojure-compiler/tree/master/specs"
+            data-i18n="footer.specs"
+          >Especificações</a>
+          <a
+            href="https://github.com/EwertonDCSilv/clojure-compiler/tree/master/benchmarks"
+            data-i18n="footer.benchmarks"
+          >Benchmarks</a>
+          <a
+            href="https://github.com/EwertonDCSilv/clojure-compiler/issues"
+            data-i18n="footer.issues"
+          >Issues</a>
         </nav>
       </div>
     </footer>
 
+    <script src="./i18n.js"></script>
     <script>
       const menuButton = document.querySelector(".menu-button");
       const navLinks = document.querySelector("#nav-links");
 
+      window.addEventListener("page:languagechange", () => {
+        const isOpen = menuButton.getAttribute("aria-expanded") === "true";
+        menuButton.setAttribute(
+          "aria-label",
+          window.pageI18n.t(isOpen ? "a11y.menuClose" : "a11y.menuOpen")
+        );
+      });
+
       menuButton.addEventListener("click", () => {
         const isOpen = menuButton.getAttribute("aria-expanded") === "true";
         menuButton.setAttribute("aria-expanded", String(!isOpen));
-        menuButton.setAttribute("aria-label", isOpen ? "Abrir menu" : "Fechar menu");
+        menuButton.setAttribute(
+          "aria-label",
+          window.pageI18n.t(isOpen ? "a11y.menuOpen" : "a11y.menuClose")
+        );
         navLinks.classList.toggle("open", !isOpen);
       });
 
       navLinks.querySelectorAll("a").forEach((link) => {
         link.addEventListener("click", () => {
           menuButton.setAttribute("aria-expanded", "false");
-          menuButton.setAttribute("aria-label", "Abrir menu");
+          menuButton.setAttribute("aria-label", window.pageI18n.t("a11y.menuOpen"));
           navLinks.classList.remove("open");
         });
       });
@@ -1966,13 +2153,13 @@
 
           try {
             await navigator.clipboard.writeText(target.innerText);
-            label.textContent = "copiado";
+            label.textContent = window.pageI18n.t("code.copied");
           } catch {
-            label.textContent = "selecione o código";
+            label.textContent = window.pageI18n.t("code.select");
           }
 
           window.setTimeout(() => {
-            label.textContent = "copiar";
+            label.textContent = window.pageI18n.t("code.copy");
           }, 1800);
         });
       });
