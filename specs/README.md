@@ -67,10 +67,12 @@ Ordem sugerida:
 7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — GC, roots e ownership.
 8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — biblioteca entregue e alvo.
 9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
-10. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
-11. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-12. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-13. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+10. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
+    `assoc` persistente e `nth` genérico.
+11. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+12. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+13. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+14. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 
@@ -89,6 +91,8 @@ Documentos operacionais:
 - [0006](adr/0006-codegen-optimization.md) — fast paths de fixnum, roots e opt-level.
 - [0007](adr/0007-native-io-and-runtime-reader.md) — I/O atrás da ABI C e reader de
   runtime em Clojure (proposta).
+- [0008](adr/0008-associative-indexed-dispatch.md) — capabilities com fast paths para
+  `assoc` persistente e `nth` genérico (proposta).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -104,6 +108,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
 | Otimização | fast paths inteiros e stores diretos de roots | safepoints e otimização do IR |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
+| Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | `print`/`println` diretos no stdout | streams dinâmicos, arquivos, filesystem e readers conforme IO_SPEC |
 | Plataforma | compilação e link para o host | matriz multiplataforma ampliada |
 
