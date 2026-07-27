@@ -1442,7 +1442,10 @@ impl<'a> FnGen<'a> {
             self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0)
         } else {
             // Teste imediato: falsy só se FALSEV ou NIL → compara inline (sem call).
-            let nf = self.builder.ins().icmp_imm(IntCC::NotEqual, test_val, FALSEV);
+            let nf = self
+                .builder
+                .ins()
+                .icmp_imm(IntCC::NotEqual, test_val, FALSEV);
             let nn = self.builder.ins().icmp_imm(IntCC::NotEqual, test_val, NIL);
             self.builder.ins().band(nf, nn)
         };

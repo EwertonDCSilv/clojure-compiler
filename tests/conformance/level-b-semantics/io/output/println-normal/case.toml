@@ -1,0 +1,11 @@
+id = "b.io_output.println_normal"
+level = "B"
+area = "semantics/io/output"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Implemented by the current analyzer, code generator, and runtime."
+tracking = "specs/COMPATIBILITY_SPEC.md#nível-b"

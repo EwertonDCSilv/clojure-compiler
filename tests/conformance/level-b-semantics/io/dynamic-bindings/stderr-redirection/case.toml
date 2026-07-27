@@ -1,0 +1,11 @@
+id = "b.io_dynamic_bindings.stderr_redirection"
+level = "B"
+area = "semantics/io/dynamic-bindings"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The feature has a defined Clojure result but no current native execution path."
+tracking = "specs/IO_SPEC.md#standard-streams-and-process-context"

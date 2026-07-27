@@ -43,9 +43,12 @@ tests/conformance/
 │   ├── collections/
 │   ├── records-protocols/
 │   ├── errors/
-│   └── gc/
+│   ├── gc/
+│   └── io/
 ├── level-c-stdlib/
 │   ├── clojure-core/
+│   ├── cljn-io/
+│   ├── cljn-process/
 │   ├── clojure-string/
 │   ├── clojure-set/
 │   ├── clojure-walk/
@@ -55,10 +58,10 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 206 casos:
+O inventário atual contém 431 casos:
 
-- 154 `active`: executados e bloqueantes;
-- 20 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 160 `active`: executados e bloqueantes;
+- 239 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
@@ -71,8 +74,15 @@ e resposta esperada versionados como contrato do alvo.
 
 Cada caso é autocontido e tem `case.toml`, `input.clj` e a expectativa aplicável. O
 manifesto registra `status`, `class`, `target`, `oracle`, timeout, modo GC stress, razão
-e tracking. Mapas e sets são comparados estruturalmente; newlines e caminhos temporários
-são normalizados.
+e tracking. Casos `build-run` podem ainda declarar `[run]` com argv, ambiente, stdin,
+exit code, plataformas e symlinks. Cada execução usa um diretório temporário:
+`work.before/` define o estado inicial e `work.after/` o snapshot exato esperado.
+Streams `.bin` são comparados byte a byte; mapas/sets são comparados estruturalmente;
+newlines e caminhos temporários de expectativas textuais são normalizados.
+
+A matriz de I/O descrita em [IO_SPEC](IO_SPEC.md) acrescenta cenários normal, limite e
+erro para core/EDN e `cljn.*`. Somente o baseline de `print`/`println` está ativo; os
+demais casos são `xfail` e não afirmam implementação.
 
 `verify` compila o CLI release uma vez, reutiliza o artefato, executa no máximo quatro
 casos em paralelo e grava:
@@ -115,8 +125,8 @@ Na comparação diferencial:
 - no mínimo 82% de linhas;
 - no mínimo 30% de linhas em cada arquivo medido.
 
-No último resultado registrado, o workspace atingiu 85,86% de regiões, 84,98% de
-funções e 85,22% de linhas.
+No último resultado registrado, o workspace atingiu 85,39% de regiões, 82,22% de
+funções e 84,97% de linhas.
 
 ## Benchmarks
 
@@ -138,3 +148,7 @@ Uma mudança está pronta quando:
 3. `scripts/conformance.sh verify` passa sem rede e sem JVM;
 4. casos novos têm status, razão, tracking e checksum;
 5. mudanças de desempenho relevantes incluem checksum e metodologia reproduzível.
+
+Para promover o gate de I/O, também são obrigatórios zero handles vazados, GC stress,
+sanitizers, leitura/escrita em blocos e os snapshots isolados definidos na
+[IO_SPEC](IO_SPEC.md).

@@ -23,6 +23,7 @@ nem bytecode `.class` em tempo de execução.
   `inc`, `dec`, `<`, `<=`, `>` e `>=`; igualdade estrutural permanece no runtime.
 - Vetores persistentes em trie bitmap de 32 vias e mapas/sets híbridos, com promoção de
   representação pequena para HAMT de 32 vias.
+- Mapas e sets ordenados em árvore LLRB persistente.
 - `defrecord`, `defprotocol` e `extend-type`, inclusive dispatch sobre tipos embutidos.
 - Um core compilado com 26 funções, entre elas `map`, `filter`, `reduce`, `range`,
   `into`, `mapv`, `take`, `drop`, `comp`, `concat` e `mapcat`.
@@ -41,11 +42,15 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 206 casos: 154 ativos, 20 falhas esperadas e 32 itens pendentes. D inclui
+Ela possui 431 casos: 160 ativos, 239 falhas esperadas e 32 itens pendentes. D inclui
 bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
 e lacunas executáveis de ecossistema, além de um projeto-alvo de API HTTP Hello World
 em Pedestal. A verificação é offline, não depende de JVM e gera relatórios em
 `target/conformance/`.
+
+O inventário também cobre o gate proposto de I/O, mas essa superfície permanece
+`xfail`: somente `print`/`println` têm baseline ativo. O contrato está em
+[`specs/IO_SPEC.md`](../specs/IO_SPEC.md).
 
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
 [`benchmarks/cormen/`](../benchmarks/cormen). Ambas exportam CSV com tempo de parede,
@@ -58,6 +63,8 @@ numérica é limitada a fixnums; não há bignums, ratios nem BigDecimal. Litera
 floating-point são reconhecidos pelo reader, mas ainda não chegam ao caminho compilado.
 Também permanecem fora do caminho nativo: macros definidas pelo usuário, sequências
 lazy/infinitas, exceções, namespaces dinâmicos, projetos multi-arquivo e interop Java.
+Streams gerais, arquivos, filesystem e readers de runtime também ainda não estão
+implementados.
 
 Consulte [`specs/README.md`](../specs/README.md) para o estado detalhado e
 [`README.pt-BR.md`](../README.pt-BR.md) para instruções de uso.

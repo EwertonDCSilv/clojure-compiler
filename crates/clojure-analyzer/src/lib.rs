@@ -1132,7 +1132,12 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Vals => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
-        Prim::List | Prim::Str | Prim::Println | Prim::Print | Prim::Vector | Prim::HashSet
+        Prim::List
+        | Prim::Str
+        | Prim::Println
+        | Prim::Print
+        | Prim::Vector
+        | Prim::HashSet
         | Prim::SortedSet => true,
     };
     if ok {

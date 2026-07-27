@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 enum Expected {
     Edn(&'static str),
     Stdout(&'static str),
+    StdoutBinary(&'static [u8]),
     Stderr(&'static str),
     None,
 }
@@ -33,6 +34,8 @@ struct Fixture {
     input: &'static str,
     expected: Expected,
     extra_files: &'static [(&'static str, &'static str)],
+    extra_binary_files: &'static [(&'static str, &'static [u8])],
+    manifest_tail: &'static str,
 }
 
 const PEDESTAL_HELLO_SOURCE: &str = "(ns hello
@@ -104,6 +107,29 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         directory = directory.join(fixture.area_directory);
     }
     directory = directory.join(fixture.slug);
+    if directory.exists() {
+        for generated in [
+            "case.toml",
+            "input.clj",
+            "expected.edn",
+            "expected.stdout",
+            "expected.stdout.bin",
+            "expected.stderr",
+            "expected.stderr.bin",
+            "work.before",
+            "work.after",
+            "stdin.txt",
+            "stdin-crlf.bin",
+            "stdin-invalid.bin",
+        ] {
+            let path = directory.join(generated);
+            if path.is_dir() {
+                fs::remove_dir_all(path).expect("reset generated fixture directory");
+            } else if path.exists() {
+                fs::remove_file(path).expect("reset generated fixture file");
+            }
+        }
+    }
     fs::create_dir_all(&directory).expect("create fixture directory");
     let namespace = fixture
         .namespace
@@ -121,6 +147,7 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
          gc_stress = {}\n\
          reason = \"{}\"\n\
          tracking = \"{}\"\n\
+         {}\
          {}",
         fixture.id,
         fixture.level,
@@ -132,7 +159,8 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         fixture.gc_stress,
         fixture.reason,
         fixture.tracking,
-        namespace
+        namespace,
+        fixture.manifest_tail
     );
     fs::write(directory.join("case.toml"), manifest).expect("write case.toml");
     fs::write(directory.join("input.clj"), fixture.input).expect("write input.clj");
@@ -143,6 +171,8 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         Expected::Stdout(value) => {
             fs::write(directory.join("expected.stdout"), value).expect("write expected.stdout")
         }
+        Expected::StdoutBinary(value) => fs::write(directory.join("expected.stdout.bin"), value)
+            .expect("write expected.stdout.bin"),
         Expected::Stderr(value) => {
             fs::write(directory.join("expected.stderr"), value).expect("write expected.stderr")
         }
@@ -153,6 +183,12 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         fs::create_dir_all(path.parent().expect("extra fixture file parent"))
             .expect("create extra fixture directory");
         fs::write(path, contents).expect("write extra fixture file");
+    }
+    for (relative_path, contents) in fixture.extra_binary_files {
+        let path = directory.join(relative_path);
+        fs::create_dir_all(path.parent().expect("extra binary fixture file parent"))
+            .expect("create extra binary fixture directory");
+        fs::write(path, contents).expect("write extra binary fixture file");
     }
 }
 
@@ -191,6 +227,8 @@ fn fixture(
         input,
         expected,
         extra_files: &[],
+        extra_binary_files: &[],
+        manifest_tail: "",
     }
 }
 
@@ -199,6 +237,19 @@ fn with_extra_files(
     extra_files: &'static [(&'static str, &'static str)],
 ) -> Fixture {
     fixture.extra_files = extra_files;
+    fixture
+}
+
+fn with_binary_files(
+    mut fixture: Fixture,
+    extra_binary_files: &'static [(&'static str, &'static [u8])],
+) -> Fixture {
+    fixture.extra_binary_files = extra_binary_files;
+    fixture
+}
+
+fn with_run(mut fixture: Fixture, manifest_tail: &'static str) -> Fixture {
+    fixture.manifest_tail = manifest_tail;
     fixture
 }
 
@@ -317,11 +368,7 @@ fn build(
         'B',
         area,
         slug,
-        leak(format!(
-            "b.{}.{}",
-            area.replace('-', "_"),
-            slug.replace('-', "_")
-        )),
+        leak(format!("b.{}.{}", sanitize(area), slug.replace('-', "_"))),
         leak(format!("semantics/{area}")),
         "active",
         "spec",
@@ -372,11 +419,7 @@ fn build_xfail(
         'B',
         area,
         slug,
-        leak(format!(
-            "b.{}.{}",
-            area.replace('-', "_"),
-            slug.replace('-', "_")
-        )),
+        leak(format!("b.{}.{}", sanitize(area), slug.replace('-', "_"))),
         leak(format!("semantics/{area}")),
         "xfail",
         "unsupported",
@@ -389,6 +432,17 @@ fn build_xfail(
         body,
         Expected::Stdout(desired),
     )
+}
+
+fn native_build_xfail(
+    area: &'static str,
+    slug: &'static str,
+    body: &'static str,
+    desired: &'static str,
+) -> Fixture {
+    let mut value = build_xfail(area, slug, body, desired, "specs/IO_SPEC.md");
+    value.oracle = "not-applicable";
+    value
 }
 
 fn build_error(slug: &'static str, input: &'static str, code: &'static str) -> Fixture {
@@ -612,6 +666,671 @@ fn higher_level_xfail(
     )
 }
 
+#[derive(Clone, Copy)]
+struct IoApi {
+    namespace: &'static str,
+    directory: &'static str,
+    function: &'static str,
+    normal: &'static str,
+    boundary: &'static str,
+    invalid: &'static str,
+}
+
+const IO_CASE_FILES: &[(&str, &str)] = &[
+    ("work.before/input.txt", "alpha\nbeta\n"),
+    ("work.before/empty.txt", ""),
+    ("work.before/tree/a.txt", "a\n"),
+    ("work.before/tree/nested/b.txt", "b\n"),
+];
+
+const INVALID_UTF8_FILE: &[(&str, &[u8])] = &[("stdin-invalid.bin", &[0x66, 0x80, 0x6f])];
+
+fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> Fixture {
+    let function_slug = sanitize(api.function);
+    let namespace_slug = sanitize(api.namespace);
+    let body = if scenario == "error" {
+        leak(format!(
+            "(ns io.{namespace_slug}.{function_slug}.{scenario})\n\
+             (defn -main []\n\
+               (try\n\
+                 (do {expression} (println :unexpected))\n\
+                 (catch cljn.io/IOException error\n\
+                   (println (:kind (ex-data error))))))\n\
+             (-main)\n"
+        ))
+    } else {
+        leak(format!(
+            "(ns io.{namespace_slug}.{function_slug}.{scenario})\n\
+             (defn -main [] (do {expression} (println :ok)))\n\
+             (-main)\n"
+        ))
+    };
+    let expected = if scenario == "error" {
+        ":invalid-input\n"
+    } else {
+        ":ok\n"
+    };
+    let oracle = if matches!(api.namespace, "clojure.core" | "clojure.edn") {
+        "equal"
+    } else {
+        "not-applicable"
+    };
+    let class = if oracle == "equal" {
+        "official"
+    } else {
+        "unsupported"
+    };
+    let mut value = fixture(
+        'C',
+        leak(format!("{}/{}", api.directory, function_slug)),
+        scenario,
+        leak(format!(
+            "c.{}.{}.{}",
+            namespace_slug, function_slug, scenario
+        )),
+        leak(format!("stdlib/{}", api.directory)),
+        "xfail",
+        class,
+        "build-run",
+        oracle,
+        scenario == "boundary",
+        "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet.",
+        "specs/IO_SPEC.md",
+        Some(api.namespace),
+        body,
+        Expected::Stdout(expected),
+    );
+    if ["input.txt", "empty.txt", "\"tree", "\".\""]
+        .iter()
+        .any(|needle| expression.contains(needle))
+    {
+        value.extra_files = IO_CASE_FILES;
+    }
+    if !matches!(api.namespace, "clojure.core" | "clojure.edn") {
+        value.manifest_tail = "[run]\nplatforms = [\"linux\"]\n";
+    }
+    value
+}
+
+fn io_api_cases() -> Vec<Fixture> {
+    let apis = [
+        // clojure.core I/O and dynamic redirection.
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "pr",
+            normal: "(pr {:answer 42})",
+            boundary: "(pr nil)",
+            invalid: "(binding [*out* (doto (cljn.io/string-writer) cljn.io/close!)] (pr 1))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "prn",
+            normal: "(prn \"line\")",
+            boundary: "(prn)",
+            invalid: "(binding [*out* (doto (cljn.io/string-writer) cljn.io/close!)] (prn 1))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "newline",
+            normal: "(newline)",
+            boundary: "(binding [*flush-on-newline* false] (newline))",
+            invalid: "(binding [*out* (doto (cljn.io/string-writer) cljn.io/close!)] (newline))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "flush",
+            normal: "(flush)",
+            boundary: "(binding [*out* (cljn.io/string-writer)] (flush))",
+            invalid: "(binding [*out* (doto (cljn.io/string-writer) cljn.io/close!)] (flush))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "read-line",
+            normal: "(binding [*in* (cljn.io/string-reader \"alpha\\nbeta\\n\")] (read-line))",
+            boundary: "(binding [*in* (cljn.io/string-reader \"\")] (read-line))",
+            invalid: "(binding [*in* (cljn.io/byte-input-stream (cljn.io/bytes [128]))] (read-line))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "slurp",
+            normal: "(slurp \"input.txt\")",
+            boundary: "(slurp \"empty.txt\")",
+            invalid: "(slurp \"missing.txt\")",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io",
+            function: "spit",
+            normal: "(spit \"created.txt\" \"hello\\n\")",
+            boundary: "(spit \"created.txt\" \"\" :append true)",
+            invalid: "(spit \"tree\" \"not-a-file\")",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/reader",
+            function: "read",
+            normal: "(read (cljn.io/string-reader \"{:answer 42}\"))",
+            boundary: "(read {:eof :done} (cljn.io/string-reader \"\"))",
+            invalid: "(read (cljn.io/string-reader \"[1\"))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/reader",
+            function: "read-string",
+            normal: "(read-string \"{:answer 42}\")",
+            boundary: "(read-string \"nil\")",
+            invalid: "(read-string \"#=(+ 1 2)\")",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io-macros",
+            function: "with-open",
+            normal: "(with-open [r (cljn.io/string-reader \"x\")] (cljn.io/read-char r))",
+            boundary: "(with-open [] nil)",
+            invalid: "(with-open [r (cljn.io/string-reader \"x\")] (throw (ex-info \"boom\" {})))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io-macros",
+            function: "with-in-str",
+            normal: "(with-in-str \"alpha\\n\" (read-line))",
+            boundary: "(with-in-str \"\" (read-line))",
+            invalid: "(with-in-str nil (read-line))",
+        },
+        IoApi {
+            namespace: "clojure.core",
+            directory: "clojure-core/io-macros",
+            function: "with-out-str",
+            normal: "(with-out-str (print \"alpha\"))",
+            boundary: "(with-out-str nil)",
+            invalid: "(with-out-str (throw (ex-info \"boom\" {})))",
+        },
+        // Runtime EDN reader.
+        IoApi {
+            namespace: "clojure.edn",
+            directory: "clojure-edn",
+            function: "read",
+            normal: "(clojure.edn/read (cljn.io/string-reader \"{:a [1 2]}\"))",
+            boundary: "(clojure.edn/read {:eof :done} (cljn.io/string-reader \"\"))",
+            invalid: "(clojure.edn/read (cljn.io/string-reader \"{:a\"))",
+        },
+        IoApi {
+            namespace: "clojure.edn",
+            directory: "clojure-edn",
+            function: "read-string",
+            normal: "(clojure.edn/read-string \"#{1 2}\")",
+            boundary: "(clojure.edn/read-string {:readers {} :default (fn [tag value] [tag value])} \"#app/id 42\")",
+            invalid: "(clojure.edn/read-string \"#=(+ 1 2)\")",
+        },
+        // Native paths.
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "path",
+            normal: "(cljn.io/path \"tree/nested/b.txt\")",
+            boundary: "(cljn.io/path \"\")",
+            invalid: "(cljn.io/path nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "join",
+            normal: "(cljn.io/join (cljn.io/path \"tree\") \"nested\" \"b.txt\")",
+            boundary: "(cljn.io/join (cljn.io/path \".\"))",
+            invalid: "(cljn.io/join nil \"x\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "parent",
+            normal: "(cljn.io/parent (cljn.io/path \"tree/a.txt\"))",
+            boundary: "(cljn.io/parent (cljn.io/path \"/\"))",
+            invalid: "(cljn.io/parent \"not-a-path\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "file-name",
+            normal: "(cljn.io/file-name (cljn.io/path \"tree/a.txt\"))",
+            boundary: "(cljn.io/file-name (cljn.io/path \"/\"))",
+            invalid: "(cljn.io/file-name nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "normalize",
+            normal: "(cljn.io/normalize (cljn.io/path \"tree/../input.txt\"))",
+            boundary: "(cljn.io/normalize (cljn.io/path \".\"))",
+            invalid: "(cljn.io/normalize 42)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "real-path",
+            normal: "(cljn.io/real-path (cljn.io/path \"input.txt\"))",
+            boundary: "(cljn.io/real-path (cljn.io/path \".\"))",
+            invalid: "(cljn.io/real-path (cljn.io/path \"missing\"))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/paths",
+            function: "absolute?",
+            normal: "(cljn.io/absolute? (cljn.io/path \"/tmp\"))",
+            boundary: "(cljn.io/absolute? (cljn.io/path \"\"))",
+            invalid: "(cljn.io/absolute? \"relative\")",
+        },
+        // Immutable bytes.
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "bytes",
+            normal: "(cljn.io/bytes [0 1 255])",
+            boundary: "(cljn.io/bytes [])",
+            invalid: "(cljn.io/bytes [256])",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "bytes?",
+            normal: "(cljn.io/bytes? (cljn.io/bytes [1]))",
+            boundary: "(cljn.io/bytes? nil)",
+            invalid: "(cljn.io/bytes? (cljn.io/bytes [256]))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "byte-count",
+            normal: "(cljn.io/byte-count (cljn.io/bytes [1 2 3]))",
+            boundary: "(cljn.io/byte-count (cljn.io/bytes []))",
+            invalid: "(cljn.io/byte-count \"abc\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "bytes->vector",
+            normal: "(cljn.io/bytes->vector (cljn.io/bytes [0 127 255]))",
+            boundary: "(cljn.io/bytes->vector (cljn.io/bytes []))",
+            invalid: "(cljn.io/bytes->vector nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "bytes->string",
+            normal: "(cljn.io/bytes->string (cljn.io/bytes [97 195 167 195 163 111]))",
+            boundary: "(cljn.io/bytes->string (cljn.io/bytes []))",
+            invalid: "(cljn.io/bytes->string (cljn.io/bytes [128]))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/bytes",
+            function: "string->bytes",
+            normal: "(cljn.io/string->bytes \"ação\")",
+            boundary: "(cljn.io/string->bytes \"\")",
+            invalid: "(cljn.io/string->bytes nil)",
+        },
+        // Handles, buffered character I/O, and binary I/O.
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "reader",
+            normal: "(cljn.io/close! (cljn.io/reader \"input.txt\"))",
+            boundary: "(cljn.io/close! (cljn.io/reader \"empty.txt\"))",
+            invalid: "(cljn.io/reader \"missing.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "writer",
+            normal: "(cljn.io/close! (cljn.io/writer \"created.txt\"))",
+            boundary: "(cljn.io/close! (cljn.io/writer \"created.txt\" :append true))",
+            invalid: "(cljn.io/writer \"tree\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "input-stream",
+            normal: "(cljn.io/close! (cljn.io/input-stream \"input.txt\"))",
+            boundary: "(cljn.io/close! (cljn.io/input-stream \"empty.txt\"))",
+            invalid: "(cljn.io/input-stream \"missing.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "output-stream",
+            normal: "(cljn.io/close! (cljn.io/output-stream \"created.bin\"))",
+            boundary: "(cljn.io/close! (cljn.io/output-stream \"created.bin\" :append true))",
+            invalid: "(cljn.io/output-stream \"tree\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "string-reader",
+            normal: "(cljn.io/close! (cljn.io/string-reader \"abc\"))",
+            boundary: "(cljn.io/close! (cljn.io/string-reader \"\"))",
+            invalid: "(cljn.io/string-reader nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "string-writer",
+            normal: "(cljn.io/close! (cljn.io/string-writer))",
+            boundary: "(cljn.io/string-writer 0)",
+            invalid: "(cljn.io/string-writer -1)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "writer-string",
+            normal: "(let [w (cljn.io/string-writer)] (cljn.io/write! w \"ação\") (cljn.io/writer-string w))",
+            boundary: "(cljn.io/writer-string (cljn.io/string-writer))",
+            invalid: "(cljn.io/writer-string (cljn.io/string-reader \"x\"))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "byte-input-stream",
+            normal: "(cljn.io/close! (cljn.io/byte-input-stream (cljn.io/bytes [1 2])))",
+            boundary: "(cljn.io/close! (cljn.io/byte-input-stream (cljn.io/bytes [])))",
+            invalid: "(cljn.io/byte-input-stream \"bytes\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "byte-output-stream",
+            normal: "(cljn.io/close! (cljn.io/byte-output-stream))",
+            boundary: "(cljn.io/byte-output-stream 0)",
+            invalid: "(cljn.io/byte-output-stream -1)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/resources",
+            function: "output-bytes",
+            normal: "(let [out (cljn.io/byte-output-stream)] (cljn.io/write-bytes! out (cljn.io/bytes [0 255])) (cljn.io/output-bytes out))",
+            boundary: "(cljn.io/output-bytes (cljn.io/byte-output-stream))",
+            invalid: "(cljn.io/output-bytes (cljn.io/input-stream \"input.txt\"))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/lifecycle",
+            function: "close!",
+            normal: "(cljn.io/close! (cljn.io/string-reader \"x\"))",
+            boundary: "(let [r (cljn.io/string-reader \"x\")] (cljn.io/close! r) (cljn.io/close! r))",
+            invalid: "(cljn.io/close! *out*)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/lifecycle",
+            function: "closed?",
+            normal: "(let [r (cljn.io/string-reader \"x\")] (cljn.io/close! r) (cljn.io/closed? r))",
+            boundary: "(cljn.io/closed? (cljn.io/string-reader \"\"))",
+            invalid: "(cljn.io/closed? 42)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/lifecycle",
+            function: "flush!",
+            normal: "(cljn.io/flush! (cljn.io/string-writer))",
+            boundary: "(cljn.io/flush! *out*)",
+            invalid: "(cljn.io/flush! (doto (cljn.io/string-writer) cljn.io/close!))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/text",
+            function: "read-char",
+            normal: "(cljn.io/read-char (cljn.io/string-reader \"λ\"))",
+            boundary: "(cljn.io/read-char (cljn.io/string-reader \"\"))",
+            invalid: "(cljn.io/read-char (doto (cljn.io/string-reader \"x\") cljn.io/close!))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/text",
+            function: "unread-char",
+            normal: "(let [r (cljn.io/string-reader \"ab\")] (cljn.io/unread-char r (cljn.io/read-char r)))",
+            boundary: "(let [r (cljn.io/string-reader \"a\")] (cljn.io/read-char r) (cljn.io/unread-char r \\a))",
+            invalid: "(cljn.io/unread-char (cljn.io/string-reader \"\") \\a)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/text",
+            function: "read-line",
+            normal: "(cljn.io/read-line (cljn.io/string-reader \"a\\r\\nb\\n\"))",
+            boundary: "(cljn.io/read-line (cljn.io/string-reader \"last\"))",
+            invalid: "(cljn.io/read-line (doto (cljn.io/string-reader \"x\") cljn.io/close!))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/text",
+            function: "read-block!",
+            normal: "(cljn.io/read-block! (cljn.io/string-reader \"abcd\") 4)",
+            boundary: "(cljn.io/read-block! (cljn.io/string-reader \"\") 0)",
+            invalid: "(cljn.io/read-block! (cljn.io/string-reader \"x\") -1)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/binary",
+            function: "read-bytes",
+            normal: "(cljn.io/read-bytes (cljn.io/byte-input-stream (cljn.io/bytes [0 255])) 2)",
+            boundary: "(cljn.io/read-bytes (cljn.io/byte-input-stream (cljn.io/bytes [])) 0)",
+            invalid: "(cljn.io/read-bytes (cljn.io/string-reader \"x\") 1)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/text",
+            function: "write!",
+            normal: "(cljn.io/write! (cljn.io/string-writer) \"ação\")",
+            boundary: "(cljn.io/write! (cljn.io/string-writer) \"\")",
+            invalid: "(cljn.io/write! (doto (cljn.io/string-writer) cljn.io/close!) \"x\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/binary",
+            function: "write-bytes!",
+            normal: "(cljn.io/write-bytes! (cljn.io/byte-output-stream) (cljn.io/bytes [0 255]))",
+            boundary: "(cljn.io/write-bytes! (cljn.io/byte-output-stream) (cljn.io/bytes []))",
+            invalid: "(cljn.io/write-bytes! (cljn.io/string-writer) (cljn.io/bytes [1]))",
+        },
+        // Positioning and filesystem.
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/files",
+            function: "seek!",
+            normal: "(with-open [s (cljn.io/input-stream \"input.txt\")] (cljn.io/seek! s 2))",
+            boundary: "(with-open [s (cljn.io/input-stream \"empty.txt\")] (cljn.io/seek! s 0))",
+            invalid: "(with-open [s (cljn.io/input-stream \"input.txt\")] (cljn.io/seek! s -1))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/files",
+            function: "position",
+            normal: "(with-open [s (cljn.io/input-stream \"input.txt\")] (cljn.io/position s))",
+            boundary: "(with-open [s (cljn.io/input-stream \"empty.txt\")] (cljn.io/position s))",
+            invalid: "(cljn.io/position (cljn.io/string-reader \"x\"))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/files",
+            function: "truncate!",
+            normal: "(with-open [s (cljn.io/output-stream \"created.bin\")] (cljn.io/truncate! s 2))",
+            boundary: "(with-open [s (cljn.io/output-stream \"created.bin\")] (cljn.io/truncate! s 0))",
+            invalid: "(with-open [s (cljn.io/output-stream \"created.bin\")] (cljn.io/truncate! s -1))",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/files",
+            function: "copy!",
+            normal: "(cljn.io/copy! \"input.txt\" \"copy.txt\")",
+            boundary: "(cljn.io/copy! \"empty.txt\" \"empty-copy.txt\")",
+            invalid: "(cljn.io/copy! \"missing.txt\" \"copy.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "exists?",
+            normal: "(cljn.io/exists? \"input.txt\")",
+            boundary: "(cljn.io/exists? \"missing.txt\")",
+            invalid: "(cljn.io/exists? nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "file?",
+            normal: "(cljn.io/file? \"input.txt\")",
+            boundary: "(cljn.io/file? \"tree\")",
+            invalid: "(cljn.io/file? nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "directory?",
+            normal: "(cljn.io/directory? \"tree\")",
+            boundary: "(cljn.io/directory? \"input.txt\")",
+            invalid: "(cljn.io/directory? nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "symlink?",
+            normal: "(cljn.io/symlink? \"link.txt\")",
+            boundary: "(cljn.io/symlink? \"input.txt\")",
+            invalid: "(cljn.io/symlink? nil)",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "attributes",
+            normal: "(cljn.io/attributes \"input.txt\")",
+            boundary: "(cljn.io/attributes \"empty.txt\")",
+            invalid: "(cljn.io/attributes \"missing.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "list",
+            normal: "(cljn.io/list \"tree\")",
+            boundary: "(cljn.io/list \".\")",
+            invalid: "(cljn.io/list \"input.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "create-directory!",
+            normal: "(cljn.io/create-directory! \"new-dir\")",
+            boundary: "(cljn.io/create-directory! \"new-dir\" :exists :ignore)",
+            invalid: "(cljn.io/create-directory! \"tree\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "create-directories!",
+            normal: "(cljn.io/create-directories! \"new/a/b\")",
+            boundary: "(cljn.io/create-directories! \".\")",
+            invalid: "(cljn.io/create-directories! \"input.txt/child\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "move!",
+            normal: "(cljn.io/move! \"input.txt\" \"moved.txt\")",
+            boundary: "(cljn.io/move! \"empty.txt\" \"moved-empty.txt\")",
+            invalid: "(cljn.io/move! \"missing.txt\" \"moved.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "delete!",
+            normal: "(cljn.io/delete! \"input.txt\")",
+            boundary: "(cljn.io/delete! \"missing.txt\" :missing :ignore)",
+            invalid: "(cljn.io/delete! \"tree\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "copy-tree!",
+            normal: "(cljn.io/copy-tree! \"tree\" \"tree-copy\")",
+            boundary: "(cljn.io/copy-tree! \"tree\" \"tree-copy\" :overwrite true)",
+            invalid: "(cljn.io/copy-tree! \"/\" \"root-copy\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "delete-tree!",
+            normal: "(cljn.io/delete-tree! \"tree\")",
+            boundary: "(cljn.io/delete-tree! \"missing\" :missing :ignore)",
+            invalid: "(cljn.io/delete-tree! \"/\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "create-symlink!",
+            normal: "(cljn.io/create-symlink! \"input.txt\" \"link.txt\")",
+            boundary: "(cljn.io/create-symlink! \"missing-target\" \"dangling\")",
+            invalid: "(cljn.io/create-symlink! \"input.txt\" \"input.txt\")",
+        },
+        IoApi {
+            namespace: "cljn.io",
+            directory: "cljn-io/filesystem",
+            function: "read-link",
+            normal: "(do (cljn.io/create-symlink! \"input.txt\" \"link.txt\") (cljn.io/read-link \"link.txt\"))",
+            boundary: "(do (cljn.io/create-symlink! \"missing\" \"dangling\") (cljn.io/read-link \"dangling\"))",
+            invalid: "(cljn.io/read-link \"input.txt\")",
+        },
+        // Process context.
+        IoApi {
+            namespace: "cljn.process",
+            directory: "cljn-process",
+            function: "getenv",
+            normal: "(cljn.process/getenv \"CLJN_CONFORMANCE_VALUE\")",
+            boundary: "(cljn.process/getenv \"CLJN_CONFORMANCE_MISSING\")",
+            invalid: "(cljn.process/getenv nil)",
+        },
+        IoApi {
+            namespace: "cljn.process",
+            directory: "cljn-process",
+            function: "environment",
+            normal: "(cljn.process/environment)",
+            boundary: "(contains? (cljn.process/environment) \"CLJN_CONFORMANCE_VALUE\")",
+            invalid: "(cljn.process/environment :unexpected)",
+        },
+        IoApi {
+            namespace: "cljn.process",
+            directory: "cljn-process",
+            function: "cwd",
+            normal: "(cljn.process/cwd)",
+            boundary: "(cljn.io/absolute? (cljn.process/cwd))",
+            invalid: "(cljn.process/cwd :unexpected)",
+        },
+    ];
+
+    let mut cases = Vec::with_capacity(apis.len() * 3);
+    for api in apis {
+        cases.push(io_api_case(api, "normal", api.normal));
+        cases.push(io_api_case(api, "boundary", api.boundary));
+        cases.push(io_api_case(api, "error", api.invalid));
+    }
+    cases
+}
+
+fn sanitize(value: &str) -> &'static str {
+    leak(
+        value
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '_'
+                }
+            })
+            .collect(),
+    )
+}
+
 fn leak(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
@@ -784,6 +1503,220 @@ fn fixtures() -> Vec<Fixture> {
         core("mapcat", "(ns c.mapcat)\n(defn pair [x] (list x x))\n(defn -main [] (println (mapcat pair (list 1 2)) (mapcat pair (list)) (mapcat (fn [x] (list (inc x))) (list 0 1))))\n(-main)\n", "(1 1 2 2) () (1 2)\n"),
         core("count-if", "(ns c.count-if)\n(defn -main [] (println (count-if even? (range 6)) (count-if even? (list)) (count-if neg? (list -2 -1 0 1))))\n(-main)\n", "3 0 2\n"),
     ];
+
+    // Level B — the currently executable stdout baseline. These cases keep
+    // `print`/`println` separate from the future stream-redirection contract.
+    cases.extend([
+        build(
+            "io/output",
+            "print-normal",
+            "(ns b.io.print-normal)\n(defn -main [] (print \"hello\" 42))\n(-main)\n",
+            "hello 42",
+        ),
+        build(
+            "io/output",
+            "print-empty",
+            "(ns b.io.print-empty)\n(defn -main [] (print \"\") (println :done))\n(-main)\n",
+            ":done\n",
+        ),
+        build(
+            "io/output",
+            "print-unicode",
+            "(ns b.io.print-unicode)\n(defn -main [] (print \"ação λ 東京 😀\"))\n(-main)\n",
+            "ação λ 東京 😀",
+        ),
+        build(
+            "io/output",
+            "println-normal",
+            "(ns b.io.println-normal)\n(defn -main [] (println \"hello\" 42))\n(-main)\n",
+            "hello 42\n",
+        ),
+        build(
+            "io/output",
+            "println-empty",
+            "(ns b.io.println-empty)\n(defn -main [] (println))\n(-main)\n",
+            "\n",
+        ),
+        build(
+            "io/output",
+            "println-unicode",
+            "(ns b.io.println-unicode)\n(defn -main [] (println \"ação λ 東京 😀\"))\n(-main)\n",
+            "ação λ 東京 😀\n",
+        ),
+    ]);
+
+    // Level B — language/runtime prerequisites that make the higher-level I/O
+    // APIs safe under redirection, exceptions, GC, and abnormal exit.
+    cases.extend([
+        build_xfail(
+            "io/dynamic-bindings",
+            "out-restored",
+            "(ns b.io.out-restored)\n(defn -main []\n  (let [capture (cljn.io/string-writer)]\n    (binding [*out* capture] (print \"captured\"))\n    (println \"terminal\")))\n(-main)\n",
+            "terminal\n",
+            "specs/IO_SPEC.md#standard-streams-and-process-context",
+        ),
+        build_xfail(
+            "io/dynamic-bindings",
+            "stderr-redirection",
+            "(ns b.io.stderr)\n(defn -main []\n  (binding [*out* *err*] (println \"problem\"))\n  (println \"ok\"))\n(-main)\n",
+            "ok\n",
+            "specs/IO_SPEC.md#standard-streams-and-process-context",
+        ),
+        build_xfail(
+            "io/dynamic-bindings",
+            "flush-on-newline-disabled",
+            "(ns b.io.flush-binding)\n(defn -main []\n  (binding [*flush-on-newline* false] (println \"buffered\") (flush)))\n(-main)\n",
+            "buffered\n",
+            "specs/IO_SPEC.md#standard-streams-and-process-context",
+        ),
+        build_xfail(
+            "io/exceptions",
+            "catch-io-exception-data",
+            "(ns b.io.catch)\n(defn -main []\n  (try (slurp \"missing.txt\")\n       (catch cljn.io/IOException error\n         (println (:kind (ex-data error)) (:operation (ex-data error))))))\n(-main)\n",
+            ":not-found :open-reader\n",
+            "specs/IO_SPEC.md#erros",
+        ),
+        build_xfail(
+            "io/exceptions",
+            "finally-runs",
+            "(ns b.io.finally)\n(defn -main []\n  (try (throw (ex-info \"boom\" {}))\n       (catch Exception error (print \"caught \"))\n       (finally (println \"closed\"))))\n(-main)\n",
+            "caught closed\n",
+            "specs/IO_SPEC.md#dependências-bloqueantes",
+        ),
+        build_xfail(
+            "io/exceptions",
+            "binding-restored-on-unwind",
+            "(ns b.io.unwind-binding)\n(defn -main []\n  (try (binding [*out* (cljn.io/string-writer)] (throw (ex-info \"boom\" {})))\n       (catch Exception error (println \"restored\"))))\n(-main)\n",
+            "restored\n",
+            "specs/IO_SPEC.md#dependências-bloqueantes",
+        ),
+        native_build_xfail(
+            "io/lifecycle",
+            "close-idempotent",
+            "(ns b.io.close-idempotent)\n(defn -main []\n  (let [r (cljn.io/string-reader \"x\")]\n    (cljn.io/close! r)\n    (cljn.io/close! r)\n    (println (cljn.io/closed? r))))\n(-main)\n",
+            "true\n",
+        ),
+        native_build_xfail(
+            "io/lifecycle",
+            "use-after-close",
+            "(ns b.io.use-after-close)\n(defn -main []\n  (let [r (cljn.io/string-reader \"x\")]\n    (cljn.io/close! r)\n    (try (cljn.io/read-char r)\n         (catch cljn.io/IOException error (println (:kind (ex-data error)))))))\n(-main)\n",
+            ":closed\n",
+        ),
+        native_build_xfail(
+            "io/lifecycle",
+            "with-open-exception",
+            "(ns b.io.with-open-exception)\n(defn -main []\n  (let [r (cljn.io/string-reader \"x\")]\n    (try (with-open [opened r] (throw (ex-info \"boom\" {})))\n         (catch Exception error (println (cljn.io/closed? r))))))\n(-main)\n",
+            "true\n",
+        ),
+        native_build_xfail(
+            "io/binary",
+            "roundtrip-zero-and-ff",
+            "(ns b.io.binary-roundtrip)\n(defn -main []\n  (let [out (cljn.io/byte-output-stream)]\n    (cljn.io/write-bytes! out (cljn.io/bytes [0 255]))\n    (println (cljn.io/bytes->vector (cljn.io/output-bytes out)))))\n(-main)\n",
+            "[0 255]\n",
+        ),
+        native_build_xfail(
+            "io/files",
+            "large-file-streaming",
+            "(ns b.io.large-file)\n(defn -main []\n  (with-open [in (cljn.io/input-stream \"large.bin\")\n              out (cljn.io/output-stream \"copy.bin\")]\n    (loop [total 0]\n      (if-let [chunk (cljn.io/read-bytes in 65536)]\n        (do (cljn.io/write-bytes! out chunk)\n            (recur (+ total (cljn.io/byte-count chunk))))\n        (println total)))))\n(-main)\n",
+            "1048576\n",
+        ),
+    ]);
+    cases
+        .iter_mut()
+        .find(|case| case.id == "b.io_files.large_file_streaming")
+        .expect("large-file I/O case")
+        .extra_binary_files = Box::leak(
+        vec![(
+            "work.before/large.bin",
+            &*Box::leak(vec![0x5a_u8; 1_048_576].into_boxed_slice()),
+        )]
+        .into_boxed_slice(),
+    );
+
+    // Levels B/C — complete executable inventory for the proposed native I/O
+    // surface. All missing operations are xfail rather than undocumented
+    // aspirations, and every function has normal, boundary, and error cases.
+    cases.extend(io_api_cases());
+
+    let stdin_case = with_run(
+        with_binary_files(
+            build_xfail(
+                "io/input",
+                "stdin-crlf-eof",
+                "(ns b.io.stdin)\n(defn -main [] (println (read-line) (read-line) (read-line)))\n(-main)\n",
+                "alpha beta nil\n",
+                "specs/IO_SPEC.md#standard-streams-and-process-context",
+            ),
+            &[("stdin-crlf.bin", b"alpha\r\nbeta\n")],
+        ),
+        "[run]\nstdin = \"stdin-crlf.bin\"\nplatforms = [\"linux\"]\n",
+    );
+    cases.push(stdin_case);
+
+    let invalid_utf8_case = with_run(
+        with_binary_files(
+            fixture(
+                'B',
+                "io/input",
+                "stdin-invalid-utf8",
+                "b.io.input.stdin_invalid_utf8",
+                "semantics/io/input",
+                "xfail",
+                "unsupported",
+                "build-run",
+                "equal",
+                false,
+                "Strict UTF-8 input must raise a categorized native I/O exception.",
+                "specs/IO_SPEC.md#encoding-and-line-rules",
+                None,
+                "(ns b.io.invalid-utf8)\n(defn -main [] (read-line))\n(-main)\n",
+                Expected::StdoutBinary(b""),
+            ),
+            INVALID_UTF8_FILE,
+        ),
+        "[run]\nstdin = \"stdin-invalid.bin\"\nplatforms = [\"linux\"]\n",
+    );
+    cases.push(invalid_utf8_case);
+
+    let mut process_context_case = build_xfail(
+            "io/process",
+            "argv-environment-cwd",
+            "(ns b.io.process)\n(defn -main []\n  (println *command-line-args*)\n  (println (cljn.process/getenv \"CLJN_CONFORMANCE_VALUE\"))\n  (println (cljn.io/absolute? (cljn.process/cwd))))\n(-main)\n",
+            "(\"first\" \"ação\")\nvisible\ntrue\n",
+            "specs/IO_SPEC.md#standard-streams-and-process-context",
+        );
+    process_context_case.oracle = "not-applicable";
+    cases.push(with_run(
+        process_context_case,
+        "[run]\nargs = [\"first\", \"ação\"]\nenv = { CLJN_CONFORMANCE_VALUE = \"visible\" }\nplatforms = [\"linux\"]\n",
+    ));
+
+    cases.push(with_run(
+        with_extra_files(
+            fixture(
+                'C',
+                "cljn-io/filesystem/contracts",
+                "isolated-tree-and-symlink",
+                "c.cljn_io.filesystem.isolated_tree_and_symlink",
+                "stdlib/cljn-io/filesystem",
+                "xfail",
+                "unsupported",
+                "build-run",
+                "not-applicable",
+                true,
+                "Recursive operations and symlink policy require an exact isolated filesystem oracle.",
+                "specs/IO_SPEC.md#filesystem-and-recursive-safety",
+                Some("cljn.io"),
+                "(ns c.io.tree)\n(defn -main []\n  (cljn.io/copy-tree! \"source\" \"copy\")\n  (cljn.io/delete-tree! \"source\")\n  (println :ok))\n(-main)\n",
+                Expected::Stdout(":ok\n"),
+            ),
+            &[
+                ("work.before/source/a.txt", "a\n"),
+                ("work.after/copy/a.txt", "a\n"),
+            ],
+        ),
+        "[run]\nplatforms = [\"linux\"]\nsetup_symlinks = [{ path = \"source/link\", target = \"a.txt\" }]\nexpected_symlinks = [{ path = \"copy/link\", target = \"a.txt\" }]\n",
+    ));
 
     // Every active clojure.core function group also contains an explicit invalid
     // call. Together with the three calls above, this covers normal, boundary,

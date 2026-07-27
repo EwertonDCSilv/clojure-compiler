@@ -33,6 +33,7 @@ arquiteturais ficam em [`specs/`](specs/README.md).
   `mod`, `inc`, `dec` e comparações inteiras.
 - Strings, listas, keywords, vetores persistentes e mapas/sets persistentes híbridos.
   Vetores usam trie bitmap de 32 vias; mapas/sets pequenos promovem para HAMT de 32 vias.
+- Mapas e sets ordenados apoiados em árvore rubro-negra persistente inclinada à esquerda.
 - Records e dispatch de protocolos com `defrecord`, `defprotocol` e `extend-type`.
 - Subconjunto compilado de `clojure.core` com 26 funções, incluindo `map`, `filter`,
   `reduce`, `range`, `into`, `mapv`, `take`, `drop` e `comp`.
@@ -43,6 +44,10 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 O estado detalhado está em [`specs/README.md`](specs/README.md). O roteiro de otimização
 e sua decisão arquitetural estão em [`specs/optime.md`](specs/optime.md) e na
 [`ADR-0006`](specs/adr/0006-codegen-optimization.md).
+O gate proposto de I/O nativo está separado na
+[`IO_SPEC`](specs/IO_SPEC.md) e na
+[`ADR-0007`](specs/adr/0007-native-io-and-runtime-reader.md); hoje só estão entregues
+os casos de conformidade marcados como `active`.
 
 ## Requisitos
 
@@ -97,11 +102,12 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-A matriz executável de compatibilidade contém atualmente 206 casos nos níveis A–E:
-154 ativos, 20 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
+A matriz executável de compatibilidade contém atualmente 431 casos nos níveis A–E:
+160 ativos, 239 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
 lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
-World em Pedestal. A verificação roda
+World em Pedestal. A matriz também inventaria toda a superfície proposta de I/O como
+falhas esperadas, sem afirmar que ela está disponível. A verificação roda
 offline e sem JVM, confere a integridade das fixtures e grava relatórios em
 `target/conformance/`.
 
@@ -154,9 +160,12 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
 - Macros definidas pelo usuário, sequências lazy/infinitas, exceções, carregamento
   dinâmico de namespaces e compilação de projetos com múltiplos arquivos não estão
   disponíveis no caminho nativo.
+- Stdin geral, arquivos, operações de filesystem, reader EDN em runtime e
+  redirecionamento de streams estão especificados, mas não implementados; a saída
+  nativa atual limita-se ao baseline ativo de `print`/`println`.
 - A compilação nativa usa o host e invoca um linker C do sistema.
 - O GC é single-thread e não móvel. O rooting ainda é eager; uma fase planejada usará
   liveness para posicionar roots nos safepoints de alocação.
-- Mapas/sets CHAMP, coleções ordenadas e transients continuam como trabalho futuro.
+- Mapas/sets CHAMP e transients continuam como trabalho futuro.
 - A interoperabilidade Java e bibliotecas do ecossistema JVM estão fora do runtime
   nativo atual.

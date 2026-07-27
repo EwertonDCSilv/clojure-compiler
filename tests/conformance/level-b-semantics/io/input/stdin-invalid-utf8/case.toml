@@ -1,0 +1,14 @@
+id = "b.io.input.stdin_invalid_utf8"
+level = "B"
+area = "semantics/io/input"
+status = "xfail"
+class = "unsupported"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Strict UTF-8 input must raise a categorized native I/O exception."
+tracking = "specs/IO_SPEC.md#encoding-and-line-rules"
+[run]
+stdin = "stdin-invalid.bin"
+platforms = ["linux"]

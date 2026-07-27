@@ -63,6 +63,9 @@ mais a **política** aplicada (ver seção seguinte).
 | Ordem de iteração de `hash-map` | não especificada | pode diferir | compatível (não garantido dos dois lados) |
 | Hash de valores (`hash`) | algoritmo específico `[JVM]` | algoritmo próprio | **divergente por design**; `=` preservado, `hash` numérico pode diferir |
 | `eval` / REPL em runtime | presente | ausente (AOT) | erro / recurso `[FUTURO]` |
+| `clojure.java.io` | objetos/classes Java | `cljn.io` com `Path`, `Bytes` e handles nativos | substituição documentada em [IO_SPEC](IO_SPEC.md) |
+| Charset de arquivos textuais | múltiplos charsets Java | UTF-8 estrito no primeiro gate | divergência deliberada |
+| URL/socket em helpers de I/O | aceitos por APIs Java | fora do primeiro gate | erro + API futura |
 
 > Nota `[JVM]` vs. `[FATO acidental]`: alguns comportamentos oficiais (ordem exata de
 > hash-map, valores de `hash`, formato de `toString` de coleções) são **acidentes da
@@ -88,6 +91,11 @@ Toda construção fora do escopo cai em **uma** destas categorias, nesta ordem d
    automaticamente para `hash-map` (isto é comportamento, não incompatibilidade).
 5. **Substituição por API nativa** — expor equivalente idiomático (ex.: threads do SO,
    tempo, I/O) em namespaces `cljn.*`, documentando a diferença de API.
+
+O contrato dessa substituição para I/O é normativo em [IO_SPEC](IO_SPEC.md) e sua
+fronteira arquitetural está na [ADR-0007](adr/0007-native-io-and-runtime-reader.md).
+Até os casos correspondentes serem `active`, a presença no inventário não constitui
+compatibilidade de nível C.
 
 Regra de ouro `[DECISÃO]`: **nunca silenciar** uma incompatibilidade produzindo um
 resultado plausível-porém-diferente. Preferir erro alto e claro.

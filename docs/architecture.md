@@ -56,15 +56,21 @@ vira um backedge nativo e não cresce a pilha.
 - Vetor: trie bitmap persistente de 32 vias.
 - Mapa: array-map pequeno que promove para HAMT de 32 vias.
 - Set: array-set pequeno que promove para a representação HAMT.
+- Mapa/set ordenado: árvore LLRB persistente.
 - Record: nome nominal e campos com semântica associativa.
 
-As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP,
-sorted collections e transients continuam planejados.
+As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP e
+transients continuam planejados.
 
 ## Runtime e GC
 
 O runtime C embutido fornece alocação, coleções, strings, impressão, dispatch de
 protocolos e slow paths. O coletor é mark-sweep preciso, não móvel e single-thread.
+
+Streams gerais, arquivos e readers de runtime ainda são alvo futuro. A fronteira
+proposta mantém handles e buffers atrás da ABI C, conforme
+[`IO_SPEC`](../specs/IO_SPEC.md) e
+[`ADR-0007`](../specs/adr/0007-native-io-and-runtime-reader.md).
 
 Cada função compilada abre um frame na shadow stack. O codegen faz loads/stores diretos
 nos slots de roots e no stack pointer, em vez de chamar `gc_push`, `gc_popn` ou `gc_set`

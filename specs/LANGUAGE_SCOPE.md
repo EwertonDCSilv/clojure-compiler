@@ -171,6 +171,11 @@ Define **precisamente** o subconjunto suportado. Legenda das colunas:
 | `agent` | | | ✅ | |
 | `core.async` / channels | | | ✅ | requer scheduler/go-blocks; muito pós-MVP |
 
+As marcas nesta tabela descrevem o escopo-alvo original, não o snapshot executável:
+Vars dinâmicas e `binding` ainda são bloqueantes para o gate de I/O e permanecem
+`xfail`. O contrato de implementação, streams, arquivos e reader em runtime está em
+[IO_SPEC](IO_SPEC.md).
+
 ---
 
 ## Números — política explícita `[DECISÃO]`
@@ -204,8 +209,8 @@ MVP:
 ## Resumo do que **não** está no MVP (para evitar ambiguidade)
 
 Interop Java (todas as formas), `proxy`, `gen-class`, regex, ratios/bignum,
-reader conditionals multi-plataforma, tagged literals, protocols/records/multimethods,
-sorted collections, transients, chunked seqs, STM/agents/core.async, `future`/`promise`,
+reader conditionals multi-plataforma, tagged literals, multimethods,
+transients, chunked seqs, STM/agents/core.async, `future`/`promise`,
 `eval`/REPL/hot-reload, `monitor-*`/`locking`.
 
 Cada item acima que alguém tente usar deve produzir **erro de compilação diagnosticável**

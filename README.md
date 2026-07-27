@@ -33,6 +33,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
   `inc`, `dec`, and integer comparisons.
 - Strings, lists, keywords, persistent vectors, and hybrid persistent maps and sets.
   Vectors use a 32-way bitmapped trie; small maps/sets promote to a 32-way HAMT.
+- Ordered maps and sets backed by a persistent left-leaning red-black tree.
 - Records and protocol dispatch through `defrecord`, `defprotocol`, and `extend-type`.
 - A compiled 26-function `clojure.core` subset including `map`, `filter`, `reduce`,
   `range`, `into`, `mapv`, `take`, `drop`, and `comp`.
@@ -44,6 +45,9 @@ For detailed implementation status, see [`specs/README.md`](specs/README.md). Th
 optimization roadmap and its decision record are in
 [`specs/optime.md`](specs/optime.md) and
 [`ADR-0006`](specs/adr/0006-codegen-optimization.md).
+The proposed native I/O gate is specified separately in
+[`IO_SPEC`](specs/IO_SPEC.md) and [`ADR-0007`](specs/adr/0007-native-io-and-runtime-reader.md);
+only the conformance cases marked `active` are implemented today.
 
 ## Requirements
 
@@ -98,11 +102,12 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-The executable compatibility matrix currently contains 206 cases across levels A–E:
-154 active, 20 expected failures, and 32 pending inventory entries. Levels D and E now
+The executable compatibility matrix currently contains 431 cases across levels A–E:
+160 active, 239 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
-target. Verification runs
+target. The matrix also inventories the complete proposed I/O surface as expected
+failures without claiming that surface is available. Verification runs
 offline without a JVM, checks fixture integrity, and writes reports to
 `target/conformance/`.
 
@@ -154,8 +159,11 @@ benchmarks/cormen/compare-clojure.sh --csv benchmarks/cormen/results/comparison.
   currently fixnum-only. Bignums, ratios, and BigDecimal are not implemented.
 - User-defined macros, lazy/infinite sequences, exceptions, dynamic namespace loading,
   and multi-file project compilation are not available on the native path.
+- General stdin, files, filesystem operations, runtime EDN reading, and stream
+  redirection are specified but not implemented; current native output is limited to
+  the active `print`/`println` baseline.
 - Native compilation targets the host and invokes a system C linker.
 - The GC is single-threaded and non-moving. Rooting is still eager; a planned phase
   will place roots from liveness information at allocation safepoints.
-- CHAMP maps/sets, sorted collections, and transients remain future work.
+- CHAMP maps/sets and transients remain future work.
 - Java interop and JVM ecosystem libraries are outside the current native runtime.
