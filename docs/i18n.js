@@ -129,6 +129,8 @@
         "Azul representa o nativo e roxo representa Clojure/JVM. Os pontos mostram RSS absoluto em MiB, em escala logarítmica.",
       "benchmarks.openReport": "Abrir relatório completo",
       "benchmarks.openCsv": "Ver CSV",
+      "benchmarks.fullscreenOpen": "Exibir gráfico em tela cheia",
+      "benchmarks.fullscreenClose": "Sair da tela cheia",
       "honesty.label": "Experimental por design",
       "honesty.bodyHtml":
         "<strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong> Interop Java, bignums, sequências lazy, namespaces dinâmicos e projetos multi-arquivo continuam fora do caminho nativo atual.",
@@ -283,6 +285,8 @@
         "Azul representa al nativo y morado a Clojure/JVM. Los puntos muestran RSS absoluto en MiB, en escala logarítmica.",
       "benchmarks.openReport": "Abrir informe completo",
       "benchmarks.openCsv": "Ver CSV",
+      "benchmarks.fullscreenOpen": "Mostrar gráfico a pantalla completa",
+      "benchmarks.fullscreenClose": "Salir de pantalla completa",
       "honesty.label": "Experimental por diseño",
       "honesty.bodyHtml":
         "<strong>Este proyecto aún no sustituye a Clojure/JVM.</strong> La interoperabilidad Java, bignums, secuencias lazy, namespaces dinámicos y proyectos multiarchivo siguen fuera de la ruta nativa actual.",
@@ -437,6 +441,8 @@
         "Blue represents native and purple represents Clojure/JVM. Points show absolute RSS in MiB on a logarithmic scale.",
       "benchmarks.openReport": "Open full report",
       "benchmarks.openCsv": "View CSV",
+      "benchmarks.fullscreenOpen": "View chart in fullscreen",
+      "benchmarks.fullscreenClose": "Exit fullscreen",
       "honesty.label": "Experimental by design",
       "honesty.bodyHtml":
         "<strong>This project is not yet a replacement for Clojure/JVM.</strong> Java interop, bignums, lazy sequences, dynamic namespaces, and multi-file projects remain outside the current native path.",
@@ -591,6 +597,8 @@
         "Le bleu représente le natif et le violet Clojure/JVM. Les points indiquent le RSS absolu en MiB sur une échelle logarithmique.",
       "benchmarks.openReport": "Ouvrir le rapport complet",
       "benchmarks.openCsv": "Voir le CSV",
+      "benchmarks.fullscreenOpen": "Afficher le graphique en plein écran",
+      "benchmarks.fullscreenClose": "Quitter le plein écran",
       "honesty.label": "Expérimental par conception",
       "honesty.bodyHtml":
         "<strong>Ce projet ne remplace pas encore Clojure/JVM.</strong> L'interop Java, les bignums, les séquences lazy, les namespaces dynamiques et les projets multi-fichiers restent hors de la voie native actuelle.",
@@ -745,6 +753,8 @@
         "Синий обозначает native, фиолетовый — Clojure/JVM. Точки показывают абсолютный RSS в MiB по логарифмической шкале.",
       "benchmarks.openReport": "Открыть полный отчёт",
       "benchmarks.openCsv": "Открыть CSV",
+      "benchmarks.fullscreenOpen": "Развернуть график на весь экран",
+      "benchmarks.fullscreenClose": "Выйти из полноэкранного режима",
       "honesty.label": "Экспериментальный по замыслу",
       "honesty.bodyHtml":
         "<strong>Проект пока не заменяет Clojure/JVM.</strong> Java interop, bignums, ленивые последовательности, динамические namespaces и многофайловые проекты остаются за пределами текущего нативного пути.",
@@ -892,6 +902,8 @@
         "蓝色表示原生，紫色表示 Clojure/JVM。数据点以对数刻度显示绝对 RSS（MiB）。",
       "benchmarks.openReport": "打开完整报告",
       "benchmarks.openCsv": "查看 CSV",
+      "benchmarks.fullscreenOpen": "全屏查看图表",
+      "benchmarks.fullscreenClose": "退出全屏",
       "honesty.label": "有意保持实验性",
       "honesty.bodyHtml":
         "<strong>本项目目前还不能替代 Clojure/JVM。</strong> Java interop、bignums、惰性序列、动态 namespaces 和多文件项目仍不在当前原生路径的范围内。",

@@ -1369,7 +1369,65 @@
       }
 
       .benchmark-figure {
+        position: relative;
         margin: 0;
+      }
+
+      .benchmark-fullscreen-button {
+        position: absolute;
+        z-index: 3;
+        top: 0.9rem;
+        right: 0.9rem;
+        display: grid;
+        width: 2.75rem;
+        height: 2.75rem;
+        padding: 0;
+        place-items: center;
+        color: #efffe8;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(7, 17, 13, 0.78);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26);
+        backdrop-filter: blur(10px);
+        cursor: pointer;
+        transition:
+          color 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease,
+          transform 160ms ease;
+      }
+
+      .benchmark-fullscreen-button:hover {
+        color: var(--ink);
+        border-color: rgba(184, 246, 55, 0.8);
+        background: var(--green);
+        transform: translateY(-1px);
+      }
+
+      .benchmark-fullscreen-button:active {
+        transform: translateY(0);
+      }
+
+      .benchmark-fullscreen-button:focus-visible {
+        outline: 3px solid rgba(184, 246, 55, 0.42);
+        outline-offset: 3px;
+      }
+
+      .benchmark-fullscreen-button svg {
+        width: 1.15rem;
+        height: 1.15rem;
+      }
+
+      .benchmark-fullscreen-icon-exit {
+        display: none;
+      }
+
+      .benchmark-figure[data-fullscreen="true"] .benchmark-fullscreen-icon-enter {
+        display: none;
+      }
+
+      .benchmark-figure[data-fullscreen="true"] .benchmark-fullscreen-icon-exit {
+        display: block;
       }
 
       .benchmark-chart-frame {
@@ -1380,6 +1438,79 @@
         background: #0f172a;
         box-shadow: 0 24px 70px rgba(11, 22, 18, 0.16);
         overscroll-behavior: contain;
+        scrollbar-color: rgba(184, 246, 55, 0.82) rgba(255, 255, 255, 0.07);
+        scrollbar-width: thin;
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar-track {
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar-thumb {
+        min-width: 48px;
+        min-height: 48px;
+        border: 2px solid #0f172a;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #8fdc2c, #c2fa49);
+        box-shadow: 0 0 12px rgba(184, 246, 55, 0.22);
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(90deg, #a5eb38, #d0ff63);
+        box-shadow: 0 0 16px rgba(184, 246, 55, 0.35);
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar-thumb:active {
+        background: #b8f637;
+      }
+
+      .benchmark-chart-frame::-webkit-scrollbar-corner {
+        background: #0f172a;
+      }
+
+      .benchmark-figure:fullscreen,
+      .benchmark-figure:-webkit-full-screen,
+      .benchmark-figure.is-fullscreen-fallback {
+        box-sizing: border-box;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: clamp(1rem, 2.5vw, 2rem);
+        grid-template-rows: minmax(0, 1fr) auto;
+        background: #07110d;
+      }
+
+      .benchmark-figure.is-fullscreen-fallback {
+        position: fixed;
+        z-index: 1000;
+        inset: 0;
+      }
+
+      body.benchmark-fullscreen-fallback-active {
+        overflow: hidden;
+      }
+
+      .benchmark-figure:fullscreen .benchmark-chart-frame,
+      .benchmark-figure:-webkit-full-screen .benchmark-chart-frame,
+      .benchmark-figure.is-fullscreen-fallback .benchmark-chart-frame {
+        height: 100%;
+        max-height: none;
+        min-height: 0;
+        border-color: rgba(184, 246, 55, 0.2);
+      }
+
+      .benchmark-figure:fullscreen figcaption,
+      .benchmark-figure:-webkit-full-screen figcaption,
+      .benchmark-figure.is-fullscreen-fallback figcaption {
+        color: rgba(239, 255, 232, 0.72);
       }
 
       .benchmark-chart {
@@ -2494,6 +2625,46 @@
             </div>
 
             <figure class="benchmark-figure">
+              <button
+                class="benchmark-fullscreen-button"
+                id="benchmark-fullscreen-button"
+                type="button"
+                aria-label="Exibir gráfico em tela cheia"
+                aria-pressed="false"
+                data-i18n-aria-label="benchmarks.fullscreenOpen"
+              >
+                <svg
+                  class="benchmark-fullscreen-icon-enter"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6"></path>
+                </svg>
+                <svg
+                  class="benchmark-fullscreen-icon-exit"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 9h6V3M21 9h-6V3M3 15h6v6M21 15h-6v6"></path>
+                </svg>
+                <span
+                  class="visually-hidden"
+                  id="benchmark-fullscreen-label"
+                  data-i18n="benchmarks.fullscreenOpen"
+                >
+                  Exibir gráfico em tela cheia
+                </span>
+              </button>
               <div class="benchmark-chart-frame" id="benchmark-chart-panel">
                 <img
                   class="benchmark-chart"
@@ -2773,6 +2944,14 @@
       const benchmarkCaption = document.querySelector("#benchmark-caption");
       const benchmarkReportLink = document.querySelector("#benchmark-report-link");
       const benchmarkCsvLink = document.querySelector("#benchmark-csv-link");
+      const benchmarkFigure = document.querySelector(".benchmark-figure");
+      const benchmarkFullscreenButton = document.querySelector(
+        "#benchmark-fullscreen-button"
+      );
+      const benchmarkFullscreenLabel = document.querySelector(
+        "#benchmark-fullscreen-label"
+      );
+      let benchmarkUsesFallbackFullscreen = false;
 
       const formatBenchmarkValue = (value, digits) =>
         new Intl.NumberFormat(document.documentElement.lang, {
@@ -2785,6 +2964,66 @@
           jvmValue,
           digits
         )} ${unit}`;
+
+      const benchmarkNativeFullscreenElement = () =>
+        document.fullscreenElement || document.webkitFullscreenElement;
+
+      const updateBenchmarkFullscreenControl = () => {
+        const isFullscreen =
+          benchmarkUsesFallbackFullscreen ||
+          benchmarkNativeFullscreenElement() === benchmarkFigure;
+        const label = window.pageI18n.t(
+          isFullscreen ? "benchmarks.fullscreenClose" : "benchmarks.fullscreenOpen"
+        );
+
+        benchmarkFigure.dataset.fullscreen = String(isFullscreen);
+        benchmarkFullscreenButton.setAttribute("aria-label", label);
+        benchmarkFullscreenButton.setAttribute("aria-pressed", String(isFullscreen));
+        benchmarkFullscreenButton.title = label;
+        benchmarkFullscreenLabel.textContent = label;
+      };
+
+      const leaveBenchmarkFallbackFullscreen = () => {
+        benchmarkUsesFallbackFullscreen = false;
+        benchmarkFigure.classList.remove("is-fullscreen-fallback");
+        document.body.classList.remove("benchmark-fullscreen-fallback-active");
+      };
+
+      const enterBenchmarkFallbackFullscreen = () => {
+        benchmarkUsesFallbackFullscreen = true;
+        benchmarkFigure.classList.add("is-fullscreen-fallback");
+        document.body.classList.add("benchmark-fullscreen-fallback-active");
+        updateBenchmarkFullscreenControl();
+      };
+
+      const toggleBenchmarkFullscreen = async () => {
+        if (benchmarkUsesFallbackFullscreen) {
+          leaveBenchmarkFallbackFullscreen();
+          updateBenchmarkFullscreenControl();
+          return;
+        }
+
+        if (benchmarkNativeFullscreenElement() === benchmarkFigure) {
+          const exitFullscreen =
+            document.exitFullscreen || document.webkitExitFullscreen;
+          await exitFullscreen?.call(document);
+          return;
+        }
+
+        const requestFullscreen =
+          benchmarkFigure.requestFullscreen || benchmarkFigure.webkitRequestFullscreen;
+
+        if (!requestFullscreen) {
+          enterBenchmarkFallbackFullscreen();
+          return;
+        }
+
+        try {
+          await requestFullscreen.call(benchmarkFigure);
+        } catch {
+          enterBenchmarkFallbackFullscreen();
+        }
+      };
 
       const updateBenchmarkDashboard = () => {
         const suite = benchmarkSuites[benchmarkState.suite];
@@ -2818,6 +3057,7 @@
         benchmarkCaption.textContent = window.pageI18n.t(metric.captionKey);
         benchmarkReportLink.href = suite.report;
         benchmarkCsvLink.href = suite.csv;
+        updateBenchmarkFullscreenControl();
       };
 
       document.querySelectorAll("[data-benchmark-suite]").forEach((button) => {
@@ -2832,6 +3072,19 @@
           benchmarkState.metric = button.dataset.benchmarkMetric;
           updateBenchmarkDashboard();
         });
+      });
+
+      benchmarkFullscreenButton.addEventListener("click", toggleBenchmarkFullscreen);
+      document.addEventListener("fullscreenchange", updateBenchmarkFullscreenControl);
+      document.addEventListener(
+        "webkitfullscreenchange",
+        updateBenchmarkFullscreenControl
+      );
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && benchmarkUsesFallbackFullscreen) {
+          leaveBenchmarkFallbackFullscreen();
+          updateBenchmarkFullscreenControl();
+        }
       });
 
       window.addEventListener("page:languagechange", updateBenchmarkDashboard);
