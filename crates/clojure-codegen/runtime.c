@@ -1237,6 +1237,17 @@ Value cljn_conj(Value coll, Value x) {
             return coll;
     }
 }
+/* ADR-0008: operações internas de core em espaço de IDs reservado (negativo),
+ * separado dos protocolos/multimethods do programa (mids positivos). Built-ins
+ * têm precedência; tipos sem tag embutida registram capabilities por type_key. */
+#define CORE_ASSOC_ONE ((Value)(-1))
+#define CORE_NTH ((Value)(-2))
+#define CORE_NTH_OR ((Value)(-3))
+static Value call_fn2(Value f, Value a, Value b);        /* fwd */
+static Value call_fn3(Value f, Value a, Value b, Value c); /* fwd */
+
+/* AssocOne: atualização unitária persistente. nil→array-map; built-in por tag;
+ * senão capability registrada por type_key; senão erro. */
 Value cljn_assoc(Value coll, Value k, Value v) {
     switch (obj_type(coll)) {
         case T_RECORD: {
@@ -1252,20 +1263,54 @@ Value cljn_assoc(Value coll, Value k, Value v) {
         case T_VEC: return cljn_vec_assoc(coll, k, v);
         default:
             if (coll == NIL) { Value m = cljn_map_alloc(0); return cljn_map_assoc(m, k, v); }
-            die("assoc: coleção não suportada");
+            /* capability por tipo nominal (sem tag embutida) */
+            {
+                Value impl = cljn_lookup_method(CORE_ASSOC_ONE, cljn_type_key(coll));
+                if (impl != NIL) return call_fn3(impl, coll, k, v);
+            }
+            die("assoc: receptor sem suporte");
             return coll;
     }
 }
-Value cljn_nth(Value coll, Value idx) {
-    int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
-    if (i < 0) die("nth: índice inválido");
+/* Núcleo indexado embutido: devolve o elemento, ou MNOTFOUND se fora dos limites,
+ * ou MNODEKEY se o tipo não é indexado embutido (para o caller decidir). */
+static Value nth_builtin(Value coll, int64_t i) {
+    if (coll == EMPTY) return MNOTFOUND; /* sequência vazia: sempre fora dos limites */
     switch (obj_type(coll)) {
-        case T_VEC: { PVec *v = (PVec *)coll; if (i < v->count) return pv_nth(v, i); break; }
-        case T_TVEC: { TVec *tv = (TVec *)coll; if (i < tv->len) return tv->items[i]; break; }
-        case T_CONS: { Value c = coll; while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail; if (obj_type(c) == T_CONS) return ((Cons *)c)->head; break; }
+        case T_VEC: { PVec *v = (PVec *)coll; return (i >= 0 && i < v->count) ? pv_nth(v, i) : MNOTFOUND; }
+        case T_TVEC: { TVec *tv = (TVec *)coll; return (i >= 0 && i < tv->len) ? tv->items[i] : MNOTFOUND; }
+        case T_CONS: {
+            if (i < 0) return MNOTFOUND;
+            Value c = coll;
+            while (i-- > 0 && obj_type(c) == T_CONS) c = ((Cons *)c)->tail;
+            return (obj_type(c) == T_CONS) ? ((Cons *)c)->head : MNOTFOUND;
+        }
     }
-    die("nth: índice fora dos limites");
+    return MNODEKEY; /* não indexado embutido */
+}
+/* nth aridade 2: índice fora dos limites lança; tipo sem suporte lança. */
+Value cljn_nth(Value coll, Value idx) {
+    if (!IS_FIX(idx)) die("nth: índice deve ser inteiro");
+    if (coll == NIL) return NIL;
+    int64_t i = FIX(idx);
+    Value r = nth_builtin(coll, i);
+    if (r != MNODEKEY) { if (r == MNOTFOUND) die("nth: índice fora dos limites"); return r; }
+    Value impl = cljn_lookup_method(CORE_NTH, cljn_type_key(coll));
+    if (impl != NIL) return call_fn2(impl, coll, idx);
+    die("nth: receptor não indexado nem sequencial");
     return NIL;
+}
+/* nth aridade 3: só o limite é absorvido por not-found; tipo/índice inválido lança. */
+Value cljn_nth_or(Value coll, Value idx, Value nf) {
+    if (!IS_FIX(idx)) die("nth: índice deve ser inteiro");
+    if (coll == NIL) return nf;
+    int64_t i = FIX(idx);
+    Value r = nth_builtin(coll, i);
+    if (r != MNODEKEY) return (r == MNOTFOUND) ? nf : r;
+    Value impl = cljn_lookup_method(CORE_NTH_OR, cljn_type_key(coll));
+    if (impl != NIL) return call_fn3(impl, coll, idx, nf);
+    die("nth: receptor não indexado nem sequencial");
+    return nf;
 }
 
 /* ---------- transients (mutação em lote) ---------- */
@@ -1696,6 +1741,18 @@ static Value call_fn1(Value f, Value a) {
     gc_stack[gc_sp++] = a; /* arg no topo; argv aponta pra ele (rooteado) */
     Value r = ((FnCode)((Fn *)f)->code)(f, 1, &gc_stack[gc_sp - 1]);
     gc_sp--;
+    return r;
+}
+static Value call_fn2(Value f, Value a, Value b) {
+    gc_stack[gc_sp] = a; gc_stack[gc_sp + 1] = b; gc_sp += 2;
+    Value r = ((FnCode)((Fn *)f)->code)(f, 2, &gc_stack[gc_sp - 2]);
+    gc_sp -= 2;
+    return r;
+}
+static Value call_fn3(Value f, Value a, Value b, Value c) {
+    gc_stack[gc_sp] = a; gc_stack[gc_sp + 1] = b; gc_stack[gc_sp + 2] = c; gc_sp += 3;
+    Value r = ((FnCode)((Fn *)f)->code)(f, 3, &gc_stack[gc_sp - 3]);
+    gc_sp -= 3;
     return r;
 }
 typedef struct Handler {

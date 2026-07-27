@@ -293,6 +293,42 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_associative_indexed_dispatch() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0008: assoc variádico (dobra sobre AssocOne), nth aridade 2/3 com
+    // not-found e fallback sequencial, e capability dispatch para tipo sem tag
+    // embutida (Set) via extend-type com nomes reservados.
+    let src = r#"(ns ai.core)
+(defrecord Pt [x y])
+(extend-type Set
+  Assoc (-assoc [s k v] (conj s k))
+  Indexed (-nth [s i] (+ i 1000))
+          (-nth-not-found [s i nf] (if (< i 3) (+ i 2000) nf)))
+(defn -main []
+  (println (assoc {} :a 1 :b 2 :c 3))
+  (println (assoc {:a 1} :a 9 :d 4))
+  (let [m {:a 1}] (println (count (assoc m :a 9)) (count (assoc m :z 9))))
+  (println (assoc [10 20 30] 1 99 3 40))
+  (println (assoc nil :k :v))
+  (println (assoc (->Pt 1 2) :x 10))
+  (println (nth [10 20 30] 1) (nth (list :a :b :c) 2))
+  (println (nth [1 2 3] 9 :nao) (nth (list) 0 :vazio) (nth nil 5 :nnf) (nth nil 3))
+  (println (nth [] 0 false) (nth [] 0 (list :h)))
+  (println (assoc #{1 2} 3 :x))
+  (println (nth #{1 2 3} 5) (nth #{} 1 :cnf) (nth #{} 9 :cnf)))
+(-main)"#;
+    let expected = "{:a 1, :b 2, :c 3}\n{:a 9, :d 4}\n1 2\n[10 99 30 40]\n{:k :v}\n\
+#Pt{:x 10, :y 2}\n20 :c\n:nao :vazio :nnf nil\nfalse (:h)\n#{1 2 3}\n1005 2001 :cnf\n";
+    assert_eq!(build_and_run("cljn_e2e_ai", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_ai_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_transients() {
     if !have_cc() {
         return;

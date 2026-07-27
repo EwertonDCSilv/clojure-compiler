@@ -152,7 +152,8 @@ struct Runtime {
     map_alloc: FuncId,        // (n)->map
     map_set: FuncId,          // (map,i,k,v)->void
     p_get: FuncId,            // (coll,key)->v
-    p_nth: FuncId,            // (coll,i)->v
+    p_nth: FuncId,            // (coll,i)->v   (nth aridade 2)
+    p_nth_or: FuncId,         // (coll,i,nf)->v (nth aridade 3)
     p_assoc: FuncId,          // (coll,k,v)->coll
     p_dissoc: FuncId,         // (map,k)->map
     p_contains: FuncId,       // (coll,key)->bool
@@ -471,6 +472,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         map_set: quaternary_void(m, "cljn_map_set"),
         p_get: bin(m, "cljn_get"),
         p_nth: bin(m, "cljn_nth"),
+        p_nth_or: ternary(m, "cljn_nth_or"),
         p_assoc: ternary(m, "cljn_assoc"),
         p_dissoc: bin(m, "cljn_map_dissoc"),
         p_contains: bin(m, "cljn_contains"),
@@ -1357,6 +1359,28 @@ impl<'a> FnGen<'a> {
         Ok(m)
     }
 
+    /// `assoc` variádico (ADR-0008): avalia TODOS os args antes da dobra e então
+    /// dobra os pares da esquerda p/ direita sobre AssocOne (`cljn_assoc`),
+    /// mantendo o acumulador rooteado a cada passo. args = [coll, k, v, k, v...].
+    fn gen_assoc(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        let mut vals = Vec::with_capacity(args.len());
+        for a in args {
+            vals.push(self.spill_arg(a)?); // todos rooteados antes da dobra
+        }
+        let mut acc = vals[0];
+        self.gc_push_val(acc); // root do acumulador (topo)
+        let mut i = 1;
+        while i + 1 < vals.len() {
+            acc = self.call3(self.rt.p_assoc, acc, vals[i], vals[i + 1]);
+            self.gc_popn(1); // remove acc antigo
+            self.gc_push_val(acc); // novo acc
+            i += 2;
+        }
+        self.gc_popn(1); // acc
+        self.gc_popn(args.len()); // vals
+        Ok(acc)
+    }
+
     /// Materializa uma keyword a partir do blob de string (sem empurrar).
     fn make_kw_value(&mut self, name: &str) -> CValue {
         let (data_id, len) = self.str_data[name];
@@ -1922,8 +1946,14 @@ impl<'a> FnGen<'a> {
             Prim::Count => self.una(self.rt.count, args),
             // coleções
             Prim::Get => self.bin(self.rt.p_get, args),
-            Prim::Nth => self.bin(self.rt.p_nth, args),
-            Prim::Assoc => self.tern(self.rt.p_assoc, args),
+            Prim::Nth => {
+                if args.len() == 2 {
+                    self.bin(self.rt.p_nth, args)
+                } else {
+                    self.tern(self.rt.p_nth_or, args) // aridade 3: not-found
+                }
+            }
+            Prim::Assoc => self.gen_assoc(args),
             Prim::Dissoc => self.bin(self.rt.p_dissoc, args),
             Prim::Contains => self.bin(self.rt.p_contains, args),
             Prim::Keys => self.una(self.rt.p_keys, args),

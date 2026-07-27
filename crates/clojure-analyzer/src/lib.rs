@@ -289,12 +289,20 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
             }
         } else if let Some((typename, impls)) = match_extend_type(f) {
             for (mname, params, body_forms) in impls {
-                let Some(&(mid, _)) = an.protos.get(&mname) else {
-                    diags.push(unsupported(
-                        format!("método de protocolo desconhecido: {mname}"),
-                        f.span,
-                    ));
-                    continue;
+                // ADR-0008: capacidades de core (assoc/nth) usam IDs reservados
+                // (negativos), fora do espaço de protocolos do programa.
+                let mid = match core_capability_mid(&mname) {
+                    Some(cid) => cid,
+                    None => {
+                        let Some(&(mid, _)) = an.protos.get(&mname) else {
+                            diags.push(unsupported(
+                                format!("método de protocolo desconhecido: {mname}"),
+                                f.span,
+                            ));
+                            continue;
+                        };
+                        mid
+                    }
                 };
                 let Some(key) = key_for(&typename, an.records) else {
                     diags.push(unsupported(
@@ -568,6 +576,18 @@ fn match_defmethod(f: &SForm) -> Option<(String, SForm, Vec<String>, Vec<SForm>)
         return None;
     }
     Some((name, dispatch_val, params, items[4..].to_vec()))
+}
+
+/// ADR-0008: nomes reservados de capacidade de core → method_id reservado
+/// (negativo, deve casar com CORE_ASSOC_ONE/CORE_NTH/CORE_NTH_OR no runtime).
+/// A superfície pública não está congelada (aguarda deftype/impls inline).
+fn core_capability_mid(mname: &str) -> Option<i64> {
+    match mname {
+        "-assoc" => Some(-1),
+        "-nth" => Some(-2),
+        "-nth-not-found" => Some(-3),
+        _ => None,
+    }
 }
 
 /// Chave de dispatch para um nome de tipo: records → keyword; builtins → fixnum.
@@ -1355,13 +1375,14 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Mod
         | Prim::Cons
         | Prim::Get
-        | Prim::Nth
         | Prim::Dissoc
         | Prim::Contains
         | Prim::ConjBang
         | Prim::DissocBang
         | Prim::Conj => n == 2,
-        Prim::Assoc | Prim::AssocBang => n == 3,
+        Prim::Nth => n == 2 || n == 3, // ADR-0008: aridade 2 e 3 (not-found)
+        Prim::AssocBang => n == 3,
+        Prim::Assoc => n >= 3 && n % 2 == 1, // coll + um ou mais pares
         Prim::Inc
         | Prim::Dec
         | Prim::Not
