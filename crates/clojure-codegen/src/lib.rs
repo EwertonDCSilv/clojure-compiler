@@ -91,7 +91,7 @@ const NIL: i64 = 2;
 const FALSEV: i64 = 6;
 const TRUEV: i64 = 10;
 const T_VEC: i64 = 5; // tag de PersistentVector (deve casar com runtime.c)
-// Offsets dos campos de PVec/VNode (Obj = 16 B). Devem casar com runtime.c.
+                      // Offsets dos campos de PVec/VNode (Obj = 16 B). Devem casar com runtime.c.
 const PV_COUNT: i32 = 16;
 const PV_SHIFT: i32 = 24;
 const PV_ROOT: i32 = 32;
@@ -1401,7 +1401,10 @@ impl<'a> FnGen<'a> {
         // type_b: só aqui é seguro ler o byte de tipo (coll é ponteiro)
         self.builder.switch_to_block(type_b);
         self.builder.seal_block(type_b);
-        let ty = self.builder.ins().load(types::I8, MemFlags::trusted(), coll, 0);
+        let ty = self
+            .builder
+            .ins()
+            .load(types::I8, MemFlags::trusted(), coll, 0);
         let is_vec = self.builder.ins().icmp_imm(IntCC::Equal, ty, T_VEC);
         self.builder.ins().brif(is_vec, vec_b, &[], slow_b, &[]);
 
@@ -1409,42 +1412,71 @@ impl<'a> FnGen<'a> {
         self.builder.switch_to_block(vec_b);
         self.builder.seal_block(vec_b);
         let i = self.builder.ins().sshr_imm(idx, 1);
-        let count = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_COUNT);
+        let count = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), coll, PV_COUNT);
         let neg = self.builder.ins().icmp_imm(IntCC::SignedLessThan, i, 0);
-        let ge = self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i, count);
+        let ge = self
+            .builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThanOrEqual, i, count);
         let oob = self.builder.ins().bor(neg, ge);
         self.builder.ins().brif(oob, slow_b, &[], inb_b, &[]);
 
         // inb_b: tail vs trie
         self.builder.switch_to_block(inb_b);
         self.builder.seal_block(inb_b);
-        let tail_len = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_TAILLEN);
+        let tail_len = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), coll, PV_TAILLEN);
         let tailoff = self.builder.ins().isub(count, tail_len);
-        let in_tail = self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, i, tailoff);
+        let in_tail = self
+            .builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThanOrEqual, i, tailoff);
         self.builder.ins().brif(in_tail, tail_b, &[], trie_b, &[]);
 
         // tail_b: tail->slots[i - tailoff]
         self.builder.switch_to_block(tail_b);
         self.builder.seal_block(tail_b);
-        let tail = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_TAIL);
+        let tail = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), coll, PV_TAIL);
         let ti = self.builder.ins().isub(i, tailoff);
         let toff = self.builder.ins().imul_imm(ti, 8);
         let taddr = self.builder.ins().iadd(tail, toff);
-        let tres = self.builder.ins().load(types::I64, MemFlags::trusted(), taddr, VNODE_SLOTS);
+        let tres = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), taddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[tres.into()]);
 
         // trie_b: node=root, level=shift
         self.builder.switch_to_block(trie_b);
         self.builder.seal_block(trie_b);
-        let root = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_ROOT);
-        let shift = self.builder.ins().load(types::I64, MemFlags::trusted(), coll, PV_SHIFT);
-        self.builder.ins().jump(loop_b, &[root.into(), shift.into()]);
+        let root = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), coll, PV_ROOT);
+        let shift = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), coll, PV_SHIFT);
+        self.builder
+            .ins()
+            .jump(loop_b, &[root.into(), shift.into()]);
 
         // loop_b(node, level): level>0 ? descend : leaf
         self.builder.switch_to_block(loop_b);
         let node = self.builder.block_params(loop_b)[0];
         let level = self.builder.block_params(loop_b)[1];
-        let more = self.builder.ins().icmp_imm(IntCC::SignedGreaterThan, level, 0);
+        let more = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::SignedGreaterThan, level, 0);
         self.builder.ins().brif(more, descend_b, &[], leaf_b, &[]);
 
         // descend_b: node = node->slots[(i>>level)&31]; level -= 5
@@ -1454,9 +1486,14 @@ impl<'a> FnGen<'a> {
         let sub = self.builder.ins().band_imm(sh, 31);
         let soff = self.builder.ins().imul_imm(sub, 8);
         let saddr = self.builder.ins().iadd(node, soff);
-        let child = self.builder.ins().load(types::I64, MemFlags::trusted(), saddr, VNODE_SLOTS);
+        let child = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), saddr, VNODE_SLOTS);
         let level2 = self.builder.ins().iadd_imm(level, -5);
-        self.builder.ins().jump(loop_b, &[child.into(), level2.into()]);
+        self.builder
+            .ins()
+            .jump(loop_b, &[child.into(), level2.into()]);
         self.builder.seal_block(loop_b); // preds: trie_b, descend_b
 
         // leaf_b: node->slots[i&31]
@@ -1465,7 +1502,10 @@ impl<'a> FnGen<'a> {
         let slot = self.builder.ins().band_imm(i, 31);
         let loff = self.builder.ins().imul_imm(slot, 8);
         let laddr = self.builder.ins().iadd(node, loff);
-        let lres = self.builder.ins().load(types::I64, MemFlags::trusted(), laddr, VNODE_SLOTS);
+        let lres = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), laddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[lres.into()]);
 
         // slow_b: delega ao runtime (semântica completa e erros)

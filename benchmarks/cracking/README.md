@@ -66,6 +66,13 @@ benchmarks/cracking/run.sh --extreme \
 benchmarks/cracking/compare-clojure.sh \
   --csv benchmarks/cracking/results/extreme.csv
 
+# Atualizar só o nativo, preservando as medições JVM do CSV comparativo
+benchmarks/refresh-native-comparison.sh --suite cracking
+
+# Renderizar a tabela Markdown compacta por caso
+benchmarks/render-benchmark-summary.sh \
+  benchmarks/cracking/results/extreme.csv
+
 # Escolher outro multiplicador de carga
 benchmarks/cracking/run.sh --scale 10 --csv /tmp/scale-10.csv
 
@@ -110,6 +117,10 @@ Esses nomes são usados pelo runner exclusivamente nativo. No CSV comparativo,
 
 Nas três razões, um valor maior que `1` favorece o nativo: ele levou menos tempo ou
 usou menos memória que Clojure/JVM. Um valor menor que `1` favorece Clojure/JVM.
+
+O resumo Markdown por caso usa `N/J` para mostrar os valores absolutos
+nativo/Clojure. Suas colunas de delta calculam `(nativo - Clojure) / Clojure`; portanto,
+um delta negativo favorece o nativo e um delta positivo favorece Clojure/JVM.
 
 `--extreme` não edita os programas versionados. O runner cria uma fonte temporária em
 que apenas a quantidade de rodadas passada a `benchmark` é multiplicada por 25. Use

@@ -41,6 +41,13 @@ benchmarks/cormen/run.sh --extreme \
 benchmarks/cormen/compare-clojure.sh \
   --csv benchmarks/cormen/results/extreme.csv
 
+# Atualizar só o nativo, preservando as medições JVM do CSV comparativo
+benchmarks/refresh-native-comparison.sh --suite cormen
+
+# Renderizar a tabela Markdown compacta por caso
+benchmarks/render-benchmark-summary.sh \
+  benchmarks/cormen/results/extreme.csv
+
 # Repetir a comparação com um nível Cranelift explícito
 benchmarks/cormen/compare-clojure.sh --opt-level speed \
   --csv benchmarks/cormen/results/cranelift-speed.csv
