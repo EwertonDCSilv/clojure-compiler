@@ -51,11 +51,14 @@
       (recur (inc i) (cons i acc))
       (reverse acc))))
 
+;; ADR-0009: acumulador linear e não-escapante → transiente estrutural
+;; (transient/conj!/persistent! O(1)). `transient` dispatcha por tipo de `to`
+;; (vetor estrutural; mapa/set/lista via caixa), então `into` continua genérico.
 (defn into [to from]
-  (reduce conj to from))
+  (persistent! (reduce (fn [acc x] (conj! acc x)) (transient to) from)))
 
 (defn mapv [f coll]
-  (reduce (fn [acc x] (conj acc (f x))) [] coll))
+  (persistent! (reduce (fn [acc x] (conj! acc (f x))) (transient []) coll)))
 
 (defn every? [pred coll]
   (cond

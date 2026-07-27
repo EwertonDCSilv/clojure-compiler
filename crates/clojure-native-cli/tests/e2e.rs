@@ -355,6 +355,29 @@ fn compiles_transients() {
 }
 
 #[test]
+fn core_vector_builders_use_transients() {
+    if !have_cc() {
+        return;
+    }
+    // mapv/into constroem via transiente estrutural (acumulador linear no core).
+    // Semântica idêntica; `into` continua genérico (vetor / lista via caixa).
+    let src = r#"(ns cv.core)
+(defn -main []
+  (println (mapv (fn [x] (* x x)) (range 8)))
+  (println (into [] (list 1 2 3)))
+  (println (into [10 20] (range 3)))
+  (println (into (list) (range 3)))
+  (println (count (mapv (fn [x] x) (range 1000)))))
+(-main)"#;
+    let expected = "[0 1 4 9 16 25 36 49]\n[1 2 3]\n[10 20 0 1 2]\n(2 1 0)\n1000\n";
+    assert_eq!(build_and_run("cljn_e2e_corevec", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_corevec_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn auto_transient_loop_accumulators() {
     if !have_cc() {
         return;
