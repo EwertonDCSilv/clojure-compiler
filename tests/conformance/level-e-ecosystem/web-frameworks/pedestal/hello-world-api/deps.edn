@@ -1,0 +1,4 @@
+{:paths ["src"]
+ :deps {io.pedestal/pedestal.http-kit {:mvn/version "0.8.2-beta-10"}
+        org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
+ :aliases {:run {:main-opts ["-m" "hello"]}}}

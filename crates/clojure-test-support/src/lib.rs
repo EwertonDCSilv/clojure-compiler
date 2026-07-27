@@ -894,16 +894,8 @@ pub fn checksum_entries(root: &Path) -> Result<BTreeMap<String, String>, String>
     let cases = discover_cases(root)?;
     let mut files = Vec::new();
     for case in cases {
-        let mut entries = fs::read_dir(&case.directory)
-            .map_err(|error| format!("{}: {error}", case.directory.display()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        entries.sort_by_key(|entry| entry.path());
-        for entry in entries {
-            if entry.path().is_file() {
-                files.push(entry.path());
-            }
-        }
+        collect_case_files(&case.directory, &mut files)
+            .map_err(|error| format!("{}: {error}", case.directory.display()))?;
     }
     files.sort();
     files.dedup();
@@ -918,6 +910,20 @@ pub fn checksum_entries(root: &Path) -> Result<BTreeMap<String, String>, String>
         result.insert(relative, hex_digest(&bytes));
     }
     Ok(result)
+}
+
+fn collect_case_files(directory: &Path, output: &mut Vec<PathBuf>) -> io::Result<()> {
+    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_case_files(&path, output)?;
+        } else if path.is_file() {
+            output.push(path);
+        }
+    }
+    Ok(())
 }
 
 pub fn update_checksums(root: &Path) -> Result<String, String> {
@@ -1393,6 +1399,34 @@ mod tests {
     }
 
     #[test]
+    fn tracked_pedestal_target_has_an_http_project_contract() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let cases = discover_cases(&root).expect("discover tracked conformance suite");
+        let case = cases
+            .iter()
+            .find(|case| case.manifest.id == "e.pedestal.hello_world_api")
+            .expect("Pedestal Hello World target");
+
+        assert_eq!(case.manifest.level, Level::E);
+        assert_eq!(case.manifest.status, CaseStatus::Pending);
+        assert_eq!(case.manifest.target, Target::Project);
+        assert_eq!(case.manifest.area, "ecosystem/web-frameworks/pedestal");
+        assert_eq!(case.manifest.namespace.as_deref(), Some("hello"));
+
+        for relative_path in [
+            "deps.edn",
+            "src/hello.clj",
+            "request.http",
+            "expected-response.edn",
+        ] {
+            assert!(
+                case.directory.join(relative_path).is_file(),
+                "missing Pedestal project contract file: {relative_path}"
+            );
+        }
+    }
+
+    #[test]
     fn normalizes_newline_styles() {
         assert_eq!(normalize_newlines("a\r\nb\rc\n"), "a\nb\nc\n");
     }
@@ -1422,9 +1456,10 @@ mod tests {
         let directory = temp.path().join("level-a-syntax/literals/one");
         write(&directory.join("case.toml"), &manifest("pending", "reader"));
         write(&directory.join("input.clj"), "1\n");
+        write(&directory.join("src/nested.clj"), "(ns nested)\n");
         update_checksums(temp.path()).expect("write checksums");
         assert!(verify_checksums(temp.path()).is_ok());
-        write(&directory.join("input.clj"), "2\n");
+        write(&directory.join("src/nested.clj"), "(ns nested.changed)\n");
         assert!(verify_checksums(temp.path())
             .expect_err("changed checksum")
             .contains("changed"));

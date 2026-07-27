@@ -32,7 +32,52 @@ struct Fixture {
     namespace: Option<&'static str>,
     input: &'static str,
     expected: Expected,
+    extra_files: &'static [(&'static str, &'static str)],
 }
+
+const PEDESTAL_HELLO_SOURCE: &str = "(ns hello
+  (:require [io.pedestal.connector :as conn]
+            [io.pedestal.http.http-kit :as hk]))
+
+(defn greet-handler [_request]
+  {:status 200
+   :body \"Hello, world!\\n\"})
+
+(def routes
+  #{[\"/greet\" :get greet-handler :route-name :greet]})
+
+(defn create-connector []
+  (-> (conn/default-connector-map 8890)
+      (conn/with-default-interceptors)
+      (conn/with-routes routes)
+      (hk/create-connector nil)))
+
+(defn start []
+  (conn/start! (create-connector)))
+
+(defn -main [& _args]
+  (start))
+";
+
+const PEDESTAL_PROJECT_FILES: &[(&str, &str)] = &[
+    (
+        "deps.edn",
+        r#"{:paths ["src"]
+ :deps {io.pedestal/pedestal.http-kit {:mvn/version "0.8.2-beta-10"}
+        org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
+ :aliases {:run {:main-opts ["-m" "hello"]}}}
+"#,
+    ),
+    ("src/hello.clj", PEDESTAL_HELLO_SOURCE),
+    (
+        "request.http",
+        "GET /greet HTTP/1.1\nHost: localhost:8890\n",
+    ),
+    (
+        "expected-response.edn",
+        "{:status 200 :body \"Hello, world!\\n\"}\n",
+    ),
+];
 
 fn main() {
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -103,6 +148,12 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         }
         Expected::None => {}
     }
+    for (relative_path, contents) in fixture.extra_files {
+        let path = directory.join(relative_path);
+        fs::create_dir_all(path.parent().expect("extra fixture file parent"))
+            .expect("create extra fixture directory");
+        fs::write(path, contents).expect("write extra fixture file");
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -139,7 +190,16 @@ fn fixture(
         namespace,
         input,
         expected,
+        extra_files: &[],
     }
+}
+
+fn with_extra_files(
+    mut fixture: Fixture,
+    extra_files: &'static [(&'static str, &'static str)],
+) -> Fixture {
+    fixture.extra_files = extra_files;
+    fixture
 }
 
 fn reader(
@@ -452,6 +512,29 @@ fn pending_project(
         None,
         input,
         Expected::None,
+    )
+}
+
+fn pedestal_hello_world_project() -> Fixture {
+    with_extra_files(
+        fixture(
+            'E',
+            "web-frameworks/pedestal",
+            "hello-world-api",
+            "e.pedestal.hello_world_api",
+            "ecosystem/web-frameworks/pedestal",
+            "pending",
+            "unsupported",
+            "project",
+            "not-applicable",
+            false,
+            "Requires Maven dependency resolution, multi-file namespaces, Pedestal, HTTP-Kit, networking, and a managed server lifecycle.",
+            "specs/COMPATIBILITY_SPEC.md",
+            Some("hello"),
+            PEDESTAL_HELLO_SOURCE,
+            Expected::None,
+        ),
+        PEDESTAL_PROJECT_FILES,
     )
 }
 
@@ -1288,6 +1371,7 @@ fn fixtures() -> Vec<Fixture> {
         pending_project('E', "java-interop", "ecosystem/java-interop", "Java interop has no native equivalent.", "(ns fixture.java)\n(System/currentTimeMillis)\n"),
         pending_project('E', "dynamic-loading", "ecosystem/dynamic-loading", "Dynamic require and eval are not part of the current AOT path.", "(ns fixture.dynamic)\n(require 'fixture.other)\n"),
         pending_project('E', "integrated-application", "ecosystem/application", "An integrated application needs modules, resources, dependencies, and stable packaging.", "(ns fixture.application)\n(defn -main [] (println \"app\"))\n"),
+        pedestal_hello_world_project(),
     ]);
 
     cases

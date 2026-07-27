@@ -1,0 +1,12 @@
+id = "e.pedestal.hello_world_api"
+level = "E"
+area = "ecosystem/web-frameworks/pedestal"
+status = "pending"
+class = "unsupported"
+target = "project"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Requires Maven dependency resolution, multi-file namespaces, Pedestal, HTTP-Kit, networking, and a managed server lifecycle."
+tracking = "specs/COMPATIBILITY_SPEC.md"
+namespace = "hello"

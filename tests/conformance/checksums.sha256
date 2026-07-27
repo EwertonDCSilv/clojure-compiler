@@ -582,3 +582,9 @@ ea9d9bdefce23ae973aeafec985288936fcb6df806509b6ad007f4c5c634cb27  level-e-ecosys
 f1f7480e0d424c247d6bb725665bc9f022b247ca2d40a64d9aa90ea9fc8742a9  level-e-ecosystem/java-interop/static-method/case.toml
 10159baf262b43a92d95db59dae1f72c645127301661e0a3ce4e38b295a97c58  level-e-ecosystem/java-interop/static-method/expected.stdout
 ec80fe20b8015119a9834008f277ddea3e9b6aeb13fb2ff8eaad58debe56956e  level-e-ecosystem/java-interop/static-method/input.clj
+f76802671c269a960b4f567a8254e9fee0e0e09862e2188ed2c51807e807143e  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/case.toml
+3762f978132e13d8e49211fc23430f2ec1abc252234a90f130ec0fe9c01b495e  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/deps.edn
+34114c042838ddc07644786cafa1a3415e41c0aae16373e5a949dde54be301cc  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/expected-response.edn
+bc5e5964c542ae677372d59c9836f22916a04b3a99a5546190f1e038020c7df8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/input.clj
+1715088f15d4fcd66d36486dad98cdc620cef2da0028e13ffca52f5ddf3005d8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/request.http
+bc5e5964c542ae677372d59c9836f22916a04b3a99a5546190f1e038020c7df8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/src/hello.clj

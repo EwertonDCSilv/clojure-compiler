@@ -98,10 +98,11 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-The executable compatibility matrix currently contains 205 cases across levels A–E:
-154 active, 20 expected failures, and 31 pending inventory entries. Levels D and E now
+The executable compatibility matrix currently contains 206 cases across levels A–E:
+154 active, 20 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
-concrete expected gaps and project inventory. Verification runs
+concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
+target. Verification runs
 offline without a JVM, checks fixture integrity, and writes reports to
 `target/conformance/`.
 

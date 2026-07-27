@@ -29,8 +29,8 @@ Em 2026-07-26, o workspace já possui um corte vertical funcional:
 - Operações diretas na shadow stack substituem `gc_push`, `gc_popn` e `gc_set` no
   caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
 
-A suíte Rust possui 106 testes. A matriz em [`tests/conformance/`](../tests/conformance)
-possui 205 casos: 154 ativos, 20 falhas esperadas e 31 itens pendentes. Os níveis D e E
+A suíte Rust possui 107 testes. A matriz em [`tests/conformance/`](../tests/conformance)
+possui 206 casos: 154 ativos, 20 falhas esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
 arquivo.

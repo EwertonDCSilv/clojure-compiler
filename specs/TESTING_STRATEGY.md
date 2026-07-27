@@ -55,17 +55,19 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 205 casos:
+O inventário atual contém 206 casos:
 
 - 154 `active`: executados e bloqueantes;
 - 20 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
-- 31 `pending`: schema e checksum são validados, mas o caso não é executado.
+- 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
 O nível D executa bibliotecas puras autocontidas e registra lacunas de macros,
 namespaces, lazy seqs, metadata e exceções. O nível E executa aplicações autônomas de
 arquivo único e transforma dependências, JARs, Java, carregamento dinâmico e concorrência
 em `xfail` concretos. Projetos que exigem loader/packaging continuam `pending`.
+Entre eles está uma API HTTP Hello World em Pedestal, com `deps.edn`, fonte, requisição
+e resposta esperada versionados como contrato do alvo.
 
 Cada caso é autocontido e tem `case.toml`, `input.clj` e a expectativa aplicável. O
 manifesto registra `status`, `class`, `target`, `oracle`, timeout, modo GC stress, razão
@@ -79,7 +81,8 @@ casos em paralelo e grava:
 - `target/conformance/report-summary.txt`.
 
 Os checksums em `tests/conformance/checksums.sha256` tornam alterações acidentais nas
-fixtures bloqueantes. O contrato completo está em
+fixtures bloqueantes, incluindo os arquivos internos de projetos. O contrato completo
+está em
 [`conformance/README.md`](conformance/README.md).
 
 ## Oracle Clojure/JVM

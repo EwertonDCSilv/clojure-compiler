@@ -97,10 +97,11 @@ scripts/coverage.sh
 scripts/conformance.sh verify
 ```
 
-A matriz executável de compatibilidade contém atualmente 205 casos nos níveis A–E:
-154 ativos, 20 falhas esperadas e 31 itens pendentes de inventário. Os níveis D e E
+A matriz executável de compatibilidade contém atualmente 206 casos nos níveis A–E:
+154 ativos, 20 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
-lacunas esperadas concretas e inventário de projetos. A verificação roda
+lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
+World em Pedestal. A verificação roda
 offline e sem JVM, confere a integridade das fixtures e grava relatórios em
 `target/conformance/`.
 
