@@ -171,7 +171,7 @@ Value cljn_count(Value v) {
         case T_MAP: return MK_FIX(((Map *)v)->n);
         case T_HMAP: return MK_FIX(((HMap *)v)->count);
         case T_SMAP: case T_SSET: return MK_FIX(((Sorted *)v)->count);
-        case T_TVEC: return MK_FIX(((TVec *)v)->len);
+        case T_TVEC: return MK_FIX(((PVec *)v)->count);
         case T_TBOX: return cljn_count(((TBox *)v)->inner);
         case T_RECORD: return MK_FIX(((Map *)((Record *)v)->map)->n);
     }

@@ -2,13 +2,54 @@
 /* ---------- vetor persistente (bitmapped trie 32-way) ---------- */
 static VNode *vnode_new(void) {
     VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
+    n->edit = NIL; /* nó persistente (imutável) */
     for (int i = 0; i < VWIDTH; i++) n->slots[i] = NIL;
     return n;
 }
 static VNode *vnode_copy(VNode *src) {
     VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
+    n->edit = NIL; /* cópia persistente (imutável) */
     memcpy(n->slots, src->slots, sizeof(n->slots));
     return n;
+}
+/* --- helpers de transiente estrutural (edit-token) --- */
+Value cljn_edit_new(void) { return (Value)obj_alloc(sizeof(Edit), T_EDIT); }
+static VNode *vnode_new_edit(Value edit) { VNode *n = vnode_new(); n->edit = edit; return n; }
+static VNode *vnode_copy_edit(VNode *src, Value edit) { VNode *n = vnode_copy(src); n->edit = edit; return n; }
+/* garante que `node` é editável pelo transiente `edit`; senão copia-e-marca */
+static VNode *vnode_editable(VNode *node, Value edit) {
+    return (node->edit == edit) ? node : vnode_copy_edit(node, edit);
+}
+static VNode *new_path_edit(int64_t level, VNode *node, Value edit) {
+    if (level == 0) return node;
+    VNode *ret = vnode_new_edit(edit);
+    ret->slots[0] = (Value)new_path_edit(level - VBITS, node, edit);
+    return ret;
+}
+static VNode *tv_push_tail(int64_t level, VNode *parent, VNode *tailnode, int64_t cnt, Value edit) {
+    int subidx = (int)(((cnt - 1) >> level) & VMASK);
+    VNode *ret = vnode_editable(parent, edit);
+    VNode *insert;
+    if (level == VBITS) {
+        insert = tailnode;
+    } else {
+        Value child = ret->slots[subidx];
+        insert = (obj_type(child) == T_VNODE)
+                     ? tv_push_tail(level - VBITS, (VNode *)child, tailnode, cnt, edit)
+                     : new_path_edit(level - VBITS, tailnode, edit);
+    }
+    ret->slots[subidx] = (Value)insert;
+    return ret;
+}
+static VNode *tv_do_assoc(int64_t level, VNode *node, int64_t i, Value x, Value edit) {
+    VNode *ret = vnode_editable(node, edit);
+    if (level == 0) {
+        ret->slots[i & VMASK] = x;
+    } else {
+        int subidx = (int)((i >> level) & VMASK);
+        ret->slots[subidx] = (Value)tv_do_assoc(level - VBITS, (VNode *)ret->slots[subidx], i, x, edit);
+    }
+    return ret;
 }
 Value cljn_vec_empty(void) {
     maybe_gc();    /* ponto seguro antes de desabilitar (mantém o trigger de coleta) */

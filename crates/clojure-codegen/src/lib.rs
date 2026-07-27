@@ -133,7 +133,7 @@ const PV_SHIFT: i32 = 24;
 const PV_ROOT: i32 = 32;
 const PV_TAIL: i32 = 40;
 const PV_TAILLEN: i32 = 48;
-const VNODE_SLOTS: i32 = 16;
+const VNODE_SLOTS: i32 = 24; // Obj(16) + edit(8); slots começam em 24
 // Intervalo de fixnum (deve casar com FIXNUM_MIN/MAX em runtime.c).
 const FIX_MIN: i64 = -(1 << 62);
 const FIX_MAX: i64 = (1 << 62) - 1;

@@ -77,7 +77,7 @@ Value cljn_get(Value coll, Value key) {
         case T_HSET: return (node_get(((HMap *)coll)->root, 0, cljn_hash(key), key) != MNOTFOUND) ? key : NIL;
         case T_SMAP: return cljn_sorted_get(coll, key);
         case T_SSET: return (tn_get(((Sorted *)coll)->root, key) != MNOTFOUND) ? key : NIL;
-        case T_TVEC: { TVec *tv = (TVec *)coll; if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < tv->len) return tv->items[i]; } return NIL; }
+        case T_TVEC: { PVec *tv = (PVec *)coll; if (IS_FIX(key)) { int64_t i = FIX(key); if (i >= 0 && i < tv->count) return pv_nth(tv, i); } return NIL; }
         case T_TBOX: return cljn_get(((TBox *)coll)->inner, key);
         default: return NIL;
     }
@@ -90,7 +90,7 @@ Value cljn_contains(Value coll, Value key) {
         case T_SMAP: case T_SSET: return cljn_sorted_contains(coll, key);
         case T_VEC: { PVec *v = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < v->count); }
         case T_TBOX: return cljn_contains(((TBox *)coll)->inner, key);
-        case T_TVEC: { TVec *tv = (TVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < tv->len); }
+        case T_TVEC: { PVec *tv = (PVec *)coll; return b2v(IS_FIX(key) && FIX(key) >= 0 && FIX(key) < tv->count); }
         default: return FALSEV;
     }
 }
@@ -157,7 +157,7 @@ static Value nth_builtin(Value coll, int64_t i) {
     if (coll == EMPTY) return MNOTFOUND; /* sequência vazia: sempre fora dos limites */
     switch (obj_type(coll)) {
         case T_VEC: { PVec *v = (PVec *)coll; return (i >= 0 && i < v->count) ? pv_nth(v, i) : MNOTFOUND; }
-        case T_TVEC: { TVec *tv = (TVec *)coll; return (i >= 0 && i < tv->len) ? tv->items[i] : MNOTFOUND; }
+        case T_TVEC: { PVec *tv = (PVec *)coll; return (i >= 0 && i < tv->count) ? pv_nth(tv, i) : MNOTFOUND; }
         case T_CONS: {
             if (i < 0) return MNOTFOUND;
             Value c = coll;

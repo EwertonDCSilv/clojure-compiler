@@ -35,11 +35,6 @@ static void *xalloc(size_t n) {
     if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
     return p;
 }
-static void *xrealloc(void *old, size_t n) {
-    void *p = realloc(old, n);
-    if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
-    return p;
-}
 static void die(const char *m) { fprintf(stderr, "erro: %s\n", m); exit(1); }
 static int obj_type(Value v) { return (IS_PTR(v) && v != 0) ? ((Obj *)v)->type : 0; }
 
@@ -126,6 +121,7 @@ static void gc_mark(Value v) {
             return;
         } else if (o->type == T_VNODE) {
             VNode *nd = (VNode *)v;
+            gc_mark(nd->edit); /* token de transiente (mantém vivo p/ evitar ABA) */
             for (int i = 0; i < VWIDTH; i++) gc_mark(nd->slots[i]);
             return;
         } else if (o->type == T_VEC) {
@@ -144,9 +140,10 @@ static void gc_mark(Value v) {
             gc_mark(((Sorted *)v)->root);
             return;
         } else if (o->type == T_TVEC) {
-            TVec *tv = (TVec *)v;
-            for (int64_t i = 0; i < tv->len; i++) gc_mark(tv->items[i]);
-            return;
+            TVec *tv = (TVec *)v; /* transiente estrutural: raiz/tail/edit */
+            gc_mark(tv->root);
+            gc_mark(tv->edit);
+            v = tv->tail; /* itera o tail */
         } else if (o->type == T_TBOX) {
             v = ((TBox *)v)->inner; /* itera o valor interno */
         } else if (o->type == T_TNODE) {
@@ -185,7 +182,6 @@ static void gc_sweep(void) {
         } else {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
-            if (o->type == T_TVEC) free(((TVec *)o)->items);
             if (o->szc == 0) {
                 free(o); /* grande: malloc'd */
             } else {

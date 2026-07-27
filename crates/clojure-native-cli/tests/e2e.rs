@@ -334,7 +334,7 @@ fn compiles_transients() {
         return;
     }
     // transient/persistent!/conj!/assoc!/dissoc!: construção em lote mutável.
-    // Vetor transiente usa buffer mutável (conj! O(1)); mapa/set via caixa.
+    // Vetor transiente é estrutural (compartilha a trie); mapa/set via caixa.
     let src = r#"(ns tr.core)
 (defn bvec [n] (loop [i 0 t (transient [])] (if (< i n) (recur (+ i 1) (conj! t i)) (persistent! t))))
 (defn bmap [n] (loop [i 0 t (transient {})] (if (< i n) (recur (+ i 1) (assoc! t i (* i i))) (persistent! t))))
@@ -350,6 +350,38 @@ fn compiles_transients() {
     assert_eq!(build_and_run("cljn_e2e_trans", src), expected);
     assert_eq!(
         build_and_run_env("cljn_e2e_trans_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
+fn structural_transients_preserve_persistence() {
+    if !have_cc() {
+        return;
+    }
+    // Transient estrutural: `transient` compartilha a trie do vetor persistente e
+    // muta in-place só nós próprios (copy-on-write dos compartilhados). O vetor
+    // original NUNCA pode ser alterado; transientes independentes não interferem.
+    let src = r#"(ns st.core)
+(defn build [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (conj v (* i 10))) v)))
+(defn -main []
+  (let [v (build 100)
+        t (assoc! (assoc! (transient v) 0 :mudou) 50 :meio)
+        v2 (persistent! (conj! t :novo))]
+    (println (nth v 0) (nth v 50) (count v))
+    (println (nth v2 0) (nth v2 50) (nth v2 100) (count v2)))
+  (let [big (build 2000)
+        t (persistent! (assoc! (assoc! (transient big) 5 :x) 1500 :y))]
+    (println (nth t 5) (nth t 1500) (nth big 5) (nth big 1500)))
+  (let [v (build 50)
+        a (persistent! (conj! (transient v) :a))
+        b (persistent! (conj! (transient v) :b))]
+    (println (count v) (count a) (count b) (nth a 50) (nth b 50))))
+(-main)"#;
+    let expected = "0 500 100\n:mudou :meio :novo 101\n:x :y 50 15000\n50 51 51 :a :b\n";
+    assert_eq!(build_and_run("cljn_e2e_strans", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_strans_gc", src, &[("CLJN_GC_STRESS", "1")]),
         expected
     );
 }

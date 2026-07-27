@@ -37,7 +37,7 @@ typedef intptr_t Value;
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
-       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18 };
+       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19 };
 
 typedef struct Obj {
     uint8_t type;
@@ -68,17 +68,21 @@ typedef struct { Obj h; uint32_t hash; int64_t n; Value pairs[]; } MColl; /* 2n 
  * sorted-set guarda val==key. Ordem por cljn_compare (ordem total de Clojure). */
 typedef struct { Obj h; Value key; Value val; Value left; Value right; int64_t red; } TNode;
 typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET */
-/* Transients (mutação em lote). Vetor transiente = buffer mutável crescente
- * (conj! O(1) amortizado); mapa/set transiente = caixa mutável sobre o valor
- * persistente (semântica correta; persistent! O(1)). */
-typedef struct { Obj h; int64_t len; int64_t cap; Value *items; } TVec; /* T_TVEC */
-typedef struct { Obj h; Value inner; } TBox;                            /* T_TBOX */
+/* Transients (mutação em lote). Vetor transiente = transiente ESTRUTURAL estilo
+ * Clojure: compartilha a trie do vetor persistente e muta in-place os nós que
+ * possui (marcados por um token `edit`); transient/persistent! são O(1). Mapa/set
+ * transiente = caixa mutável sobre o valor persistente (persistent! O(1)). */
+typedef struct { Obj h; } Edit;             /* T_EDIT: token único de posse */
+typedef struct { Obj h; Value inner; } TBox; /* T_TBOX (mapa/set transiente) */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
- * 32-way com structural sharing (conj/assoc/nth O(log32 n)). */
+ * 32-way com structural sharing (conj/assoc/nth O(log32 n)). Cada VNode carrega
+ * um `edit`: NIL = imutável (persistente); != NIL = pertence a um transiente. */
 #define VBITS 5
 #define VWIDTH 32
 #define VMASK 31
-typedef struct { Obj h; Value slots[VWIDTH]; } VNode;
+typedef struct { Obj h; Value edit; Value slots[VWIDTH]; } VNode;
 typedef struct { Obj h; int64_t count; int64_t shift; Value root; Value tail; int64_t tail_len; } PVec;
+/* Vetor transiente: mesmo layout do PVec + token `edit`. Reusa pv_nth p/ leituras. */
+typedef struct { Obj h; int64_t count; int64_t shift; Value root; Value tail; int64_t tail_len; Value edit; } TVec; /* T_TVEC */
 static Value pv_nth(PVec *v, int64_t i); /* fwd */
