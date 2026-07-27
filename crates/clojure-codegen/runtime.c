@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <setjmp.h>
 
 typedef intptr_t Value;
 
@@ -219,9 +220,11 @@ static void gc_sweep(void) {
 }
 
 static void gc_mark_method_table(void); /* fwd */
+static void gc_mark_exceptions(void);   /* fwd */
 static void gc_collect(void) {
     for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
     gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
+    gc_mark_exceptions();   /* valor de exceção em voo */
     gc_sweep();
     alloc_since_gc = 0;
 }
@@ -1567,6 +1570,72 @@ Value cljn_str_concat(Value a, Value b) {
 }
 void cljn_print_space(void) { fputc(' ', stdout); }
 void cljn_print_newline(void) { fputc('\n', stdout); }
+
+/* ---------- exceções: try/catch/finally + throw ----------
+ * setjmp/longjmp ficam INTEIRAMENTE dentro de cljn_try (função C): nenhum código
+ * gerado pelo Cranelift atravessa o setjmp. As closures corpo/catch/finally são
+ * invocadas pela ABI uniforme. `throw` desenrola até o handler mais próximo,
+ * restaurando shadow-stack e gc_disabled (evita corrupção/leak em unwind). */
+typedef Value (*FnCode)(Value, int64_t, Value *);
+static Value call_fn0(Value f) {
+    return ((FnCode)((Fn *)f)->code)(f, 0, &gc_stack[gc_sp]);
+}
+static Value call_fn1(Value f, Value a) {
+    gc_stack[gc_sp++] = a; /* arg no topo; argv aponta pra ele (rooteado) */
+    Value r = ((FnCode)((Fn *)f)->code)(f, 1, &gc_stack[gc_sp - 1]);
+    gc_sp--;
+    return r;
+}
+typedef struct Handler {
+    jmp_buf env;
+    struct Handler *prev;
+    size_t saved_sp;
+    int saved_gc_disabled;
+} Handler;
+static Handler *handler_top = NULL;
+static Value exception_value = NIL;
+
+Value cljn_throw(Value v) {
+    exception_value = v;
+    if (handler_top == NULL) {
+        SB b; sb_init(&b); write_val(&b, v, 0);
+        fputs("exceção não capturada: ", stderr);
+        fwrite(b.p, 1, b.len, stderr); fputc('\n', stderr);
+        free(b.p);
+        exit(1);
+    }
+    longjmp(handler_top->env, 1);
+}
+
+Value cljn_try(Value body, Value catch, Value finally) {
+    Handler h;
+    h.prev = handler_top;
+    h.saved_sp = gc_sp;
+    h.saved_gc_disabled = gc_disabled;
+    Value result;
+    if (setjmp(h.env) == 0) {
+        handler_top = &h;
+        result = call_fn0(body);
+        handler_top = h.prev; /* caminho normal: desempilha o handler */
+    } else {
+        handler_top = h.prev;           /* exceções em catch/finally vão ao externo */
+        gc_sp = h.saved_sp;             /* desenrola temporários do corpo */
+        gc_disabled = h.saved_gc_disabled;
+        Value ex = exception_value;
+        if (catch == NIL) {
+            if (finally != NIL) call_fn0(finally);
+            return cljn_throw(ex);      /* sem catch: roda finally e repropaga */
+        }
+        result = call_fn1(catch, ex);   /* catch pode lançar → handler externo */
+    }
+    if (finally != NIL) {
+        gc_stack[gc_sp++] = result;     /* rooteia o resultado durante o finally */
+        call_fn0(finally);
+        gc_sp--;
+    }
+    return result;
+}
+static void gc_mark_exceptions(void) { gc_mark(exception_value); }
 
 /* Introspecção para testes. */
 long cljn_gc_live_objects(void) { long n=0; for (Obj*o=all_objs;o;o=o->next_all) n++; return n; }

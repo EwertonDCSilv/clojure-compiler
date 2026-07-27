@@ -124,6 +124,8 @@ pub enum Prim {
     SortedMap,
     SortedSet,
     Compare,
+    Throw,
+    Try,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -767,6 +769,7 @@ impl<'a> Analyzer<'a> {
             "loop" | "loop*" => self.analyze_loop(args, span, tail),
             "recur" => self.analyze_recur(args, span, tail),
             "fn" | "fn*" => self.analyze_fn(args, span),
+            "try" => self.analyze_try(args, span),
             "apply" => {
                 if args.len() < 2 {
                     return Err(unsupported("apply requer função e uma coleção", span));
@@ -985,6 +988,98 @@ impl<'a> Analyzer<'a> {
         Ok((methods, fr.max_slots, fr.captures))
     }
 
+    /// Cria uma lambda de aridade única (params fixos, sem rest) a partir de forms
+    /// de corpo e devolve `MakeFn` com as capturas. Usada por `fn` e por `try`.
+    fn make_lambda(
+        &mut self,
+        params: Vec<String>,
+        body: Vec<SForm>,
+        span: Span,
+    ) -> Result<Ast, Diagnostic> {
+        let arity = params.len();
+        let decls = vec![(params, None, body)];
+        let (methods, lc, captures) = self.analyze_methods(&decls, true, span)?;
+        let name = format!("__lambda_{}", self.lam);
+        self.lam += 1;
+        self.functions.push(Function {
+            name: name.clone(),
+            methods,
+            local_count: lc,
+            is_lambda: true,
+            dispatch: None,
+        });
+        Ok(Ast::MakeFn {
+            lambda: name,
+            arity,
+            captures,
+        })
+    }
+
+    /// `(try corpo... (catch Classe e handler...) (finally limpeza...))`.
+    /// Desugar: corpo/catch/finally viram lambdas (com captura léxica) e a forma
+    /// vira `(cljn_try body catch|nil finally|nil)`. `catch` é catch-all no
+    /// subconjunto (sem hierarquia de classes); a classe é aceita e ignorada.
+    fn analyze_try(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+        let mut body: Vec<SForm> = Vec::new();
+        let mut catch: Option<(String, Vec<SForm>)> = None;
+        let mut finally: Option<Vec<SForm>> = None;
+        for f in args {
+            if let Form::List(items) = f.node.strip_meta() {
+                if let Some(Form::Symbol(s)) = items.first().map(|h| h.node.strip_meta()) {
+                    match s.name.as_str() {
+                        "catch" => {
+                            if catch.is_some() {
+                                return Err(unsupported("try: múltiplos catch não suportados", span));
+                            }
+                            if items.len() < 3 {
+                                return Err(unsupported(
+                                    "catch requer classe, binding e corpo",
+                                    f.span,
+                                ));
+                            }
+                            let bind = match items[2].node.strip_meta() {
+                                Form::Symbol(b) => b.name.clone(),
+                                _ => {
+                                    return Err(unsupported(
+                                        "catch: binding deve ser um símbolo",
+                                        items[2].span,
+                                    ))
+                                }
+                            };
+                            catch = Some((bind, items[3..].to_vec()));
+                            continue;
+                        }
+                        "finally" => {
+                            if finally.is_some() {
+                                return Err(unsupported("try: múltiplos finally", span));
+                            }
+                            finally = Some(items[1..].to_vec());
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if catch.is_some() || finally.is_some() {
+                return Err(unsupported("try: expressão de corpo após catch/finally", f.span));
+            }
+            body.push(f.clone());
+        }
+        let body_fn = self.make_lambda(vec![], body, span)?;
+        let catch_fn = match catch {
+            Some((bind, forms)) => self.make_lambda(vec![bind], forms, span)?,
+            None => Ast::Nil,
+        };
+        let finally_fn = match finally {
+            Some(forms) => self.make_lambda(vec![], forms, span)?,
+            None => Ast::Nil,
+        };
+        Ok(Ast::Call {
+            callee: Callee::Prim(Prim::Try),
+            args: vec![body_fn, catch_fn, finally_fn],
+        })
+    }
+
     /// `(fn [params] body...)`, `(fn* nome? [params] body...)` ou multi-aridade
     /// `(fn ([a] ...) ([a b] ...))` → cria uma lambda + `MakeFn` com as capturas.
     fn analyze_fn(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
@@ -1060,6 +1155,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "sorted-map" => Prim::SortedMap,
         "sorted-set" => Prim::SortedSet,
         "compare" => Prim::Compare,
+        "throw" => Prim::Throw,
         _ => return None,
     })
 }
@@ -1077,6 +1173,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Rest
         | Prim::Count
         | Prim::Keys
+        | Prim::Throw
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1104,6 +1201,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::SortedMap
         | Prim::SortedSet
         | Prim::Println
+        | Prim::Try // sintetizada; nunca usada como valor de 1ª classe
         | Prim::Print => return None,
     })
 }
@@ -1129,7 +1227,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Rest
         | Prim::Count
         | Prim::Keys
+        | Prim::Throw
         | Prim::Vals => n == 1,
+        Prim::Try => n == 3,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

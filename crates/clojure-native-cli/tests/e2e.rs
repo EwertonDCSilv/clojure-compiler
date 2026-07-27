@@ -293,6 +293,33 @@ fn compiles_large_hash_set() {
 }
 
 #[test]
+fn compiles_try_catch_finally() {
+    if !have_cc() {
+        return;
+    }
+    // try/catch/finally + throw: catch-all liga o valor lançado; finally sempre
+    // roda; captura léxica no corpo/catch; try aninhado propaga ao handler externo.
+    let src = r#"(ns tc.core)
+(defn safe-div [a b]
+  (try (if (= b 0) (throw "div0") (quot a b))
+       (catch Exception e (str "erro: " e))))
+(defn -main []
+  (println (safe-div 10 2) (safe-div 10 0))
+  (println (try 42 (finally (println "fin"))))
+  (println (try (throw "boom") (catch T e (str "peguei: " e)) (finally (println "fin2"))))
+  (println (try (throw 99) (catch E e (+ e 1))))
+  (println (try (try (throw "in") (finally (println "inf"))) (catch E e (str "out: " e))))
+  (let [base 100] (println (try (throw base) (catch E e (+ e base))))))
+(-main)"#;
+    let expected = "5 erro: div0\nfin\n42\nfin2\npeguei: boom\n100\ninf\nout: in\n200\n";
+    assert_eq!(build_and_run("cljn_e2e_try", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_try_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_sorted_collections() {
     if !have_cc() {
         return;

@@ -163,6 +163,8 @@ struct Runtime {
     sorted_set_empty: FuncId, // ()->sorted-set
     sorted_assoc: FuncId,     // (smap,k,v)->smap
     compare: FuncId,          // (a,b)->fixnum(-1/0/1)
+    try_: FuncId,             // (body_fn,catch_fn|nil,finally_fn|nil)->v
+    throw_: FuncId,           // (v)->! (longjmp)
     make_record: FuncId,      // (type_name,map)->record
     // protocols
     type_key: FuncId,        // (v)->key
@@ -482,6 +484,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         },
         sorted_assoc: ternary(m, "cljn_sorted_assoc"),
         compare: bin(m, "cljn_compare"),
+        try_: ternary(m, "cljn_try"),
+        throw_: una(m, "cljn_throw"),
         make_record: bin(m, "cljn_make_record"),
         type_key: una(m, "cljn_type_key"),
         register_method: ternary_void(m, "cljn_register_method"),
@@ -547,6 +551,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Compare
             | Prim::Println
             | Prim::Print
+            | Prim::Throw // diverge; resultado nunca materializa
     )
 }
 
@@ -1908,6 +1913,8 @@ impl<'a> FnGen<'a> {
                 self.gen_sorted_map(&pairs)
             }
             Prim::Compare => self.bin(self.rt.compare, args),
+            Prim::Throw => self.una(self.rt.throw_, args), // noreturn (longjmp)
+            Prim::Try => self.tern(self.rt.try_, args),
         }
     }
 
