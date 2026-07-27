@@ -2,6 +2,9 @@
 
 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
 
+[Site do projeto](https://ewertondcsilv.github.io/clojure-compiler/) ·
+[Código-fonte](https://github.com/EwertonDCSilv/clojure-compiler)
+
 Compilação nativa de Clojure sem JVM, construída com Rust, Cranelift e um runtime C
 compacto. O repositório se chama `clojure-compiler`; seu binário de linha de comando se
 chama `clojure-native`.
