@@ -2,10 +2,11 @@
 
 Arquivo: [`extreme.csv`](extreme.csv)
 
-Execução realizada em 2026-07-26 com:
+Execução realizada em 2026-07-27 com:
 
 ```bash
-benchmarks/cracking/compare-clojure.sh --scale 25 \
+benchmarks/cracking/compare-clojure.sh --scale 25 --opt-level none \
+  --compiler target/release/clojure-native \
   --csv benchmarks/cracking/results/extreme.csv
 ```
 
@@ -28,17 +29,22 @@ benchmarks/cracking/compare-clojure.sh --scale 25 \
 ## Resumo desta execução
 
 - 60 casos comparados, 60 com status `OK` e checksums idênticos.
-- O nativo teve menor tempo de parede em 38 casos; Clojure/JVM em 21; houve 1 empate.
-- Mediana de `wall_speedup_vs_clojure`: 1,450× a favor do nativo.
-- Tempos de parede acumulados: nativo 21,78 s; Clojure/JVM 23,20 s.
-- Tempos de CPU acumulados: nativo 21,57 s; Clojure/JVM 50,77 s.
-- Mediana de `cpu_speedup_vs_clojure`: 3,277× a favor do nativo.
+- O nativo teve menor tempo de parede em 46 casos; Clojure/JVM em 12; houve 2 empates.
+- Mediana de `wall_speedup_vs_clojure`: 2,081× a favor do nativo.
+- Tempos de parede acumulados: nativo 17,87 s; Clojure/JVM 24,96 s.
+- Tempos de CPU acumulados: nativo 17,68 s; Clojure/JVM 53,88 s.
+- Mediana de `cpu_speedup_vs_clojure`: 4,542× a favor do nativo.
 - O nativo apresentou RSS menor em 59 dos 60 casos.
-- Mediana de `rss_ratio_clojure_over_native`: 19,599×.
-- Maior RSS nativo: 232.324 KiB em
+- Mediana de `rss_ratio_clojure_over_native`: 19,906×.
+- Maior RSS nativo: 232.196 KiB em
   `07-object-oriented-design/06-record-updates.clj`.
-- Maior RSS Clojure/JVM: 529.336 KiB em
+- Maior RSS Clojure/JVM: 525.512 KiB em
   `06-math-and-logic/05-integer-square-root.clj`.
+- Compilação acumulada: 7.246 ms no nativo e 33.114 ms no Clojure/JVM AOT.
+
+Em relação ao CSV de referência versionado anterior, o tempo acumulado do nativo caiu
+17,95%, enquanto o do Clojure/JVM subiu 7,59%. A rodada indica melhora do nativo nesta
+máquina, mas não isola causalidade sem uma série de repetições.
 
 ## Como ler a comparação
 
@@ -56,6 +62,10 @@ inicialização de cada processo, inclusive a JVM.
 Os valores são uma fotografia desta máquina; frequência dinâmica, carga do sistema,
 toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estatísticas,
 repita as medições no mesmo ambiente e compare distribuições, não apenas uma execução.
+
+O compilador release foi reconstruído imediatamente antes da rodada. O `runtime.c`
+medido tinha SHA-256
+`b9cd80d252c5763722b7d860bebc0e688ec9413bf60d714b08c0054b7bdaa958`.
 
 ## Validação do fast path de multiplicação
 

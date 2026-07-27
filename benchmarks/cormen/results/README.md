@@ -2,10 +2,11 @@
 
 Arquivo: [`extreme.csv`](extreme.csv)
 
-Execução realizada em 2026-07-26 com:
+Execução realizada em 2026-07-27 com:
 
 ```bash
-benchmarks/cormen/compare-clojure.sh --scale 25 \
+benchmarks/cormen/compare-clojure.sh --scale 25 --opt-level none \
+  --compiler target/release/clojure-native \
   --csv benchmarks/cormen/results/extreme.csv
 ```
 
@@ -28,28 +29,32 @@ benchmarks/cormen/compare-clojure.sh --scale 25 \
 ## Resumo desta execução
 
 - 30 casos comparados, todos com status `OK` e checksums idênticos.
-- O nativo teve menor tempo de parede em 2 casos; Clojure/JVM em 28.
-- Mediana de `wall_speedup_vs_clojure`: 0,266×.
-- Tempos de parede acumulados: nativo 86,39 s; Clojure/JVM 16,69 s.
-- Tempos de CPU acumulados: nativo 86,25 s; Clojure/JVM 31,85 s.
-- Mediana de `cpu_speedup_vs_clojure`: 0,527×.
+- O nativo teve menor tempo de parede em 4 casos; Clojure/JVM em 26.
+- Mediana de `wall_speedup_vs_clojure`: 0,254×.
+- Tempos de parede acumulados: nativo 102,60 s; Clojure/JVM 16,91 s.
+- Tempos de CPU acumulados: nativo 102,41 s; Clojure/JVM 32,61 s.
+- Mediana de `cpu_speedup_vs_clojure`: 0,502×.
 - O nativo apresentou RSS menor nos 30 casos.
-- Mediana de `rss_ratio_clojure_over_native`: 19,766×.
-- Maior RSS nativo: 20.692 KiB em
+- Mediana de `rss_ratio_clojure_over_native`: 19,918×.
+- Maior RSS nativo: 20.740 KiB em
   `06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj`.
-- Maior RSS Clojure/JVM: 968.184 KiB no mesmo caso.
-- Compilação acumulada: 2.604 ms no nativo e 15.128 ms no Clojure/JVM AOT.
+- Maior RSS Clojure/JVM: 1.024.412 KiB no mesmo caso.
+- Compilação acumulada: 3.677 ms no nativo e 15.272 ms no Clojure/JVM AOT.
+
+Em relação ao CSV de referência versionado anterior, os tempos acumulados subiram
+18,76% no nativo e 1,32% no Clojure/JVM. A rodada aponta regressão do nativo nesta
+máquina, mas não isola causalidade sem uma série de repetições.
 
 ## Resultado por capítulo
 
 | Capítulo | Casos | Parede nativo | Parede Clojure | Razão Clojure/nativo |
 | --- | ---: | ---: | ---: | ---: |
-| Fundamentos e divisão e conquista | 5 | 5,82 s | 2,07 s | 0,356× |
-| Ordenação e estatísticas de ordem | 5 | 11,47 s | 2,89 s | 0,252× |
-| Estruturas de dados | 5 | 10,93 s | 2,57 s | 0,235× |
-| Programação dinâmica e gulosa | 5 | 22,72 s | 2,98 s | 0,131× |
-| Algoritmos de grafos | 5 | 13,54 s | 2,45 s | 0,181× |
-| Teoria dos números e casamento de strings | 5 | 21,91 s | 3,73 s | 0,170× |
+| Fundamentos e divisão e conquista | 5 | 5,44 s | 2,07 s | 0,381× |
+| Ordenação e estatísticas de ordem | 5 | 11,94 s | 3,02 s | 0,253× |
+| Estruturas de dados | 5 | 14,85 s | 2,60 s | 0,175× |
+| Programação dinâmica e gulosa | 5 | 33,69 s | 2,96 s | 0,088× |
+| Algoritmos de grafos | 5 | 17,59 s | 2,50 s | 0,142× |
+| Teoria dos números e casamento de strings | 5 | 19,09 s | 3,76 s | 0,197× |
 
 ## Como ler a comparação
 
@@ -64,15 +69,18 @@ Os dois caminhos são compilados antes da execução medida: o binário pelo
 `native_compile_wall_ms` e `clojure_compile_wall_ms`. A medição de execução inclui a
 inicialização de cada processo, inclusive a JVM.
 
-Esta execução evidencia o custo das chamadas de runtime e da manutenção da shadow
-stack no backend atual: os casos algorítmicos intensivos em operações inteiras ficam
-mais lentos que o Clojure/JVM, apesar do consumo de memória substancialmente menor.
-Essa relação é uma observação dos dados, não uma prova isolada de causalidade; ela
-serve como linha de base para medir as otimizações propostas na ADR 0006.
+Mesmo depois dos fast paths inteiros e dos stores diretos na shadow stack, os casos
+algorítmicos continuam mais lentos que Clojure/JVM, apesar do consumo de memória
+substancialmente menor. Essa relação é uma observação dos dados, não uma prova isolada
+de causalidade; ela orienta as próximas etapas de liveness, IR e safepoints da ADR 0006.
 
 Os valores são uma fotografia desta máquina; frequência dinâmica, carga do sistema,
 toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estatísticas,
 repita as medições no mesmo ambiente e compare distribuições, não apenas uma execução.
+
+O compilador release foi reconstruído imediatamente antes da rodada. O `runtime.c`
+medido tinha SHA-256
+`b9cd80d252c5763722b7d860bebc0e688ec9413bf60d714b08c0054b7bdaa958`.
 
 ## Experimento Cranelift `none` contra `speed`
 
