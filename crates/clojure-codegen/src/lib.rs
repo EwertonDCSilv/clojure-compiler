@@ -1562,9 +1562,16 @@ impl<'a> FnGen<'a> {
     /// dobra os pares da esquerda p/ direita sobre AssocOne (`cljn_assoc`),
     /// mantendo o acumulador rooteado a cada passo. args = [coll, k, v, k, v...].
     fn gen_assoc(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        // Avalia todos os args antes da dobra; só operandos Heap vão à shadow
+        // stack (imediatos — índice fixnum, `false` etc. — nunca precisam de root).
+        // Pares Heap ainda não consumidos permanecem rooteados durante os passos
+        // anteriores. O acumulador tem seu próprio root, atualizado a cada passo.
         let mut vals = Vec::with_capacity(args.len());
+        let mut pushed = 0usize;
         for a in args {
-            vals.push(self.spill_arg(a)?); // todos rooteados antes da dobra
+            let (v, p) = self.operand(a)?;
+            pushed += p as usize;
+            vals.push(v);
         }
         let mut acc = vals[0];
         self.gc_push_val(acc); // root do acumulador (topo)
@@ -1576,7 +1583,7 @@ impl<'a> FnGen<'a> {
             i += 2;
         }
         self.gc_popn(1); // acc
-        self.gc_popn(args.len()); // vals
+        self.gc_popn(pushed); // operandos Heap
         Ok(acc)
     }
 
