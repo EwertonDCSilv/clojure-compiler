@@ -26,6 +26,7 @@ tags.
 
 ### Changed
 
+- Stop tracking the local `.lsp/.cache/` editor cache and ignore future cache files.
 - Mark ADR-0014 and the optimization IR specification as partially implemented rather
   than describing the complete whole-function pipeline as delivered.
 - Extend benchmark runners and project documentation with the experimental IR profile

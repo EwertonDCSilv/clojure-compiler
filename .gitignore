@@ -1,5 +1,6 @@
 /target
 /.clj-kondo/.cache/
+/.lsp/.cache/
 **/*.rs.bk
 Cargo.lock.orig
 /prototypes/**/target
