@@ -1,103 +1,38 @@
-# External Exercism benchmark and compatibility corpus
+# External Exercism benchmark
 
 [Central benchmark catalog](../README.md) ·
 [Upstream attribution](UPSTREAM.md) ·
 [Implementation plan](IMPLEMENTATION_PLAN.md) ·
-[Compilation matrix](results/compilation.tsv) ·
-[Complete checkout matrix](results/all-files.tsv) ·
+[Conformance corpus](../../tests/conformance/level-d-pure-libraries/external/exercism/README.md) ·
 [Comparative results](results/README.md)
 
-This suite uses public reference solutions from
-[`exercism/clojure`](https://github.com/exercism/clojure) as an external,
-independently maintained corpus for the native compiler.
+This suite compares execution performance between Native and Clojure/JVM using public
+solutions from [`exercism/clojure`](https://github.com/exercism/clojure). It is not the
+language-compatibility report.
 
-The audited upstream snapshot is the official
-[`exercism/clojure`](https://github.com/exercism/clojure) repository at commit
+The audited upstream snapshot is commit
 [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190),
-licensed under the
+licensed under the upstream
 [MIT License](https://github.com/exercism/clojure/blob/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190/LICENSE).
-See the complete file-level mapping and separation between upstream and local changes
-in [`UPSTREAM.md`](UPSTREAM.md).
+The exact fixture mapping and local changes are documented in
+[`UPSTREAM.md`](UPSTREAM.md).
 
-The upstream repository is cloned separately instead of becoming a Git submodule. The
-default location is `~/github/exercism-clojure`, configurable through
-`EXERCISM_CLOJURE_CHECKOUT` or `--checkout`.
+## Responsibility boundary
 
-## Current coverage
+| Artifact | Question answered | Gate |
+| --- | --- | --- |
+| `benchmarks/exercism/` | How fast does an executable workload run in Native versus JVM? | Both sides execute, checksums match, time/CPU/RSS are recorded |
+| `tests/conformance/.../external/exercism/` | Which Clojure syntax, semantics and standard-library features are supported? | `active`, `xfail` and `pending` follow the conformance contract |
+| `results/compilation.tsv` and `results/all-files.tsv` | What is the first compiler blocker in the pinned upstream checkout? | Inventory only; no performance claim |
 
-All 101 files at `exercises/practice/*/.meta/example.clj` were passed directly to
-`clojure-native build`.
+A program enters this benchmark only after it executes correctly in both runtimes and
+has a deterministic workload. Merely parsing or compiling an upstream file does not
+make it a benchmark.
 
-| Result | Cases | Meaning |
-| --- | ---: | --- |
-| `PASS` | 7 | The unmodified upstream reference file builds natively |
-| `FAIL` | 94 | The first compiler blocker is recorded |
-| **Total** | **101** | Complete reference-solution inventory in the pinned snapshot |
+## Benchmark cases
 
-The literal whole-checkout audit also compiles every `.clj` and `.cljc` file:
-
-| Role | Total | Pass | Fail |
-| --- | ---: | ---: | ---: |
-| Reference solutions | 101 | 7 | 94 |
-| Exercise source/stubs | 120 | 105 | 15 |
-| Tests | 114 | 0 | 114 |
-| `project.clj` manifests | 113 | 0 | 113 |
-| Generators | 30 | 3 | 27 |
-| Other tooling | 15 | 1 | 14 |
-| **Whole checkout** | **493** | **116** | **377** |
-
-Test and project files are expected to expose `clojure.test`, dependency and project
-loading gaps; they are reported separately from complete reference implementations.
-
-The seven passing implementations are:
-
-- `accumulate`
-- `binary-search`
-- `hello-world`
-- `knapsack`
-- `prime-factors`
-- `square-root`
-- `two-fer`
-
-The complete result, including error code, category, source line, first diagnostic and
-upstream commit, is versioned in
-[`results/compilation.tsv`](results/compilation.tsv). A failure category represents
-only the **first blocker**. Removing it may reveal another unsupported construct in the
-same exercise.
-
-## Reproduce the 101-file audit
-
-From the compiler repository root:
-
-```bash
-make exercism-compatibility
-
-# Explicit checkout or output
-benchmarks/exercism/compile-all.sh \
-  --checkout ~/github/exercism-clojure \
-  --report /tmp/exercism-compilation.tsv
-
-# Compile every .clj/.cljc in the checkout
-benchmarks/exercism/compile-all.sh \
-  --scope all \
-  --report /tmp/exercism-all-files.tsv
-
-# Make any unsupported exercise fail the command
-benchmarks/exercism/compile-all.sh --strict
-```
-
-`make exercism-compatibility` updates both the 101-reference matrix and the 493-file
-whole-checkout matrix. Ordinary compatibility gaps are written to the report without
-failing the audit. `--strict` is intended for the future 101/101 reference gate.
-
-## Benchmark subset
-
-The seven passing reference implementations have deterministic workload adapters under
-[`01-practice/`](01-practice/). The upstream implementation remains intact; each file
-adds only fixed input data, a `benchmark` function and a `-main` checksum entry point.
-The copied portions remain attributed to Exercism and its contributors and retain the
-upstream MIT terms in [`LICENSE.exercism`](LICENSE.exercism). Exact source links for
-each fixture are recorded in [`UPSTREAM.md`](UPSTREAM.md).
+There are eight Native × JVM workloads: seven practice solutions and one concept
+solution.
 
 | Case | Main pressure |
 | --- | --- |
@@ -108,11 +43,17 @@ each fixture are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 | `prime-factors` | integer arithmetic, `mod`, `quot` and vector growth |
 | `square-root` | integer multiplication and loop throughput |
 | `two-fer` | variadic arity dispatch and string allocation |
+| `annalyns-infiltration` | boolean branches, truthiness and short function calls |
 
-Run the native validation:
+Every case has a local deterministic adapter, a numeric checksum and a `-main` entry
+point. The copied implementation stays intact before the local adapter marker.
+Checksums are versioned in [`expected.tsv`](expected.tsv).
+
+Run native validation:
 
 ```bash
 make benchmarks-exercism
+benchmarks/exercism/run.sh --list
 ```
 
 Compare Native and Clojure/JVM AOT:
@@ -120,28 +61,66 @@ Compare Native and Clojure/JVM AOT:
 ```bash
 make benchmarks-compare-exercism
 
-# Reproduce the versioned reference load
 make benchmarks-compare-exercism \
   EXERCISM_COMPARE_ARGS="--scale 5" \
   EXERCISM_COMPARISON_CSV=benchmarks/exercism/results/extreme.csv
 ```
 
-The CSV schema, checksum rule and GNU `time` metrics are identical to the Cracking and
-Cormen suites. Compilation is measured separately from execution. The JVM side uses
-Clojure 1.12.5 and keeps HotSpot enabled after AOT compilation.
+The comparative CSV records wall time, CPU and peak RSS for both runtimes. Compilation
+is measured separately from execution. The JVM side uses Clojure 1.12.5 with HotSpot
+enabled after AOT compilation. The currently versioned CSV contains the seven practice
+cases; the next complete measurement will add `annalyns-infiltration`.
+
+## Compatibility inventory
+
+The external audit remains useful, but it is deliberately reported apart from
+performance:
+
+- 101 practice reference implementations:
+  [`results/compilation.tsv`](results/compilation.tsv);
+- all 493 `.clj` and `.cljc` files in the pinned checkout:
+  [`results/all-files.tsv`](results/all-files.tsv);
+- 13 official concept exemplars as executable conformance cases:
+  [`tests/conformance/.../external/exercism/`](../../tests/conformance/level-d-pure-libraries/external/exercism/).
+
+Current compatibility inventory:
+
+| Corpus | Total | Pass/active | Fail/xfail |
+| --- | ---: | ---: | ---: |
+| Practice reference solutions | 101 | 7 | 94 |
+| Concept conformance cases | 13 | 1 | 12 |
+| **Complete official solutions** | **114** | **8** | **106** |
+| Whole-checkout files | 493 | 116 | 377 |
+
+These counts describe compiler coverage, not benchmark results. A failure category is
+only the first blocker; resolving it may expose another unsupported construct.
+
+The checkout defaults to `~/github/exercism-clojure` and can be changed through
+`EXERCISM_CLOJURE_CHECKOUT` or `--checkout`.
+
+```bash
+# Refresh practice, concept-conformance and whole-checkout inventories
+make exercism-compatibility
+
+# Individual inventories
+benchmarks/exercism/compile-all.sh --scope references
+benchmarks/exercism/compile-all.sh --scope concepts
+benchmarks/exercism/compile-all.sh --scope all
+```
+
+The concept scope verifies that the copied exemplar body matches the pinned upstream
+source before compiling it. Its report is stored with the conformance corpus, at
+[`compilation.tsv`](../../tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv).
 
 ## Promotion workflow
 
-The external corpus is deliberately incremental:
-
-1. implement one planned compatibility slice;
+1. implement a planned compatibility slice;
 2. add unit and integration coverage for that slice;
-3. rerun `compile-all.sh`;
-4. inspect every exercise that changed from `FAIL` to `PASS`;
-5. add semantic inputs and compare the result with Clojure/JVM;
-6. add a deterministic performance adapter only when the exercise creates a useful,
-   non-duplicated workload;
-7. update the matrix, plan and comparative report in the same change.
+3. run the conformance suite and upstream inventories;
+4. review every transition from `xfail`/`FAIL` to `active`/`PASS`;
+5. compare observable behavior with Clojure/JVM;
+6. add a benchmark only when the program provides a useful, non-duplicated workload;
+7. record checksum, scale, environment and both revisions.
 
-This prevents a file that merely parses or defines unused functions from being counted
-as a completed semantic or performance test.
+This repository is not an official Exercism benchmark, and the results do not imply
+endorsement by or affiliation with Exercism.

@@ -20,14 +20,20 @@ dependência da CI, do runner `verify` nem do binário produzido.
 | Conformidade | `make compatibility` | runner A–E offline | ativos/xfail/checksums corretos |
 | GC | casos com `CLJN_GC_STRESS=1` | runtime e conformidade | coleta a cada alocação sem corrupção |
 | Benchmarks | `make benchmarks` | runners Cracking, Cormen e Exercism | checksum e métricas comparáveis |
-| Corpus externo | `make exercism-compatibility` | 101 referências e 493 arquivos públicos pinados | transições PASS/FAIL rastreáveis |
+| Corpus externo | `make exercism-compatibility` | 101 práticas, 13 conceitos e 493 arquivos pinados | transições PASS/FAIL rastreáveis |
 | Oracle JVM | `make compatibility-oracle` | Clojure 1.12.5 local | operação exclusivamente manual |
+
+Benchmarks respondem quanto custa executar a mesma carga em Native e JVM, medindo
+tempo, CPU e memória após validar o checksum. Conformidade responde quais formas da
+linguagem e APIs são aceitas e semanticamente corretas, usando estados
+`active`/`xfail`/`pending`. Um caso de conformidade só vira benchmark quando também
+oferece uma carga de desempenho determinística e útil.
 
 Os agregadores são:
 
 ```bash
 make quality  # formato, lints e testes
-make all      # quality + cobertura + conformidade + 97 benchmarks
+make all      # quality + cobertura + conformidade + 98 benchmarks
 make ci       # comandos usados pelos jobs do GitHub Actions
 ```
 
@@ -86,10 +92,10 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 447 casos:
+O inventário atual contém 460 casos:
 
-- 170 `active`: executados e bloqueantes;
-- 245 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 172 `active`: executados e bloqueantes;
+- 256 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.

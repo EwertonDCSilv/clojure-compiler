@@ -8,10 +8,10 @@
 
 Catálogo central das cargas de desempenho do `clojure-compiler`.
 
-São **97 programas Clojure autônomos**, distribuídos em três suítes. Cada caso compila
-para um executável nativo, executa uma carga determinística e imprime um checksum. Além
-de medir desempenho, esse formato ajuda a detectar regressões de compilação, runtime e
-correção sem depender apenas de tempo de execução.
+São **98 programas Clojure autônomos**, distribuídos em três suítes. Cada caso executa
+em Native e Clojure/JVM, aplica uma carga determinística e imprime o mesmo checksum.
+O catálogo mede desempenho de execução; cobertura de sintaxe, semântica e biblioteca
+padrão pertence à [suíte de conformidade](../specs/conformance/README.md).
 
 > Os benchmarks são ferramentas de engenharia do compilador, não promessas universais
 > de desempenho. Compare resultados somente no mesmo ambiente, com a mesma revisão,
@@ -24,7 +24,7 @@ correção sem depender apenas de tempo de execução.
 - [Entenda as métricas](#entenda-as-métricas)
 - [Catálogo Cracking — 60 casos](#catálogo-cracking--60-casos)
 - [Catálogo Cormen/CLRS — 30 casos](#catálogo-cormenclrs--30-casos)
-- [Corpus externo Exercism — 101 fontes, 7 benchmarks](#corpus-externo-exercism--101-fontes-7-benchmarks)
+- [Benchmark externo Exercism — 8 casos](#benchmark-externo-exercism--8-casos)
 - [Consulte os resultados](#consulte-os-resultados)
 - [Adicione um caso](#adicione-um-caso)
 
@@ -34,14 +34,14 @@ correção sem depender apenas de tempo de execução.
 | --- | ---: | --- | --- |
 | [Cracking](cracking/README.md) | 60 | 10 capítulos temáticos | estruturas da linguagem, coleções, records, protocols e algoritmos menores |
 | [Cormen/CLRS](cormen/README.md) | 30 | 6 famílias de algoritmos | ordenação, estruturas de dados, programação dinâmica, grafos e string matching |
-| [Exercism](exercism/README.md) | 7 | soluções públicas com adaptadores determinísticos | compatibilidade externa e comparação independente |
-| **Total** | **97** | **17 grupos** | correção, regressões e comparação nativo × Clojure/JVM |
+| [Exercism](exercism/README.md) | 8 | soluções públicas com adaptadores determinísticos | comparação independente Native × JVM |
+| **Total** | **98** | **18 grupos** | correção, regressões e comparação Native × Clojure/JVM |
 
-As implementações Cracking e Cormen são originais. A suíte Exercism preserva sete
-soluções públicas MIT do snapshot documentado e adiciona apenas cargas e checksums; o
-catálogo associado também compila as 101 soluções de referência diretamente do
-checkout externo. A origem, a licença e o mapeamento para cada arquivo upstream estão
-registrados em [`exercism/UPSTREAM.md`](exercism/UPSTREAM.md).
+As implementações Cracking e Cormen são originais. A suíte Exercism preserva oito
+soluções públicas MIT do snapshot documentado e adiciona cargas e checksums. A
+auditoria das demais soluções não é benchmark: ela alimenta o catálogo de
+conformidade. Origem, licença e mapeamento estão registrados em
+[`exercism/UPSTREAM.md`](exercism/UPSTREAM.md).
 
 ## Execute os benchmarks
 
@@ -340,16 +340,15 @@ Guia completo: [`cormen/README.md`](cormen/README.md) · checksums:
 | [`04-rabin-karp.clj`](cormen/06-number-theory-and-string-matching/04-rabin-karp.clj) | busca Rabin–Karp |
 | [`05-knuth-morris-pratt.clj`](cormen/06-number-theory-and-string-matching/05-knuth-morris-pratt.clj) | busca Knuth–Morris–Pratt |
 
-## Corpus externo Exercism — 101 fontes, 7 benchmarks
+## Benchmark externo Exercism — 8 casos
 
-Guia completo: [`exercism/README.md`](exercism/README.md) · matriz das 101 soluções:
-[`exercism/results/compilation.tsv`](exercism/results/compilation.tsv) · plano de
-promoção: [`exercism/IMPLEMENTATION_PLAN.md`](exercism/IMPLEMENTATION_PLAN.md).
+Guia completo: [`exercism/README.md`](exercism/README.md) · checksums:
+[`exercism/expected.tsv`](exercism/expected.tsv) · resultados:
+[`exercism/results/`](exercism/results/README.md).
 
-O snapshot atual compila 7 soluções sem alterar o código upstream e cataloga o primeiro
-bloqueador das outras 94. As sete aprovadas ganharam adaptadores de desempenho com
-checksums, cobrindo closures, busca binária, strings, recursão, mapas, aritmética e
-alocação de vetores.
+Os oito casos compilam e executam nos dois caminhos. A auditoria das 114 soluções
+oficiais e os 13 casos conceituais A–E ficam no
+[catálogo de conformidade Exercism](../tests/conformance/level-d-pure-libraries/external/exercism/README.md).
 
 ```bash
 make exercism-compatibility

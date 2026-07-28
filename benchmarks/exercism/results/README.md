@@ -3,7 +3,8 @@
 [Suite guide](../README.md) ·
 [Upstream attribution](../UPSTREAM.md) ·
 [Implementation plan](../IMPLEMENTATION_PLAN.md) ·
-[Compilation matrix](compilation.tsv)
+[Practice matrix](compilation.tsv) ·
+[Conformance corpus](../../../tests/conformance/level-d-pure-libraries/external/exercism/README.md)
 
 Files:
 
@@ -11,14 +12,20 @@ Files:
   solutions;
 - [`all-files.tsv`](all-files.tsv): individual build result for all 493 `.clj`/`.cljc`
   files in the checkout;
-- [`extreme.csv`](extreme.csv): Native × Clojure/JVM comparison for the seven promoted
-  benchmark workloads.
+- [`extreme.csv`](extreme.csv): historical Native × Clojure/JVM comparison for the
+  seven practice workloads, before the concept promotion.
+
+The concept compilation matrix is stored with the conformance fixtures at
+[`compilation.tsv`](../../../tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv).
+It is a compatibility inventory and is not part of this performance report.
 
 ## Snapshots
 
 | Component | Revision |
 | --- | --- |
-| Compiler checkout used for measurement | `7607bef9f951b25711307f5f7c936053bc34baf8` |
+| Compiler checkout used for the published performance measurement | `7607bef9f951b25711307f5f7c936053bc34baf8` |
+| Compiler checkout used for practice/full-checkout matrices | `b845a3ae56321443a3754718f9a91da2c0f695ba` |
+| Compiler checkout used for the concept-conformance matrix | recorded in the conformance TSV |
 | [`exercism/clojure`](https://github.com/exercism/clojure) | [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190) |
 | Clojure/JVM | 1.12.5, AOT with HotSpot enabled |
 | Internal load multiplier | 5× |
@@ -44,9 +51,12 @@ baseline.
 - 101 public reference implementations compiled.
 - 7 passed `clojure-native build`.
 - 94 failed at a tracked first blocker.
+- All 13 official concept exemplars are versioned as conformance cases; 1 is active
+  and 12 are expected failures with tracked first blockers.
+- Across complete official solutions, the current inventory is 8/114 passing.
 - The complete checkout contains 493 Clojure files: 116 build individually and 377
-  fail. This includes 120 source/stub files, 114 tests, 113 `project.clj` files, 30
-  generators and 15 tooling files in addition to the 101 references.
+  fail. This includes 101 practice references, 13 concept exemplars, 120 source/stub
+  files, 114 tests, 113 `project.clj` files, 30 generators and 2 tooling files.
 - The largest first-blocker groups are top-level values (`19`), missing core functions
   (`18`), regex (`16`) and missing core macros (`11`).
 

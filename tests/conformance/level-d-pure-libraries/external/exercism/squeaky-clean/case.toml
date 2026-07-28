@@ -1,0 +1,11 @@
+id = "d.external.exercism.squeaky_clean"
+level = "D"
+area = "pure-libraries/exercism"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Regex, character interop and clojure.string operations are unavailable."
+tracking = "specs/COMPATIBILITY_SPEC.md"

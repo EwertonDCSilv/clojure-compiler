@@ -50,7 +50,7 @@ Em 2026-07-27, o workspace já possui um corte vertical funcional:
   de tradução e uma única ABI.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
-[`tests/conformance/`](../tests/conformance) possui 447 casos: 170 ativos, 245 falhas
+[`tests/conformance/`](../tests/conformance) possui 460 casos: 172 ativos, 256 falhas
 esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
@@ -60,9 +60,11 @@ O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s 
 fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
 7,77 s nativos contra 24,96 s na JVM; Cormen acumula 29,45 s contra 16,91 s de parede,
 mas 29,30 s contra 32,61 s de CPU. Os 90 checksums internos são equivalentes. O corpus
-externo Exercism audita 101 soluções públicas: 7 compilam e formam benchmarks com
-checksums nativo/JVM equivalentes; 94 registram o primeiro bloqueador. A varredura
-literal do checkout cobre 493 arquivos Clojure, dos quais 116 compilam isoladamente.
+externo Exercism audita 101 soluções práticas e 13 exemplares conceituais oficiais:
+8 compilam e 106 registram o primeiro bloqueador. Oito cargas adequadas formam uma
+suíte de desempenho Native × JVM separada; os demais casos pertencem ao relatório de
+conformidade. A varredura literal do checkout cobre 493 arquivos Clojure, dos quais
+116 compilam isoladamente.
 A metodologia,
 ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study.md), em
 [`benchmarks/exercism/`](../benchmarks/exercism) e em

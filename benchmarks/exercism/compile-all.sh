@@ -5,7 +5,7 @@ suite_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$suite_dir/../.." && pwd)"
 checkout="${EXERCISM_CLOJURE_CHECKOUT:-$HOME/github/exercism-clojure}"
 compiler="$repo_root/target/release/clojure-native"
-report="$suite_dir/results/compilation.tsv"
+report=""
 strict=0
 scope="references"
 
@@ -13,14 +13,14 @@ usage() {
   printf '%s\n' \
     "Uso: benchmarks/exercism/compile-all.sh [opções]" \
     "" \
-    "Compila todas as soluções de referência do checkout exercism/clojure." \
+    "Audita soluções oficiais do exercism/clojure para o catálogo de conformidade." \
     "Falhas de compatibilidade são catalogadas e não tornam o comando inválido," \
     "a menos que --strict seja informado." \
     "" \
     "  --checkout PATH   Checkout exercism/clojure (padrão: ~/github/exercism-clojure)" \
     "  --compiler PATH   Binário clojure-native" \
     "  --report PATH     Relatório TSV" \
-    "  --scope SCOPE     references (101 soluções) ou all (todo .clj/.cljc)" \
+    "  --scope SCOPE     references (101), concepts (13 alvos) ou all (checkout)" \
     "  --strict          Retorna status não-zero se qualquer exercício falhar" \
     "  -h, --help        Mostra esta ajuda"
 }
@@ -60,14 +60,22 @@ while (($# > 0)); do
 done
 
 case "$scope" in
-  references|all) ;;
+  references|concepts|all) ;;
   *)
-    printf 'Escopo inválido: %s (use references ou all)\n' "$scope" >&2
+    printf 'Escopo inválido: %s (use references, concepts ou all)\n' "$scope" >&2
     exit 2
     ;;
 esac
 
-if [[ ! -d "$checkout/.git" ]]; then
+if [[ -z "$report" ]]; then
+  case "$scope" in
+    references) report="$suite_dir/results/compilation.tsv" ;;
+    concepts) report="$repo_root/tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv" ;;
+    all) report="$suite_dir/results/all-files.tsv" ;;
+  esac
+fi
+
+if ! git -C "$checkout" rev-parse --git-dir >/dev/null 2>&1; then
   printf 'Checkout exercism/clojure não encontrado em %s\n' "$checkout" >&2
   exit 2
 fi
@@ -101,6 +109,7 @@ categorize() {
   local source_line="$2"
   case "$message" in
     *"literal de regex"*) printf 'reader-regex' ;;
+    *"BigInt/BigDecimal"*) printf 'numeric-big' ;;
     *"syntax-quote"*) printf 'syntax-quote' ;;
     *"quote ainda"*) printf 'quote' ;;
     *"char ainda"*) printf 'char-codegen' ;;
@@ -150,6 +159,7 @@ source_role() {
   local relative="$1"
   case "$relative" in
     */.meta/example.clj) printf 'reference' ;;
+    */.meta/exemplar.clj|tests/conformance/level-d-pure-libraries/external/exercism/*/input.clj) printf 'concept' ;;
     */.meta/generator.clj) printf 'generator' ;;
     */test/*.clj|*/test/*.cljc) printf 'test' ;;
     */src/*.clj|*/src/*.cljc) printf 'source' ;;
@@ -160,6 +170,7 @@ source_role() {
 
 passes=0
 failures=0
+provenance_failures=0
 declare -A categories=()
 declare -a sources=()
 if [[ "$scope" == "references" ]]; then
@@ -167,6 +178,12 @@ if [[ "$scope" == "references" ]]; then
     sources+=("$source")
   done < <(find "$checkout/exercises/practice" \
     -path '*/.meta/example.clj' -type f | sort)
+elif [[ "$scope" == "concepts" ]]; then
+  while IFS= read -r source; do
+    sources+=("$source")
+  done < <(find \
+    "$repo_root/tests/conformance/level-d-pure-libraries/external/exercism" \
+    -mindepth 2 -maxdepth 2 -type f -name 'input.clj' | sort)
 else
   while IFS= read -r source; do
     sources+=("$source")
@@ -180,10 +197,19 @@ if ((${#sources[@]} == 0)); then
 fi
 
 for source in "${sources[@]}"; do
-  exercise="$(basename "$(dirname "$(dirname "$source")")")"
-  relative="${source#"$checkout/"}"
+  if [[ "$scope" == "concepts" ]]; then
+    exercise="$(basename "$(dirname "$source")")"
+    relative="${source#"$repo_root/"}"
+    upstream_relative="exercises/concept/$exercise/.meta/exemplar.clj"
+    upstream_source="$checkout/$upstream_relative"
+  else
+    exercise="$(basename "$(dirname "$(dirname "$source")")")"
+    relative="${source#"$checkout/"}"
+    upstream_relative="$relative"
+    upstream_source="$source"
+  fi
   role="$(source_role "$relative")"
-  if [[ "$scope" == "references" ]]; then
+  if [[ "$scope" == "references" || "$scope" == "concepts" ]]; then
     case_id="$exercise"
   else
     case_id="$relative"
@@ -192,6 +218,36 @@ for source in "${sources[@]}"; do
   safe_name="${safe_name//./_}"
   log="$output_dir/$safe_name.log"
   executable="$output_dir/$safe_name"
+
+  if [[ "$scope" == "concepts" ]]; then
+    if [[ ! -f "$upstream_source" ]]; then
+      message="fonte upstream ausente: $upstream_relative"
+      printf '%s\t%s\tFAIL\tEUPSTREAM\tupstream-missing\t\t%s\t%s\t%s\t%s\n' \
+        "$case_id" "$role" "$message" "$relative" "$upstream_commit" \
+        "$compiler_commit" >>"$report"
+      printf 'FAIL  %-48s upstream-missing: %s\n' "$case_id" "$message"
+      categories["upstream-missing"]=$((${categories["upstream-missing"]:-0} + 1))
+      failures=$((failures + 1))
+      provenance_failures=$((provenance_failures + 1))
+      continue
+    fi
+    if ! cmp -s \
+      <(sed -n '5,/^;; BEGIN LOCAL CONFORMANCE DRIVER$/p' "$source" |
+          sed '/^;; BEGIN LOCAL CONFORMANCE DRIVER$/d; s/[[:space:]]*$//; /^[[:space:]]*$/d' |
+          awk '{ print }') \
+      <(sed 's/[[:space:]]*$//; /^[[:space:]]*$/d' "$upstream_source" |
+          awk '{ print }'); then
+      message="cópia local diverge de $upstream_relative"
+      printf '%s\t%s\tFAIL\tEUPSTREAM\tupstream-drift\t\t%s\t%s\t%s\t%s\n' \
+        "$case_id" "$role" "$message" "$relative" "$upstream_commit" \
+        "$compiler_commit" >>"$report"
+      printf 'FAIL  %-48s upstream-drift: %s\n' "$case_id" "$message"
+      categories["upstream-drift"]=$((${categories["upstream-drift"]:-0} + 1))
+      failures=$((failures + 1))
+      provenance_failures=$((provenance_failures + 1))
+      continue
+    fi
+  fi
 
   if "$compiler" build "$source" -o "$executable" >"$log" 2>&1; then
     printf '%s\t%s\tPASS\t\t\t\t\t%s\t%s\t%s\n' \
@@ -239,6 +295,6 @@ if ((${#categories[@]} > 0)); then
   done | sort -nr
 fi
 
-if ((strict && failures > 0)); then
+if ((provenance_failures > 0 || (strict && failures > 0))); then
   exit 1
 fi

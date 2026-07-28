@@ -60,7 +60,7 @@ help:
 		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
 		"  benchmarks-compare       Compara as três suítes com Clojure/JVM AOT" \
-		"  exercism-compatibility   Compila 101 referências e os 493 arquivos Exercism" \
+		"  exercism-compatibility   Audita 101 práticas, 13 conceitos e 493 arquivos Exercism" \
 		"  install                  Instala clojure-native em ~/.local/bin" \
 		"  all                      Executa qualidade, cobertura, compatibilidade e benchmarks" \
 		"  ci                       Reproduz os comandos usados pelo GitHub Actions" \
@@ -151,6 +151,9 @@ compatibility-oracle:
 
 exercism-compatibility: release
 	benchmarks/exercism/compile-all.sh
+	benchmarks/exercism/compile-all.sh \
+		--scope concepts \
+		--report tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv
 	benchmarks/exercism/compile-all.sh \
 		--scope all \
 		--report benchmarks/exercism/results/all-files.tsv

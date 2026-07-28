@@ -1,0 +1,11 @@
+id = "d.external.exercism.annalyns_infiltration"
+level = "D"
+area = "pure-libraries/exercism"
+status = "active"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "The official exemplar builds and matches its observable JVM behavior."
+tracking = "specs/COMPATIBILITY_SPEC.md"

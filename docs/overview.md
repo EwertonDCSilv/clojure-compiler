@@ -63,7 +63,7 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 447 casos: 170 ativos, 245 falhas esperadas e 32 itens pendentes. D inclui
+Ela possui 460 casos: 172 ativos, 256 falhas esperadas e 32 itens pendentes. D inclui
 bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
 e lacunas executáveis de ecossistema, além de um projeto-alvo de API HTTP Hello World
 em Pedestal. A verificação é offline, não depende de JVM e gera relatórios em
@@ -74,11 +74,11 @@ O inventário também cobre o gate proposto de I/O, mas essa superfície permane
 [`specs/IO_SPEC.md`](../specs/IO_SPEC.md).
 
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
-[`benchmarks/cormen/`](../benchmarks/cormen). O corpus público adicional fica em
-[`benchmarks/exercism/`](../benchmarks/exercism): ele audita 101 fontes upstream,
-mede os sete atualmente compiláveis e varre 493 arquivos do checkout. As três suítes
-exportam CSV com tempo de parede, CPU e pico de memória para o nativo e para
-Clojure/JVM.
+[`benchmarks/cormen/`](../benchmarks/cormen). A suíte pública adicional em
+[`benchmarks/exercism/`](../benchmarks/exercism) contém oito cargas executáveis nos dois
+runtimes. A auditoria de 101 práticas, 13 conceitos e 493 arquivos alimenta a
+conformidade, não os resultados de desempenho. As três suítes exportam CSV com tempo
+de parede, CPU e pico de memória para o nativo e para Clojure/JVM.
 
 No snapshot de referência, Cracking acumula 7,77 s nativos contra 24,96 s na JVM. Cormen
 acumula 29,45 s nativos contra 16,91 s de parede na JVM, mas usa 29,30 s de CPU contra
@@ -93,8 +93,8 @@ Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 make quality        # formato, lints e testes
 make coverage       # cobertura global e por arquivo
 make compatibility  # matriz executável A–E
-make benchmarks     # 97 casos nativos com checksum
-make exercism-compatibility  # audita 101 referências e 493 arquivos públicos
+make benchmarks     # 98 casos nativos com checksum
+make exercism-compatibility  # audita 101 práticas, 13 conceitos e 493 arquivos
 ```
 
 `make all` executa o conjunto local completo. A comparação com Clojure/JVM é separada

@@ -1,7 +1,7 @@
 # Plan to promote the Exercism compatibility corpus
 
-This plan turns the 101 public Exercism reference solutions into an evolving external
-gate for `clojure-compiler`. It is based on upstream commit
+This plan turns 101 public practice reference solutions and 13 official concept
+exemplars into an evolving external gate for `clojure-compiler`. It is based on upstream commit
 [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190)
 from the [Exercism Clojure Track](https://github.com/exercism/clojure), with full
 provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and compiler baseline
@@ -10,11 +10,13 @@ provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and compiler baseline
 ## Baseline
 
 - 101 reference implementations audited.
+- 13 concept exemplars versioned and checked against upstream before compilation.
 - 493 Clojure files compiled individually across the complete checkout.
-- 7 build without changes.
-- 94 stop at a compiler diagnostic.
+- 8 of the 114 complete official solutions build without changes.
+- 106 stop at a compiler diagnostic.
 - Across all roles, 116 files build and 377 stop at a diagnostic.
-- 7 have executable Native × JVM benchmark adapters.
+- 13 concept exemplars are executable conformance fixtures: 1 active and 12 xfail.
+- 8 useful workloads have separate Native × JVM benchmark adapters.
 - Java interop remains outside the current native language contract.
 
 The counts below are first blockers, not independent feature totals:
@@ -41,6 +43,21 @@ The counts below are first blockers, not independent feature totals:
 
 The authoritative per-exercise list is
 [`results/compilation.tsv`](results/compilation.tsv).
+
+The practice table above remains a 101-solution baseline. The separate concept
+conformance matrix is
+[`compilation.tsv`](../../tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv):
+
+| Concept first blocker | Cases |
+| --- | ---: |
+| top-level computed `def` | 5 |
+| regex literal/runtime | 2 |
+| missing core function (`boolean`, `atom`) | 2 |
+| parameter destructuring | 1 |
+| BigDecimal | 1 |
+| `quote` | 1 |
+| supported and promoted | 1 |
+| **Total** | **13** |
 
 ## Backlog by first blocker
 
@@ -78,8 +95,8 @@ The authoritative per-exercise list is
 ## Phase 0 — Keep the corpus trustworthy
 
 1. Pin the upstream commit in every published report.
-2. Run both `compile-all.sh` scopes in a non-blocking scheduled job and upload their
-   TSVs.
+2. Run the `references`, `concepts` and `all` inventories in a non-blocking scheduled
+   job and upload their TSVs.
 3. Add a comparison command that reports status transitions against the versioned TSV.
 4. Fail when a former `PASS` becomes `FAIL`.
 5. Treat a new `PASS` as requiring semantic review, not automatic promotion.
@@ -87,7 +104,9 @@ The authoritative per-exercise list is
 
 Acceptance:
 
-- all 101 reference files and all 493 checkout files are present exactly once;
+- all 101 practice references, 13 versioned concept exemplars and 493 checkout files
+  are present exactly once in their respective inventories;
+- every concept body matches its pinned upstream exemplar;
 - the report records compiler and upstream revisions;
 - status transitions are deterministic on Linux x86_64.
 
@@ -216,6 +235,9 @@ Milestones:
 | E3 | 75/101 build, regex and stdlib slices active |
 | E4 | 97/101 build without Java compatibility |
 | E5 | 101/101 build, or 97 plus four approved `expected-diff` decisions |
+| C1 | 5/13 concept exemplars build and pass differential checks |
+| C2 | 10/13 build with globals, destructuring and core gaps closed |
+| C3 | 13/13 build, with regex and BigDecimal decisions documented |
 
 The final gate is not “the compiler accepted the file.” It is matching observable
 behavior for exercised inputs and a stable regression test for every feature unlocked.

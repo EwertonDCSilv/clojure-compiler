@@ -37,7 +37,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
 | [`docs/architecture.md`](docs/architecture.md) | Crates, AOT pipeline, runtime, and GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | Audited HEAD, measured compiler commit, and current results |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Executable A–E compatibility contract |
-| [`benchmarks/README.md`](benchmarks/README.md) | Catalog and methodology for 97 benchmarks plus the 101-file Exercism audit |
+| [`benchmarks/README.md`](benchmarks/README.md) | Catalog and methodology for 98 Native × JVM performance workloads |
 
 ## Current capabilities
 
@@ -171,11 +171,11 @@ install `clj-kondo` and expose it on `PATH` or through `CLJ_KONDO_BIN`. Delibera
 invalid conformance fixtures are excluded, while both bootstrap cores, examples,
 algorithm benchmarks, and the JVM oracle are checked with warnings treated as errors.
 
-The executable compatibility matrix currently contains 447 cases across levels A–E:
-170 active, 245 expected failures, and 32 pending inventory entries. Levels D and E now
+The executable compatibility matrix currently contains 460 cases across levels A–E:
+172 active, 256 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
-target. The matrix also inventories the complete proposed I/O surface as expected
+target and 13 official Exercism concept exemplars. The matrix also inventories the complete proposed I/O surface as expected
 failures without claiming that surface is available. Verification runs
 offline without a JVM, checks fixture integrity, and writes reports to
 `target/conformance/`.
@@ -195,7 +195,7 @@ All three benchmark suites have a native runner and a comparison runner. Their C
 records wall time, CPU time, and peak memory:
 
 Start with the [central benchmark catalog](benchmarks/README.md) for the methodology,
-metrics, result reports, and direct links to all 97 performance cases.
+metrics, result reports, and direct links to all 98 performance cases.
 
 ```bash
 make benchmarks
@@ -210,9 +210,9 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   inspired by *Cracking the Coding Interview*.
 - [`benchmarks/cormen`](benchmarks/cormen/README.md): 30 CLRS-style algorithm cases
   with checksum validation.
-- [`benchmarks/exercism`](benchmarks/exercism/README.md): all 101 public reference
-  solutions are audited, and the seven currently compiling solutions form an external
-  Native × JVM benchmark subset.
+- [`benchmarks/exercism`](benchmarks/exercism/README.md): eight public solutions with
+  deterministic Native × JVM workloads. The broader 114-solution support inventory is
+  tracked separately by the conformance suite.
 
 Reference snapshots are pinned in each suite report. Cracking and Cormen use native
 compiler `1ca1d79` at scale 25×; Exercism uses compiler checkout `7607bef` and upstream
@@ -224,10 +224,10 @@ snapshot `4a4c4fd` at scale 5×:
 | Cormen/CLRS | 29.45 / 16.91 s | 29.30 / 32.61 s | 13.4 / 271.1 MiB |
 | Exercism (scale 5×) | 5.63 / 3.77 s | 5.61 / 7.26 s | per-case values in the external report |
 
-All 97 benchmark cases have matching native/JVM checksums. The Cormen native run uses 10.1%
+All 98 benchmark cases have matching native/JVM checksums. The Cormen native run uses 10.1%
 less aggregate CPU than the preserved JVM reference, although its aggregate wall time
-is still higher. In the external corpus, 7 of 101 unmodified upstream reference files
-currently build; the other 94 have a versioned first-blocker classification.
+is still higher. In the external corpus, 8 of 114 complete upstream solutions currently
+build; the other 106 have a versioned first-blocker classification.
 
 ## Project layout
 

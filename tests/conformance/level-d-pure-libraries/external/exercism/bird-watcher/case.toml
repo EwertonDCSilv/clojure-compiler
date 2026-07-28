@@ -1,0 +1,11 @@
+id = "d.external.exercism.bird_watcher"
+level = "D"
+area = "pure-libraries/exercism"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Computed top-level def values are not yet compilable."
+tracking = "specs/COMPATIBILITY_SPEC.md"

@@ -1,0 +1,11 @@
+id = "d.external.exercism.tracks_on_tracks_on_tracks"
+level = "D"
+area = "pure-libraries/exercism"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Quoted list literals are not yet compilable."
+tracking = "specs/COMPATIBILITY_SPEC.md"

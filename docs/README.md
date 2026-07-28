@@ -18,7 +18,7 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 | [Snapshot](SNAPSHOT.md) | HEAD auditado, mudanças incluídas e benchmark de referência |
 | [Especificações](../specs/README.md) | escopo da linguagem, decisões, planos e ADRs |
 | [Conformidade](../specs/conformance/README.md) | contrato executável da matriz A–E |
-| [Benchmarks](../benchmarks/README.md) | 97 cargas, corpus Exercism de 101 fontes, metodologia e resultados |
+| [Benchmarks](../benchmarks/README.md) | 98 cargas de comparação de desempenho Native × JVM |
 
 A apresentação pública fica em [index.html](index.html), com traduções em
 [i18n.js](i18n.js). Ela inclui um painel interativo dos benchmarks Cormen e Cracking;
@@ -52,5 +52,5 @@ make quality
 make compatibility
 ```
 
-`make all` acrescenta cobertura e os 97 benchmarks. Consulte o
+`make all` acrescenta cobertura e os 98 benchmarks. Consulte o
 [guia de uso](usage.md) para requisitos opcionais e filtros.

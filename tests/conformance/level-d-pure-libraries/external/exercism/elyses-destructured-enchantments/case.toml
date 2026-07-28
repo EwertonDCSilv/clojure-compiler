@@ -1,0 +1,11 @@
+id = "d.external.exercism.elyses_destructured_enchantments"
+level = "D"
+area = "pure-libraries/exercism"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Sequential destructuring in function parameters is unavailable."
+tracking = "specs/COMPATIBILITY_SPEC.md"

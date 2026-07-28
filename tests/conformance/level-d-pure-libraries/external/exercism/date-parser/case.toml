@@ -1,0 +1,11 @@
+id = "d.external.exercism.date_parser"
+level = "D"
+area = "pure-libraries/exercism"
+status = "xfail"
+class = "official"
+target = "build-run"
+oracle = "equal"
+timeout_ms = 10000
+gc_stress = false
+reason = "Computed global patterns and regex runtime operations are unavailable."
+tracking = "specs/COMPATIBILITY_SPEC.md"
