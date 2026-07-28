@@ -230,6 +230,36 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_request_parser_valid_and_malformed() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 §5: strict bounded HTTP request parser; valid requests parse
+    // to a request map, malformed/incomplete input throws categorized errors.
+    let src = r#"(ns h.core)
+(defn kind [x] (try (do (parse-http-request x) :ok) (catch E e (get e :kind))))
+(defn -main []
+  (let [r (parse-http-request "GET /users/42 HTTP/1.1\r\nHost: x\r\n\r\n")]
+    (println (get r :method) (get r :path) (get (get r :headers) :host) (get r :body)))
+  (let [r (parse-http-request "POST /x HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello")]
+    (println (get r :method) (get r :body)))
+  (println (kind "GET / HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n"))
+  (println (kind "POST / HTTP/1.1\r\ncontent-length: 5\r\ncontent-length: 6\r\n\r\nhello"))
+  (println (kind "GET / HTTP/1.1\n\n"))
+  (println (kind "GET / HTTP/1.1\r\n"))
+  (println (kind "GET / HTTP/1.1\r\n\r\nextra"))
+  (println (kind "get / HTTP/1.1\r\n\r\n"))
+  (println (kind "GET /x HTTP/2.0\r\n\r\n")))
+(-main)"#;
+    let expected = ":get /users/42 x nil\n:post hello\n:malformed-request\n:malformed-request\n:malformed-request\n:incomplete\n:malformed-request\n:malformed-request\n:malformed-request\n";
+    assert_eq!(build_and_run("http_parser", src), expected);
+    assert_eq!(
+        build_and_run_env("http_parser_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn router_connector_full_p1_lifecycle() {
     if !have_cc() {
         return;

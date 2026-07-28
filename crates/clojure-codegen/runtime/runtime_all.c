@@ -21,3 +21,4 @@
 #include "120_test_introspection.c"
 #include "130_io.c"
 #include "140_reader.c"
+#include "150_http.c"

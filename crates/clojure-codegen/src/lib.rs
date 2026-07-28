@@ -64,6 +64,7 @@ embed_runtime_modules!(
     ("test-introspection", "../runtime/120_test_introspection.c"),
     ("io", "../runtime/130_io.c"),
     ("reader", "../runtime/140_reader.c"),
+    ("http", "../runtime/150_http.c"),
 );
 
 /// Cranelift optimization level for generated functions.
@@ -200,85 +201,86 @@ struct Runtime {
     collect_rest: FuncId, // (argc,argv,nfixed)->list
     spread_args: FuncId,  // (fixed_argc,coll)->argc_total
     // Collections and runtime facilities.
-    kw: FuncId,               // (ptr,len)->kw
-    vec_empty: FuncId,        // ()->vec
-    vec_conj: FuncId,         // (vec,x)->vec
-    set_alloc: FuncId,        // (n)->set
-    set_add: FuncId,          // (set,x)->void
-    map_alloc: FuncId,        // (n)->map
-    map_set: FuncId,          // (map,i,k,v)->void
-    p_get: FuncId,            // (coll,key)->v
-    p_nth: FuncId,            // (coll,i)->v   (nth aridade 2)
-    p_nth_or: FuncId,         // (coll,i,nf)->v (nth aridade 3)
-    p_assoc: FuncId,          // (coll,k,v)->coll
-    p_dissoc: FuncId,         // (map,k)->map
-    p_contains: FuncId,       // (coll,key)->bool
-    p_keys: FuncId,           // (map)->list
-    p_vals: FuncId,           // (map)->list
-    p_conj: FuncId,           // (coll,x)->coll
-    sorted_map_empty: FuncId, // ()->sorted-map
-    sorted_set_empty: FuncId, // ()->sorted-set
-    sorted_assoc: FuncId,     // (smap,k,v)->smap
-    compare: FuncId,          // (a,b)->fixnum(-1/0/1)
-    try_: FuncId,             // (body_fn,catch_fn|nil,finally_fn|nil)->v
-    throw_: FuncId,           // (v)->! (longjmp)
-    multi_register: FuncId,   // (mid,dispatch_fn)->void
-    multi_call: FuncId,       // (mid,argc,argv)->v
-    slurp: FuncId,            // (path)->string
-    spit: FuncId,             // (path,content)->nil
-    file_exists: FuncId,      // (path)->bool
-    getenv: FuncId,           // (name)->string|nil
-    with_out_str: FuncId,     // (thunk)->string
-    var_get: FuncId,          // (id) -> dynamic Var value.
-    with_binding: FuncId,     // (id, value, thunk) -> body result.
-    read_line: FuncId,        // () -> string|nil from *in*.
-    string_reader: FuncId,    // (string) -> reader.
-    char_of: FuncId,          // (int|char)->char
-    int_of: FuncId,           // (char|int)->int
-    charp: FuncId,            // (x)->bool
-    read_char: FuncId,        // ()->char|nil
-    path_join: FuncId,        // (a,b)->string
-    file_name: FuncId,        // (p)->string
-    parent: FuncId,           // (p)->string|nil
-    bytes: FuncId,            // (string)->bytes
-    bytes_to_string: FuncId,  // (bytes)->string
-    bget: FuncId,             // (bytes,i)->fixnum
-    slurp_bytes: FuncId,      // (path)->bytes
-    spit_bytes: FuncId,       // (path,bytes)->nil
-    read_string: FuncId,      // (string) -> parsed EDN value
-    set_args: FuncId,         // (raw argc, raw argv) -> void
-    writer_open: FuncId,      // (path) -> file writer.
-    reader_open: FuncId,      // (path) -> file reader.
-    close: FuncId,            // (closeable) -> nil.
-    flush: FuncId,            // () -> nil; flushes *out*.
-    mkdir: FuncId,            // (path)->nil
-    mkdirs: FuncId,           // (path) -> nil, recursively.
-    list_dir: FuncId,         // (path) -> vector of names.
-    delete_file: FuncId,      // (path)->nil
-    rename: FuncId,           // (from,to)->nil
-    directoryp: FuncId,       // (path)->bool
-    filep: FuncId,            // (path)->bool
-    file_size: FuncId,        // (path)->fixnum
-    file_modified: FuncId,    // (path)->fixnum
-    global_get: FuncId,       // (idx)->valor do def global (ADR-0013)
-    global_set: FuncId,       // (idx,v)->v (inicializa def global)
-    div: FuncId,              // (a,b)->fixnum|float
-    floatp: FuncId,           // (x)->bool
-    double_of: FuncId,        // (x)->float
-    stringp: FuncId,          // (x)->bool
-    intp: FuncId,             // (x)->bool
-    keywordp: FuncId,         // (x)->bool
-    vectorp: FuncId,          // (x)->bool
-    mapp: FuncId,             // (x)->bool
-    bytesp: FuncId,           // (x)->bool
-    str_split: FuncId,        // (string,char)->vetor de strings
-    float_from_bits: FuncId,  // (raw_i64)->float (literais)
-    transient: FuncId,        // (coll)->transient
-    persistent_bang: FuncId,  // (t)->coll
-    conj_bang: FuncId,        // (t,x)->t
-    assoc_bang: FuncId,       // (t,k,v)->t
-    dissoc_bang: FuncId,      // (t,k)->t
-    make_record: FuncId,      // (type_name,map)->record
+    kw: FuncId,                 // (ptr,len)->kw
+    vec_empty: FuncId,          // ()->vec
+    vec_conj: FuncId,           // (vec,x)->vec
+    set_alloc: FuncId,          // (n)->set
+    set_add: FuncId,            // (set,x)->void
+    map_alloc: FuncId,          // (n)->map
+    map_set: FuncId,            // (map,i,k,v)->void
+    p_get: FuncId,              // (coll,key)->v
+    p_nth: FuncId,              // (coll,i)->v   (nth aridade 2)
+    p_nth_or: FuncId,           // (coll,i,nf)->v (nth aridade 3)
+    p_assoc: FuncId,            // (coll,k,v)->coll
+    p_dissoc: FuncId,           // (map,k)->map
+    p_contains: FuncId,         // (coll,key)->bool
+    p_keys: FuncId,             // (map)->list
+    p_vals: FuncId,             // (map)->list
+    p_conj: FuncId,             // (coll,x)->coll
+    sorted_map_empty: FuncId,   // ()->sorted-map
+    sorted_set_empty: FuncId,   // ()->sorted-set
+    sorted_assoc: FuncId,       // (smap,k,v)->smap
+    compare: FuncId,            // (a,b)->fixnum(-1/0/1)
+    try_: FuncId,               // (body_fn,catch_fn|nil,finally_fn|nil)->v
+    throw_: FuncId,             // (v)->! (longjmp)
+    multi_register: FuncId,     // (mid,dispatch_fn)->void
+    multi_call: FuncId,         // (mid,argc,argv)->v
+    slurp: FuncId,              // (path)->string
+    spit: FuncId,               // (path,content)->nil
+    file_exists: FuncId,        // (path)->bool
+    getenv: FuncId,             // (name)->string|nil
+    with_out_str: FuncId,       // (thunk)->string
+    var_get: FuncId,            // (id) -> dynamic Var value.
+    with_binding: FuncId,       // (id, value, thunk) -> body result.
+    read_line: FuncId,          // () -> string|nil from *in*.
+    string_reader: FuncId,      // (string) -> reader.
+    char_of: FuncId,            // (int|char)->char
+    int_of: FuncId,             // (char|int)->int
+    charp: FuncId,              // (x)->bool
+    read_char: FuncId,          // ()->char|nil
+    path_join: FuncId,          // (a,b)->string
+    file_name: FuncId,          // (p)->string
+    parent: FuncId,             // (p)->string|nil
+    bytes: FuncId,              // (string)->bytes
+    bytes_to_string: FuncId,    // (bytes)->string
+    bget: FuncId,               // (bytes,i)->fixnum
+    slurp_bytes: FuncId,        // (path)->bytes
+    spit_bytes: FuncId,         // (path,bytes)->nil
+    read_string: FuncId,        // (string) -> parsed EDN value
+    set_args: FuncId,           // (raw argc, raw argv) -> void
+    writer_open: FuncId,        // (path) -> file writer.
+    reader_open: FuncId,        // (path) -> file reader.
+    close: FuncId,              // (closeable) -> nil.
+    flush: FuncId,              // () -> nil; flushes *out*.
+    mkdir: FuncId,              // (path)->nil
+    mkdirs: FuncId,             // (path) -> nil, recursively.
+    list_dir: FuncId,           // (path) -> vector of names.
+    delete_file: FuncId,        // (path)->nil
+    rename: FuncId,             // (from,to)->nil
+    directoryp: FuncId,         // (path)->bool
+    filep: FuncId,              // (path)->bool
+    file_size: FuncId,          // (path)->fixnum
+    file_modified: FuncId,      // (path)->fixnum
+    global_get: FuncId,         // (idx)->valor do def global (ADR-0013)
+    global_set: FuncId,         // (idx,v)->v (inicializa def global)
+    div: FuncId,                // (a,b)->fixnum|float
+    floatp: FuncId,             // (x)->bool
+    double_of: FuncId,          // (x)->float
+    stringp: FuncId,            // (x)->bool
+    intp: FuncId,               // (x)->bool
+    keywordp: FuncId,           // (x)->bool
+    vectorp: FuncId,            // (x)->bool
+    mapp: FuncId,               // (x)->bool
+    bytesp: FuncId,             // (x)->bool
+    str_split: FuncId,          // (string,char)->vetor de strings
+    parse_http_request: FuncId, // (string)->mapa de requisição (ADR-0013 Gate 4)
+    float_from_bits: FuncId,    // (raw_i64)->float (literais)
+    transient: FuncId,          // (coll)->transient
+    persistent_bang: FuncId,    // (t)->coll
+    conj_bang: FuncId,          // (t,x)->t
+    assoc_bang: FuncId,         // (t,k,v)->t
+    dissoc_bang: FuncId,        // (t,k)->t
+    make_record: FuncId,        // (type_name,map)->record
     // Protocol and capability dispatch.
     type_key: FuncId,        // (v)->key
     register_method: FuncId, // (mid,key,impl)->void
@@ -679,6 +681,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         mapp: una(m, "cljn_mapp"),
         bytesp: una(m, "cljn_bytesp"),
         str_split: bin(m, "cljn_str_split"),
+        parse_http_request: una(m, "cljn_parse_http_request"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -2498,6 +2501,7 @@ impl<'a> FnGen<'a> {
             Prim::MapP => self.una(self.rt.mapp, args),
             Prim::BytesP => self.una(self.rt.bytesp, args),
             Prim::StrSplit => self.bin(self.rt.str_split, args),
+            Prim::ParseHttpRequest => self.una(self.rt.parse_http_request, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

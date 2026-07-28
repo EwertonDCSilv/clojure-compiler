@@ -321,6 +321,8 @@ pub enum Prim {
     BytesP,
     /// Split a string on an ASCII separator char into a vector of strings.
     StrSplit,
+    /// Parse raw HTTP request bytes into a request map (ADR-0013 Gate 4).
+    ParseHttpRequest,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2349,6 +2351,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "map?" => Prim::MapP,
         "bytes?" => Prim::BytesP,
         "str-split" => Prim::StrSplit,
+        "parse-http-request" => Prim::ParseHttpRequest,
         _ => return None,
     })
 }
@@ -2382,6 +2385,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::BytesToString
         | Prim::SlurpBytes
         | Prim::ReadString
+        | Prim::ParseHttpRequest
         | Prim::WriterOpen
         | Prim::ReaderOpen
         | Prim::Close
@@ -2495,6 +2499,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
+        Prim::ParseHttpRequest => n == 1,
         Prim::Bget | Prim::SpitBytes | Prim::StrSplit => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,
