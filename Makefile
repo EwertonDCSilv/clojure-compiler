@@ -30,9 +30,9 @@ CORMEN_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cormen-comparison.csv
 EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 
 .PHONY: \
-	help all ci quality docs-check \
+	help all ci quality docs-check pre-commit pre-push hooks-install \
 	build release check \
-	fmt fmt-check lint lint-rust lint-clojure \
+	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
 	test test-runtime test-runtime-sanitize test-benchmark-charts coverage \
 	compatibility compatibility-list compatibility-oracle \
 	exercism-compatibility \
@@ -55,6 +55,9 @@ help:
 		"  test                     Executa cargo test no workspace" \
 		"  quality                  Formatação, documentação, lint e testes" \
 		"  docs-check               Valida rustdoc, doctests e contratos documentais" \
+		"  pre-commit               Executa higiene, formato e lints locais" \
+		"  pre-push                 Executa quality e sanitizers do runtime C" \
+		"  hooks-install            Ativa os hooks Git versionados neste checkout" \
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
 		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
@@ -67,7 +70,7 @@ help:
 		"" \
 		"Alvos auxiliares:" \
 		"  fmt | fmt-check          Formata ou valida o código Rust" \
-		"  lint                     Executa os lints Rust e Clojure" \
+		"  lint                     Executa higiene e lints Rust, C e Clojure" \
 		"  test-runtime             Testa o runtime C" \
 		"  test-runtime-sanitize    Testa o runtime C com sanitizers" \
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
@@ -103,6 +106,14 @@ quality: fmt-check docs-check lint test
 docs-check:
 	scripts/check-docs.sh
 
+pre-commit:
+	scripts/pre-commit.sh --all
+
+pre-push: quality test-runtime-sanitize
+
+hooks-install:
+	scripts/install-git-hooks.sh
+
 build:
 	$(CARGO) build --workspace
 
@@ -120,10 +131,16 @@ fmt-check:
 	$(CARGO) fmt --all --check
 	rustfmt --edition 2021 --check benchmarks/render-benchmark-charts.rs
 
-lint: lint-rust lint-clojure
+lint: lint-files lint-rust lint-c lint-clojure
+
+lint-files:
+	scripts/check-file-hygiene.sh --tracked
 
 lint-rust:
 	$(CARGO) clippy --workspace --all-targets -- -D warnings
+
+lint-c:
+	scripts/lint-c.sh
 
 lint-clojure:
 	scripts/lint-clojure.sh

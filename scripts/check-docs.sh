@@ -6,6 +6,37 @@ repository="$(cd -- "$script_dir/.." && pwd)"
 
 cd "$repository"
 
+echo "Checking AI contributor instructions..."
+for required_rule in \
+  AGENTS.md \
+  CLAUDE.md \
+  .cursor/rules/compiler-documentation-and-tdd.mdc \
+  .github/copilot-instructions.md \
+  specs/DOCUMENTATION_STYLE.md \
+  specs/TDD_WORKFLOW.md; do
+  if [[ ! -s "${required_rule}" ]]; then
+    echo "missing AI contributor rule: ${required_rule}" >&2
+    exit 1
+  fi
+done
+
+for adapter in \
+  CLAUDE.md \
+  .cursor/rules/compiler-documentation-and-tdd.mdc \
+  .github/copilot-instructions.md; do
+  if ! grep -Fq "AGENTS.md" "${adapter}"; then
+    echo "AI adapter does not reference AGENTS.md: ${adapter}" >&2
+    exit 1
+  fi
+done
+
+for policy in specs/DOCUMENTATION_STYLE.md specs/TDD_WORKFLOW.md; do
+  if ! grep -Fq "${policy}" AGENTS.md; then
+    echo "AGENTS.md does not reference mandatory policy: ${policy}" >&2
+    exit 1
+  fi
+done
+
 echo "Checking Rust module documentation..."
 module_failures=0
 while IFS= read -r source; do

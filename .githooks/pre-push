@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run the complete local quality gate, including runtime sanitizers, before push.
+set -euo pipefail
+
+repository="$(git rev-parse --show-toplevel)"
+exec make -C "${repository}" pre-push

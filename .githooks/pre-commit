@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run fast, staged-file-aware repository checks before creating a commit.
+set -euo pipefail
+
+repository="$(git rev-parse --show-toplevel)"
+exec "${repository}/scripts/pre-commit.sh"

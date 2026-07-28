@@ -97,8 +97,10 @@ Ordem sugerida:
     `assoc` persistente e `nth` genérico.
 11. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
 12. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-13. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-14. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+13. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
+    regressão.
+14. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+15. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 

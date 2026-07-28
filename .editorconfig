@@ -1,0 +1,48 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{rs,c,h}]
+indent_style = space
+indent_size = 4
+
+[*.{clj,cljc,cljs,edn}]
+indent_style = space
+indent_size = 2
+
+[*.{json,yaml,yml}]
+indent_style = space
+indent_size = 2
+
+[*.toml]
+indent_style = space
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+
+# These files may intentionally encode missing newlines, whitespace, malformed
+# forms, or exact upstream bytes as part of their test contract.
+[tests/conformance/**/input.*]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[tests/conformance/**/expected.*]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[tests/conformance/**/stdin.*]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[tests/conformance/**/work.{before,after}/**]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[benchmarks/exercism/{01-practice,02-concept}/**]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
