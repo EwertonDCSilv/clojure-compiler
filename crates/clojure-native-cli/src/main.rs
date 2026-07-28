@@ -13,6 +13,21 @@ use std::process::ExitCode;
 /// Compilable `clojure.core` subset prepended to every native build.
 const CORE_COMPILED: &str = include_str!("core_compiled.clj");
 
+/// Compiler-owned built-in namespaces, embedded and resolved ahead of any local
+/// `--source-path` root (ADR-0013 §8). Offline and deterministic.
+const BUILTIN_MODULES: &[(&str, &str)] = &[(
+    "cljn.http.response",
+    include_str!("../../../stdlib/cljn/http/response.clj"),
+)];
+
+/// Returns the embedded source of a built-in namespace, if any.
+fn builtin_source(ns: &str) -> Option<&'static str> {
+    BUILTIN_MODULES
+        .iter()
+        .find(|(name, _)| *name == ns)
+        .map(|(_, src)| *src)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -123,12 +138,21 @@ fn load_deps(
                 stack.join(" -> ")
             ));
         }
-        let Some(path) = resolve_ns_path(ns, roots) else {
-            return Err(format!("namespace não encontrado no source-path: {ns}"));
+        // Built-in compiler-owned sources resolve before the local source path.
+        let (source_name, text) = if let Some(src) = builtin_source(ns) {
+            (
+                ns.replace('.', "/").replace('-', "_") + ".clj",
+                src.to_string(),
+            )
+        } else {
+            let Some(path) = resolve_ns_path(ns, roots) else {
+                return Err(format!("namespace não encontrado no source-path: {ns}"));
+            };
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| format!("erro ao ler {}: {e}", path.display()))?;
+            (path.display().to_string(), text)
         };
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| format!("erro ao ler {}: {e}", path.display()))?;
-        let sid = sm.add(path.display().to_string(), text.clone());
+        let sid = sm.add(source_name, text.clone());
         let forms = clojure_reader::read_all(sid, &text).map_err(|d| d.render(sm))?;
         let sub = parse_requires(&forms);
         stack.push(ns.clone());

@@ -180,6 +180,27 @@ fn static_module_loader_two_namespace_project() {
 }
 
 #[test]
+fn builtin_stdlib_bundle_resolves_cljn_namespaces() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 1 §8 / Gate 2: compiler-owned cljn.* sources resolve from the
+    // embedded built-in bundle, ahead of --source-path, with no local file.
+    let app = r#"(ns app.core (:require [cljn.http.response :as resp]))
+(defn -main []
+  (let [r (resp/ok "hi")]
+    (println (get r :status) (get r :body)))
+  (println (get (resp/not-found) :status))
+  (println (get (resp/respond 204) :status)))
+(-main)"#;
+    let expected = "200 hi\n404\n204\n";
+    assert_eq!(
+        build_and_run_project("builtin_bundle", &[("app.clj", app)], "app.clj"),
+        expected
+    );
+}
+
+#[test]
 fn static_module_loader_rejects_dependency_cycle() {
     if !have_cc() {
         return;
