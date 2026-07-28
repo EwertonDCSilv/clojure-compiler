@@ -6,9 +6,9 @@ The current executable path is:
 Reader -> known expansion -> Analyzer -> Cranelift codegen -> object -> C runtime link
 ```
 
-This page indexes the implemented stages. HIR/LIR layers, a multi-file namespace
-loader, and a general macroexpander are **Planned**, not implicit stages in the
-current workspace.
+This page indexes the implemented stages. The optional optimization IR specified by
+[`OPTIMIZATION_IR_SPEC.md`](OPTIMIZATION_IR_SPEC.md) and a general macroexpander are
+**Planned**, not implicit stages in the current workspace.
 
 ## 1. Reader
 
@@ -59,7 +59,8 @@ There is no stable HIR/LIR boundary today. The interprocedural transform covers
 the chained-accumulator pattern in
 [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md). General escape
 analysis, tuple out-slots, scalar replacement, and a dedicated optimization IR
-remain **Planned**.
+remain **Planned** under
+[ADR-0014](adr/0014-optional-optimization-ir.md).
 
 ## 4. Code generation
 
@@ -129,12 +130,12 @@ runtime checks into catchable values are **Planned**; see
 
 ## Planned evolution
 
-1. Compute liveness and retain roots only across safepoints.
-2. Introduce an explicit IR when it materially simplifies optimization.
-3. Extend escape and uniqueness analysis beyond current vector patterns.
-4. Execute user macros deterministically through the bootstrap path.
-5. Add multi-file namespace loading and dependency graphs.
-6. Add measured compiler-owned optimization before relying on Cranelift cleanup.
+1. Introduce the optional, verified IR from
+   [`OPTIMIZATION_IR_SPEC.md`](OPTIMIZATION_IR_SPEC.md), disabled by default.
+2. Compute liveness and retain roots only across safepoints in that IR.
+3. Admit compiler-owned passes only after their blocking Cormen non-regression gate.
+4. Extend escape and uniqueness analysis beyond current vector patterns.
+5. Execute user macros deterministically through the bootstrap path.
 
 Documentation requirements for every stage are defined in
 [`DOCUMENTATION_STYLE.md`](DOCUMENTATION_STYLE.md), and the delivery baseline is

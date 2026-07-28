@@ -275,3 +275,25 @@ Os 30 checksums coincidiram. O nativo ainda perde 1,59× no tempo de parede acum
 mas consome 17,2% menos CPU no agregado e preserva vantagem de memória em todos os
 casos. O CSV e a tabela por caso permanecem no
 [relatório Cormen](../../benchmarks/cormen/results/README.md).
+
+## 12. Snapshot após o loader estático e o primeiro corte HTTP
+
+Uma nova execução integral no compilador `3e71bc1`, mantendo escala 25× e
+`--opt-level none`, mediu:
+
+| Métrica Cormen | Native | Clojure/JVM |
+| --- | ---: | ---: |
+| Tempo de parede acumulado | 30,06 s | 17,01 s |
+| Tempo de CPU acumulado | 29,95 s | 32,66 s |
+| RSS mediano | 13,3 MiB | 273,9 MiB |
+| Vitórias por tempo de parede | 13 | 17 |
+| Vitórias por CPU | 20 | 10 |
+| Vitórias por RSS | 30 | 0 |
+
+Os 30 checksums coincidiram. O nativo preserva a vantagem agregada de CPU (8,3%) e
+memória, mas seu tempo de parede aumentou 15,3% frente aos 26,08 s da rodada anterior.
+Como cada snapshot contém uma única medição por caso e ambos os runtimes foram refeitos,
+o resultado é um sinal de regressão, não evidência causal sobre uma mudança específica.
+A investigação e qualquer futura promoção da IR opcional devem usar repetições pareadas
+e os limites bloqueantes definidos na
+[ADR-0014](0014-optional-optimization-ir.md).

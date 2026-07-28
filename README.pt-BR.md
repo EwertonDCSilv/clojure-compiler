@@ -13,7 +13,7 @@ chama `clojure-native`.
 > documentado de Clojure e ainda não está pronto para produção.
 
 > Snapshot documentado e compilador medido:
-> [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
 > (2026-07-28).
 > Consulte a [política do snapshot e as medições atuais](docs/SNAPSHOT.md).
 
@@ -46,6 +46,8 @@ arquiteturais ficam em [`specs/`](specs/README.md).
   determinísticos.
 - Interpretador de bootstrap usado por `eval`, scripts e infraestrutura de macros.
 - Geração AOT com Cranelift para executáveis nativos autônomos.
+- Carregamento estático de fontes multi-arquivo com globais de topo qualificados por
+  namespace.
 - Funções, closures, funções de ordem superior, aridades fixas, variádicas e múltiplas,
   além de `apply`.
 - `if`, `do`, `let`, `loop/recur`, recursão direta e expansão das macros de core
@@ -73,6 +75,8 @@ arquiteturais ficam em [`specs/`](specs/README.md).
   dos caminhos quentes.
 - O runtime C está separado por subsistema para manutenção, mas continua compilado como
   uma única unidade de tradução com a mesma ABI.
+- Um primeiro recorte HTTP/Pedestal nativo em memória: parsing HTTP/1.x estrito,
+  serialização de respostas, roteamento determinístico e interceptors síncronos.
 
 O estado detalhado está em [`specs/README.md`](specs/README.md). O roteiro de otimização
 e sua decisão arquitetural estão em [`specs/optime.md`](specs/optime.md) e na
@@ -171,8 +175,9 @@ outras plataformas, instale `clj-kondo` e exponha o executável no `PATH` ou em
 dois cores de bootstrap, exemplos, benchmarks de algoritmos e o oracle JVM são
 verificados com warnings tratados como erro.
 
-A matriz executável de compatibilidade contém atualmente 460 casos nos níveis A–E:
-185 ativos, 243 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
+A matriz executável de compatibilidade contém atualmente 460 casos catalogados nos
+níveis A–E. As contagens correntes de ativos e falhas esperadas são produzidas por
+`make compatibility`. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
 lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
 World em Pedestal e 13 exemplares conceituais oficiais do Exercism. A matriz também
@@ -216,18 +221,20 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   soluções é mantido separadamente pela suíte de conformidade.
 
 Os snapshots ficam fixados no relatório de cada suíte. As três suítes usam o compilador
-`1dc69b5`; Cracking e Cormen rodam em escala 25×, enquanto Exercism usa o snapshot
+`3e71bc1`; Cracking e Cormen rodam em escala 25×, enquanto Exercism usa o snapshot
 upstream `4a4c4fd` e escala 5×:
 
 | Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 7,71 / 22,27 s | 7,58 / 48,66 s | 4,6 / 120,8 MiB |
-| Cormen/CLRS | 26,08 / 16,39 s | 25,97 / 31,35 s | 13,2 / 273,0 MiB |
-| Exercism (escala 5×) | 6,68 / 4,22 s | 6,66 / 8,00 s | 7,8 / 249,6 MiB |
+| Cracking | 8,16 / 23,22 s | 8,06 / 50,93 s | 4,6 / 119,9 MiB |
+| Cormen/CLRS | 30,06 / 17,01 s | 29,95 / 32,66 s | 13,3 / 273,9 MiB |
+| Exercism (escala 5×) | 7,08 / 4,22 s | 7,05 / 8,04 s | 7,8 / 242,2 MiB |
 
 Os 98 casos de benchmark possuem checksums nativo/JVM equivalentes. No Cormen, o nativo
-usa 17,2% menos CPU acumulada que a JVM, embora o tempo de parede agregado ainda seja
-maior. No corpus externo, 8 das 114 soluções upstream completas compilam; as outras 106
+usa 8,3% menos CPU acumulada que a JVM, embora o tempo de parede agregado ainda seja
+maior. O total nativo de parede ficou 15,3% acima do snapshot anterior de uma execução;
+é um sinal de regressão que precisa de repetições pareadas antes de ser atribuído a uma
+mudança. No corpus externo, 10 das 114 soluções upstream completas compilam; as outras 104
 possuem classificação versionada do primeiro bloqueador.
 
 ## Estrutura do projeto
@@ -252,8 +259,8 @@ possuem classificação versionada do primeiro bloqueador.
 - A execução nativa compilada aceita doubles IEEE-754 boxeados e aritmética mista entre
   fixnums e floats. Bignums, ratios e BigDecimal não existem.
 - Macros definidas pelo usuário, sequências lazy/infinitas, carregamento dinâmico de
-  namespaces e compilação de projetos com múltiplos arquivos não estão disponíveis no
-  caminho nativo.
+  namespaces e resolução geral de dependências não estão disponíveis no caminho
+  nativo. O carregamento estático de fontes locais multi-arquivo já é suportado.
 - Os catches ainda são catch-all: hierarquia tipada, múltiplas cláusulas de catch,
   `ex-info` e conversão de falhas fatais do runtime em valores capturáveis permanecem
   incompletos.

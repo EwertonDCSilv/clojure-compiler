@@ -6,9 +6,9 @@
 Arquivo: [`extreme.csv`](extreme.csv)
 
 Snapshot do relatório:
-[`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
+[`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
 
-Medições Native × Clojure/JVM refeitas em 2026-07-28 no commit `1dc69b5` com:
+Medições Native × Clojure/JVM refeitas em 2026-07-28 no commit `3e71bc1` com:
 
 ```bash
 benchmarks/cormen/compare-clojure.sh --scale 25 \
@@ -37,23 +37,24 @@ somente após validar exit status e igualdade dos checksums.
 ## Resumo desta execução
 
 - 30 casos comparados, todos com status `OK` e checksums idênticos.
-- O nativo teve menor tempo de parede em 13 casos; Clojure/JVM em 16; houve um empate.
-- Mediana de `wall_speedup_vs_clojure`: 0,776×.
-- Tempos de parede acumulados: nativo 26,08 s; Clojure/JVM 16,39 s.
-- Tempos de CPU acumulados: nativo 25,97 s; Clojure/JVM 31,35 s.
-- O nativo teve menor tempo de CPU em 22 casos; Clojure/JVM em 8.
-- Mediana de `cpu_speedup_vs_clojure`: 1,688×; o total de CPU favorece o nativo.
+- O nativo teve menor tempo de parede em 13 casos; Clojure/JVM em 17.
+- Mediana de `wall_speedup_vs_clojure`: 0,766×.
+- Tempos de parede acumulados: nativo 30,06 s; Clojure/JVM 17,01 s.
+- Tempos de CPU acumulados: nativo 29,95 s; Clojure/JVM 32,66 s.
+- O nativo teve menor tempo de CPU em 20 casos; Clojure/JVM em 10.
+- Mediana de `cpu_speedup_vs_clojure`: 1,537×; o total de CPU ainda favorece o nativo.
 - O nativo apresentou RSS menor nos 30 casos.
-- Mediana de `rss_ratio_clojure_over_native`: 26,912×.
+- Mediana de `rss_ratio_clojure_over_native`: 26,753×.
 - Maior RSS nativo: 21,3 MiB em
   `06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj`.
-- Maior RSS Clojure/JVM: 1009,9 MiB no mesmo caso.
-- Compilação acumulada: 5.304 ms no nativo e 14.234 ms no Clojure/JVM AOT.
+- Maior RSS Clojure/JVM: 989,9 MiB no mesmo caso.
+- Compilação acumulada: 5.830 ms no nativo e 15.165 ms no Clojure/JVM AOT.
 
 Esta é uma execução completa única. Em relação ao snapshot anterior, o agregado nativo
-caiu de 29,45 para 26,08 s de parede e de 29,30 para 25,97 s de CPU. A melhora é
-coerente no agregado, mas a confirmação estatística ainda exige várias repetições na
-mesma revisão e máquina ociosa.
+subiu de 26,08 para 30,06 s de parede (+15,3%) e de 25,97 para 29,95 s de CPU
+(+15,3%). A JVM também foi medida novamente e subiu menos; portanto, a rodada é um
+sinal de regressão que precisa do controle pareado definido pela ADR-0014 antes de ser
+atribuído a uma mudança específica.
 
 ## Gráficos comparativos
 
@@ -81,47 +82,47 @@ favorece Clojure/JVM. Memória mostra os valores absolutos dos dois processos em
 
 | Caso | Tempo N/J (s) | Δ tempo | CPU N/J (s) | Δ CPU | RSS N/J (MiB) | Δ RSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `01-foundations-and-divide-conquer/01-binary-exponentiation.clj` | 0.06 / 0.36 | -83.3% | 0.06 / 0.78 | -92.3% | 1.4 / 142.1 | -99.0% |
-| `01-foundations-and-divide-conquer/02-horner-polynomial.clj` | 0.06 / 0.37 | -83.8% | 0.06 / 0.75 | -92.0% | 1.4 / 162.0 | -99.1% |
-| `01-foundations-and-divide-conquer/03-prefix-range-sums.clj` | 0.07 / 0.43 | -83.7% | 0.07 / 0.86 | -91.9% | 11.6 / 229.7 | -95.0% |
-| `01-foundations-and-divide-conquer/04-iterative-binary-search.clj` | 0.17 / 0.38 | -55.3% | 0.16 / 0.79 | -79.7% | 1.4 / 116.1 | -98.8% |
-| `01-foundations-and-divide-conquer/05-maximum-subarray-divide.clj` | 1.38 / 0.45 | +206.7% | 1.38 / 0.93 | +48.4% | 5.2 / 197.4 | -97.4% |
-| `02-sorting-and-order-statistics/01-insertion-sort.clj` | 0.51 / 0.51 | +0.0% | 0.51 / 0.97 | -47.4% | 18.2 / 364.7 | -95.0% |
-| `02-sorting-and-order-statistics/02-selection-sort.clj` | 0.31 / 0.43 | -27.9% | 0.31 / 0.89 | -65.2% | 18.2 / 233.3 | -92.2% |
-| `02-sorting-and-order-statistics/03-counting-sort.clj` | 0.21 / 0.50 | -58.0% | 0.21 / 0.99 | -78.8% | 14.4 / 371.9 | -96.1% |
-| `02-sorting-and-order-statistics/04-merge-sort.clj` | 0.85 / 0.57 | +49.1% | 0.84 / 1.21 | -30.6% | 15.9 / 397.7 | -96.0% |
-| `02-sorting-and-order-statistics/05-quickselect.clj` | 1.31 / 0.92 | +42.4% | 1.31 / 2.06 | -36.4% | 4.7 / 531.8 | -99.1% |
-| `03-data-structures/01-build-max-heap.clj` | 0.31 / 0.42 | -26.2% | 0.30 / 0.90 | -66.7% | 18.2 / 235.8 | -92.3% |
-| `03-data-structures/02-disjoint-set-union.clj` | 0.73 / 0.48 | +52.1% | 0.73 / 0.93 | -21.5% | 13.3 / 233.9 | -94.3% |
-| `03-data-structures/03-chained-hash-table.clj` | 0.47 / 0.57 | -17.5% | 0.47 / 1.12 | -58.0% | 12.8 / 368.3 | -96.5% |
-| `03-data-structures/04-circular-queue.clj` | 0.22 / 0.57 | -61.4% | 0.22 / 1.04 | -78.8% | 13.1 / 367.0 | -96.4% |
-| `03-data-structures/05-binary-search-tree.clj` | 1.77 / 0.45 | +293.3% | 1.77 / 0.91 | +94.5% | 19.4 / 259.7 | -92.5% |
-| `04-dynamic-programming-and-greedy/01-rod-cutting.clj` | 1.85 / 0.51 | +262.7% | 1.84 / 0.97 | +89.7% | 7.4 / 264.0 | -97.2% |
-| `04-dynamic-programming-and-greedy/02-matrix-chain-order.clj` | 1.12 / 0.56 | +100.0% | 1.11 / 1.08 | +2.8% | 12.7 / 371.1 | -96.6% |
-| `04-dynamic-programming-and-greedy/03-longest-common-subsequence.clj` | 2.93 / 0.81 | +261.7% | 2.92 / 1.38 | +111.6% | 14.9 / 474.1 | -96.8% |
-| `04-dynamic-programming-and-greedy/04-zero-one-knapsack.clj` | 1.95 / 0.69 | +182.6% | 1.95 / 1.15 | +69.6% | 5.4 / 485.3 | -98.9% |
-| `04-dynamic-programming-and-greedy/05-activity-selection.clj` | 0.05 / 0.34 | -85.3% | 0.05 / 0.73 | -93.2% | 1.4 / 114.8 | -98.7% |
-| `05-graph-algorithms/01-breadth-first-search.clj` | 0.85 / 0.49 | +73.5% | 0.85 / 0.96 | -11.5% | 19.3 / 286.8 | -93.3% |
-| `05-graph-algorithms/02-depth-first-search.clj` | 0.75 / 0.45 | +66.7% | 0.74 / 0.97 | -23.7% | 19.6 / 282.1 | -93.1% |
-| `05-graph-algorithms/03-topological-sort.clj` | 1.04 / 0.54 | +92.6% | 1.03 / 1.04 | -1.0% | 18.8 / 364.5 | -94.8% |
-| `05-graph-algorithms/04-bellman-ford.clj` | 0.36 / 0.44 | -18.2% | 0.36 / 0.88 | -59.1% | 14.8 / 178.9 | -91.7% |
-| `05-graph-algorithms/05-floyd-warshall.clj` | 0.66 / 0.48 | +37.5% | 0.65 / 0.95 | -31.6% | 14.7 / 231.3 | -93.6% |
-| `06-number-theory-and-string-matching/01-extended-euclid.clj` | 1.70 / 0.49 | +246.9% | 1.69 / 0.96 | +76.0% | 19.3 / 364.9 | -94.7% |
-| `06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj` | 3.50 / 1.80 | +94.4% | 3.50 / 2.41 | +45.2% | 21.3 / 1009.9 | -97.9% |
-| `06-number-theory-and-string-matching/03-naive-string-matching.clj` | 0.46 / 0.38 | +21.1% | 0.46 / 0.83 | -44.6% | 1.5 / 121.9 | -98.8% |
-| `06-number-theory-and-string-matching/04-rabin-karp.clj` | 0.25 / 0.61 | -59.0% | 0.25 / 1.11 | -77.5% | 1.5 / 368.6 | -99.6% |
-| `06-number-theory-and-string-matching/05-knuth-morris-pratt.clj` | 0.18 / 0.39 | -53.8% | 0.17 / 0.80 | -78.8% | 11.8 / 150.0 | -92.1% |
+| `01-foundations-and-divide-conquer/01-binary-exponentiation.clj` | 0.06 / 0.38 | -84.2% | 0.06 / 0.84 | -92.9% | 1.4 / 148.5 | -99.0% |
+| `01-foundations-and-divide-conquer/02-horner-polynomial.clj` | 0.06 / 0.39 | -84.6% | 0.06 / 0.84 | -92.9% | 1.4 / 169.3 | -99.1% |
+| `01-foundations-and-divide-conquer/03-prefix-range-sums.clj` | 0.07 / 0.45 | -84.4% | 0.07 / 0.92 | -92.4% | 11.8 / 232.5 | -94.9% |
+| `01-foundations-and-divide-conquer/04-iterative-binary-search.clj` | 0.17 / 0.40 | -57.5% | 0.17 / 0.83 | -79.5% | 1.6 / 115.9 | -98.6% |
+| `01-foundations-and-divide-conquer/05-maximum-subarray-divide.clj` | 1.42 / 0.48 | +195.8% | 1.42 / 0.98 | +44.9% | 5.2 / 197.3 | -97.4% |
+| `02-sorting-and-order-statistics/01-insertion-sort.clj` | 0.63 / 0.52 | +21.2% | 0.62 / 0.98 | -36.7% | 18.1 / 362.7 | -95.0% |
+| `02-sorting-and-order-statistics/02-selection-sort.clj` | 0.36 / 0.45 | -20.0% | 0.36 / 0.93 | -61.3% | 18.2 / 231.8 | -92.1% |
+| `02-sorting-and-order-statistics/03-counting-sort.clj` | 0.23 / 0.53 | -56.6% | 0.23 / 1.03 | -77.7% | 14.6 / 373.1 | -96.1% |
+| `02-sorting-and-order-statistics/04-merge-sort.clj` | 1.02 / 0.61 | +67.2% | 1.01 / 1.31 | -22.9% | 16.0 / 395.8 | -96.0% |
+| `02-sorting-and-order-statistics/05-quickselect.clj` | 1.37 / 0.96 | +42.7% | 1.36 / 2.03 | -33.0% | 4.7 / 530.9 | -99.1% |
+| `03-data-structures/01-build-max-heap.clj` | 0.31 / 0.46 | -32.6% | 0.30 / 0.94 | -68.1% | 18.2 / 233.5 | -92.2% |
+| `03-data-structures/02-disjoint-set-union.clj` | 0.79 / 0.50 | +58.0% | 0.78 / 0.99 | -21.2% | 13.4 / 232.0 | -94.2% |
+| `03-data-structures/03-chained-hash-table.clj` | 0.53 / 0.59 | -10.2% | 0.53 / 1.17 | -54.7% | 12.8 / 364.8 | -96.5% |
+| `03-data-structures/04-circular-queue.clj` | 0.22 / 0.56 | -60.7% | 0.21 / 1.04 | -79.8% | 13.1 / 364.7 | -96.4% |
+| `03-data-structures/05-binary-search-tree.clj` | 2.07 / 0.46 | +350.0% | 2.06 / 0.99 | +108.1% | 19.4 / 266.4 | -92.7% |
+| `04-dynamic-programming-and-greedy/01-rod-cutting.clj` | 1.89 / 0.53 | +256.6% | 1.89 / 0.98 | +92.9% | 7.4 / 255.2 | -97.1% |
+| `04-dynamic-programming-and-greedy/02-matrix-chain-order.clj` | 1.30 / 0.57 | +128.1% | 1.30 / 1.11 | +17.1% | 12.8 / 365.7 | -96.5% |
+| `04-dynamic-programming-and-greedy/03-longest-common-subsequence.clj` | 3.52 / 0.82 | +329.3% | 3.51 / 1.40 | +150.7% | 14.7 / 471.1 | -96.9% |
+| `04-dynamic-programming-and-greedy/04-zero-one-knapsack.clj` | 2.10 / 0.71 | +195.8% | 2.10 / 1.24 | +69.4% | 5.4 / 472.4 | -98.8% |
+| `04-dynamic-programming-and-greedy/05-activity-selection.clj` | 0.05 / 0.35 | -85.7% | 0.05 / 0.79 | -93.7% | 1.4 / 119.7 | -98.8% |
+| `05-graph-algorithms/01-breadth-first-search.clj` | 1.16 / 0.49 | +136.7% | 1.15 / 1.01 | +13.9% | 19.3 / 288.2 | -93.3% |
+| `05-graph-algorithms/02-depth-first-search.clj` | 0.86 / 0.47 | +83.0% | 0.86 / 1.00 | -14.0% | 19.6 / 281.5 | -93.0% |
+| `05-graph-algorithms/03-topological-sort.clj` | 1.43 / 0.56 | +155.4% | 1.42 / 1.08 | +31.5% | 18.8 / 368.4 | -94.9% |
+| `05-graph-algorithms/04-bellman-ford.clj` | 0.40 / 0.45 | -11.1% | 0.40 / 0.90 | -55.6% | 14.8 / 173.1 | -91.4% |
+| `05-graph-algorithms/05-floyd-warshall.clj` | 0.72 / 0.51 | +41.2% | 0.71 / 1.01 | -29.7% | 14.8 / 233.3 | -93.6% |
+| `06-number-theory-and-string-matching/01-extended-euclid.clj` | 2.12 / 0.54 | +292.6% | 2.12 / 1.01 | +109.9% | 19.4 / 362.4 | -94.6% |
+| `06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj` | 4.28 / 1.82 | +135.2% | 4.28 / 2.45 | +74.7% | 21.3 / 989.9 | -97.8% |
+| `06-number-theory-and-string-matching/03-naive-string-matching.clj` | 0.47 / 0.41 | +14.6% | 0.47 / 0.87 | -46.0% | 1.4 / 115.6 | -98.8% |
+| `06-number-theory-and-string-matching/04-rabin-karp.clj` | 0.27 / 0.63 | -57.1% | 0.27 / 1.15 | -76.5% | 1.4 / 365.1 | -99.6% |
+| `06-number-theory-and-string-matching/05-knuth-morris-pratt.clj` | 0.18 / 0.41 | -56.1% | 0.18 / 0.84 | -78.6% | 11.7 / 144.1 | -91.9% |
 
 ## Resultado por capítulo
 
 | Capítulo | Casos | Parede nativo | Parede Clojure | Razão Clojure/nativo |
 | --- | ---: | ---: | ---: | ---: |
-| Fundamentos e divisão e conquista | 5 | 1,74 s | 1,99 s | 1,144× |
-| Ordenação e estatísticas de ordem | 5 | 3,19 s | 2,93 s | 0,918× |
-| Estruturas de dados | 5 | 3,50 s | 2,49 s | 0,711× |
-| Programação dinâmica e gulosa | 5 | 7,90 s | 2,91 s | 0,368× |
-| Algoritmos de grafos | 5 | 3,66 s | 2,40 s | 0,656× |
-| Teoria dos números e casamento de strings | 5 | 6,09 s | 3,67 s | 0,603× |
+| Fundamentos e divisão e conquista | 5 | 1,78 s | 2,10 s | 1,180× |
+| Ordenação e estatísticas de ordem | 5 | 3,61 s | 3,07 s | 0,850× |
+| Estruturas de dados | 5 | 3,92 s | 2,57 s | 0,656× |
+| Programação dinâmica e gulosa | 5 | 8,86 s | 2,98 s | 0,336× |
+| Algoritmos de grafos | 5 | 4,57 s | 2,48 s | 0,543× |
+| Teoria dos números e casamento de strings | 5 | 7,32 s | 3,81 s | 0,520× |
 
 ## Como ler a comparação
 
@@ -136,8 +137,8 @@ binário pelo `clojure-compiler` e o namespace JVM por AOT. Os custos aparecem
 separadamente em
 `native_compile_wall_ms` e `clojure_compile_wall_ms`.
 
-O total de parede ainda é 1,59× o Clojure/JVM, enquanto o nativo usa 17,2% menos CPU
-acumulada e substancialmente menos memória. A maior concentração restante está em
+O total de parede é 1,77× o Clojure/JVM, enquanto o nativo usa 8,3% menos CPU acumulada
+e substancialmente menos memória. A maior concentração restante está em
 programação dinâmica e estruturas de dados que ainda alocam ou atravessam fronteiras
 de função. Essa relação é uma observação dos dados, não uma prova isolada de causalidade.
 
@@ -146,7 +147,7 @@ toolchain, JIT e sistema operacional afetam o resultado. Para conclusões estat�
 repita as medições no mesmo ambiente e compare distribuições, não apenas uma execução.
 
 O compilador release foi reconstruído imediatamente antes da rodada no commit
-`1dc69b5`.
+`3e71bc1`.
 
 ## Experimento Cranelift `none` contra `speed`
 

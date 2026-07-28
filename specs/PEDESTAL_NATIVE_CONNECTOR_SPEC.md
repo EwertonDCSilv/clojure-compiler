@@ -15,6 +15,7 @@
   - [`NATIVE_INTEROP.md`](NATIVE_INTEROP.md)
   - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
   - [`adr/0007-native-io-and-runtime-reader.md`](adr/0007-native-io-and-runtime-reader.md)
+  - [`adr/0013-compiled-clojure-pedestal-native-connector.md`](adr/0013-compiled-clojure-pedestal-native-connector.md)
 
 > Esta spec define um alvo futuro e incremental. A presença de uma API, namespace ou
 > comportamento neste documento não significa que ele já esteja implementado. O estado
@@ -294,8 +295,7 @@ Expõe primitivas nativas internas para o connector. Não é API pública de apl
 
 #### F. provider HTTP
 
-Implementa o transporte atrás da ABI. O provider inicial pode residir no runtime C ou em
-biblioteca estática com ABI C, desde que a decisão seja registrada por ADR.
+Implementa o transporte no runtime C atrás da ABI existente, conforme a ADR-0013.
 
 #### G. `cljn.pedestal.route`
 
@@ -306,7 +306,7 @@ depende dele.
 
 ## 9. Estratégia de compatibilidade
 
-A implementação será dividida em três camadas de compatibilidade.
+A implementação será dividida em quatro camadas de compatibilidade.
 
 ### 9.1 Camada P0 — API nativa própria
 
@@ -379,6 +379,8 @@ Resultado mínimo:
 ```clojure
 (create-connector connector-map)
 (start! connector)
+(serve-one! connector)
+(serve! connector)
 (stop! connector)
 (test-request connector request-map)
 (connector-state connector)
@@ -405,6 +407,11 @@ Resultado mínimo:
 
 Configurar ambos deve gerar erro `:ambiguous-dispatch`.
 
+No modo nativo single-thread, `start!` apenas abre o listener quando `:join?` é falso;
+o chamador precisa executar `serve!` ou `serve-one!`. Não existe processamento em
+background implícito. Com `:join? true`, `start!` entra em `serve!` depois do bind,
+conforme decidido na [ADR-0013](adr/0013-compiled-clojure-pedestal-native-connector.md).
+
 ### 10.5 Representação do connector
 
 O connector deve ser um valor opaco para a aplicação. Sua impressão deve evitar ponteiros,
@@ -428,7 +435,7 @@ Igualdade de connectors é por identidade.
 
 | Chave | Tipo | Regra |
 | --- | --- | --- |
-| `:host` | string | endereço literal ou hostname suportado pelo provider |
+| `:host` | string | IPv4 literal ou `localhost`; DNS fica fora de P1 |
 | `:port` | fixnum | 0 a 65535; 0 permite porta efêmera |
 | `:mode` | keyword | somente `:single-thread` no primeiro gate |
 | `:join?` | boolean | bloqueia `start!` até `stop!` quando verdadeiro |
@@ -708,9 +715,10 @@ interpretar nil como execução assíncrona.
 
 ### 15.6 Dynamic bindings
 
-A chave `:bindings` fica reservada, mas não é funcional até Vars dinâmicas e `binding`
-estarem disponíveis no caminho compilado. Se uma aplicação tentar usá-la antes disso, o
-build ou runtime deve falhar explicitamente com `:dynamic-bindings-unsupported`.
+O caminho compilado já oferece `binding` para Vars conhecidas pelo compilador, mas não
+possui o mapa geral de Vars exigido pela semântica de `:bindings` do Pedestal. A chave
+permanece reservada no P1. Seu uso deve falhar explicitamente com
+`:dynamic-bindings-unsupported`; isso não bloqueia connector, chain ou roteamento.
 
 ---
 
@@ -805,26 +813,28 @@ externos, seguindo o modelo de lifecycle da `IO_SPEC`.
 
 ### 18.3 Operações mínimas da ABI
 
-Os nomes abaixo são ilustrativos; a ADR de implementação pode ajustá-los sem alterar a
-semântica pública:
+Os nomes abaixo são ilustrativos. A ADR-0013 fixa uma ABI dirigida por Clojure: o
+provider não retém nem chama uma closure da aplicação.
 
 ```c
-cljn_http_server_new(config, dispatch, user_data, out_server, out_error)
-cljn_http_server_start(server, out_error)
-cljn_http_server_poll(server, out_event, out_error)
+cljn_http_server_open(config, out_server, out_error)
+cljn_http_server_receive(server, out_request, out_error)
+cljn_http_server_respond(server, response, out_error)
+cljn_http_server_reject(server, error, out_error)
 cljn_http_server_stop(server, out_error)
-cljn_http_server_free(server)
+cljn_http_server_close(server)
 cljn_http_server_address(server, out_address, out_error)
 cljn_http_server_stats(server, out_stats, out_error)
 ```
 
-O primeiro provider pode encapsular o loop completo em `start` ou expor `poll`. A decisão
-deve considerar sinais, GC safepoints e possibilidade de evolução para prefork.
+`cljn.pedestal.connector/serve!` controla o loop. Uma conexão fica interna ao handle e é
+consumida por `respond` ou `reject`, coerente com o primeiro gate single-thread.
 
-### 18.4 Callback de dispatch
+### 18.4 Fronteira de dispatch
 
-O provider não chama arbitrariamente o GC sem estabelecer roots para request, contexto e
-response. A passagem entre C e código gerado deve ter protocolo explícito de rooting.
+Não há callback C→Clojure no P1. O provider devolve um request map rooteado; a camada
+Clojure executa dispatch e devolve a resposta ao provider. Toda alocação feita durante a
+montagem do request deve seguir o protocolo explícito de rooting da ABI.
 
 ### 18.5 Erros da ABI
 
@@ -875,21 +885,10 @@ Keep-alive deve ser um marco posterior com benchmarks próprios.
 
 ### 19.3 Parser
 
-O parser deve ser incremental e limitado. Alternativas aceitáveis:
-
-- parser próprio mínimo auditado;
-- biblioteca C pequena e vendorizada;
-- biblioteca Rust estática atrás de ABI C.
-
-A seleção exige ADR contendo:
-
-- licença;
-- manutenção;
-- cobertura de parsing adversarial;
-- tamanho do binário;
-- custo de integração;
-- comportamento em input parcial;
-- estratégia de fuzzing.
+O P1 usa um parser C próprio, incremental, estrito e limitado, versionado no subsistema
+HTTP do runtime. Ele suporta somente request line, headers e body por
+`Content-Length` necessários ao primeiro gate. A adoção de biblioteca externa ou
+provider Rust exige nova ADR com licença, fuzzing, tamanho do binário e ownership.
 
 ### 19.4 TLS
 
@@ -962,6 +961,7 @@ stack trace, paths ou configuração interna.
 Características:
 
 - um listener;
+- no máximo um servidor de rede aberto por processo;
 - uma conexão processada por vez;
 - nenhuma execução concorrente de Clojure;
 - GC somente no thread do servidor;
@@ -1064,6 +1064,7 @@ Contadores podem saturar no maior fixnum em vez de overflow silencioso.
 | `:address-in-use` | bind |
 | `:permission-denied` | bind |
 | `:already-started` | start |
+| `:server-limit` | segundo listener no mesmo processo |
 | `:not-running` | operação que exige servidor ativo |
 | `:parse-error` | parse request |
 | `:request-too-large` | read body |
@@ -1192,7 +1193,9 @@ connector e resultam em response 500, salvo opção interna de teste futuro para
 ### 25.3 Resultado esperado
 
 ```text
-$ clojure-native build --main hello examples/pedestal-native/src/hello.clj -o target/pedestal-native
+$ clojure-native build --source-path examples/pedestal-native/src \
+    --main hello examples/pedestal-native/src/hello.clj \
+    -o target/pedestal-native
 $ ./target/pedestal-native
 $ curl -i http://127.0.0.1:8080/greet
 HTTP/1.1 200 OK
@@ -1211,14 +1214,9 @@ A estrutura abaixo é indicativa:
 
 ```text
 crates/
-├── clojure-http-contract/
-│   ├── request validation
-│   ├── response validation
-│   └── connector configuration
-├── clojure-http-test-support/
-│   ├── raw HTTP fixtures
-│   ├── differential runner
-│   └── benchmark helpers
+├── clojure-native-cli/
+│   └── src/loader/           # grafo estático, source paths e módulos embutidos
+├── clojure-test-support/     # fixtures de projeto/serviço e comparação
 └── clojure-codegen/
     └── runtime/
         └── http/
@@ -1252,8 +1250,8 @@ tests/conformance/level-e-ecosystem/web-frameworks/pedestal/
     └── expected-response.edn
 ```
 
-Se `stdlib/` ainda não existir como unidade formal, os namespaces podem entrar no
-bootstrap core inicialmente, mas devem ser extraídos antes de declarar a API estável.
+Os namespaces não entram em `core_compiled.clj`. O loader estático e os globals
+inicializados são pré-requisitos de NC-1, conforme a ADR-0013.
 
 ---
 
@@ -1272,12 +1270,29 @@ Entregas:
 - casos de erros de configuração;
 - fixtures de Hello World;
 - inventário `pending`/`xfail` na conformidade;
-- ADR de escolha do provider/parser.
+- ADR-0013 adotada como decisão do provider, parser, módulos e lifecycle.
 
 Critério de aceite:
 
 - todos os contratos possuem testes Rust ou Clojure;
 - nenhuma API é marcada `active`.
+
+### NC-0L — Módulos estáticos e globals
+
+**Objetivo:** compilar os namespaces Clojure do connector sem incorporá-los ao core.
+
+Entregas:
+
+- grafo literal de `ns`/`:require`;
+- módulos embutidos e `--source-path` local, sempre offline;
+- diagnósticos por arquivo, namespace duplicado e ciclo;
+- `def` imutável inicializado uma vez em ordem topológica;
+- roots globais permanentes.
+
+Critério de aceite:
+
+- projeto local de dois namespaces e módulo `cljn.*` compilam sob GC stress;
+- nenhum arquivo, JAR ou dependência é resolvido pela rede.
 
 ### NC-1 — `test-request` com dispatch direto
 
@@ -1360,12 +1375,13 @@ Entregas:
 
 Critério de aceite:
 
-- fixture `e.pedestal.hello_world_api` deixa de ser `pending`;
+- fixture `e.pedestal.native_connector_hello` chega a `active`;
+- fixture upstream `e.pedestal.hello_world_api` permanece `pending` para P3;
 - caso compatível nativo passa offline sem JVM.
 
-### NC-5 — Projetos multi-arquivo e source dependencies
+### NC-5 — Empacotamento de projetos e source dependencies
 
-**Objetivo:** retirar a implementação da aplicação de um arquivo único.
+**Objetivo:** ampliar o loader estático do P1 para um contrato de projeto reutilizável.
 
 Entregas:
 
@@ -1378,7 +1394,7 @@ Entregas:
 
 Critério de aceite:
 
-- connector, chain, route e app vivem em namespaces separados;
+- manifesto local reproduzível empacota app e recursos além dos módulos embutidos;
 - checksum do build é reproduzível sob ambiente controlado.
 
 ### NC-6 — Hardening e benchmark
@@ -1428,20 +1444,22 @@ Critério de aceite:
 
 | Dependência | Marco afetado | Situação |
 | --- | --- | --- |
-| Exceções capturáveis e `ex-data` | NC-1/NC-2/NC-3 | parcial |
+| Erros categorizados | NC-1/NC-2/NC-3 | `throw` de Values existe; P1 padroniza maps, tipos/`ex-data` ficam para P2/P3 |
 | Records e protocols | NC-1/NC-2 | disponíveis no subconjunto atual |
 | Mapas, vetores, strings e keywords | todos | disponíveis |
-| Bytes | NC-1/NC-3 | requerido pela `IO_SPEC` |
-| Handles externos | NC-3 | proposto pela `IO_SPEC` |
+| Bytes | NC-1/NC-3 | disponível como `T_BYTES`; faltam contratos HTTP |
+| Handles externos | NC-3 | readers/writers existem; falta `T_HTTP_SERVER` e leak gate |
 | Sinais/lifecycle de processo | NC-3 | futuro |
-| Multi-arquivo | NC-5 | ausente |
-| Source dependency resolution | NC-5/NC-7 | ausente |
-| Vars dinâmicas | compatibilidade avançada | ausente |
+| Multi-arquivo estático | NC-0L | ausente |
+| Source dependency resolution geral | NC-5/NC-7 | ausente; Maven/JAR não faz parte de P1 |
+| Vars dinâmicas | compatibilidade avançada | conhecidas disponíveis; mapa geral de Vars ausente |
 | Concorrência thread-safe | modos concorrentes | fora do primeiro gate |
 
-O plano pode iniciar NC-0, NC-1 e parte de NC-2 antes do gate geral de arquivos. NC-3
-requer apenas o subconjunto de handles e erros necessário para sockets; essa relação deve
-ser registrada em uma ADR para evitar duplicação incompatível com a `IO_SPEC`.
+NC-0 pode começar imediatamente. NC-0L deve preceder NC-1 e NC-2, porque o conector
+será distribuído como namespaces Clojure estáticos, não como novos built-ins no
+compilador. NC-3 requer apenas o subconjunto de handles e erros necessário para sockets;
+essa relação é fechada pela ADR-0013 para evitar duplicação incompatível com a
+`IO_SPEC`.
 
 ---
 
@@ -1518,8 +1536,8 @@ Invariantes:
 ### 29.5 GC stress
 
 Todos os caminhos de dispatch, erro e serialização devem rodar com `CLJN_GC_STRESS=1`.
-Requests, contexts, interceptors e responses devem permanecer rooted durante callbacks da
-ABI.
+Requests, contexts, interceptors e responses devem permanecer rooted durante toda
+travessia da ABI e execução do dispatch.
 
 ---
 
@@ -1587,7 +1605,7 @@ Tabela inicial:
 | `:enter`/`:leave`/`:error` | sim | semântica diferencial |
 | Terminação por response | sim | interceptor padrão |
 | Rotas estáticas | sim, NC-4 | módulo separado |
-| Dynamic bindings | não | erro explícito |
+| Dynamic bindings gerais | não | Vars conhecidas existem; `:bindings` gera erro explícito |
 | Async interceptors | não | erro explícito |
 | SSE | não | futura spec |
 | WebSocket | não | futura spec |
@@ -1646,29 +1664,33 @@ upstream quando o compilador suportar as dependências.
 
 **Mitigação:** connector não contém router, codecs, sessão, auth ou domínio.
 
-### R8 — Rooting incorreto durante callback nativo
+### R8 — Rooting incorreto na fronteira nativa
 
 **Impacto:** corrupção de memória.
 
-**Mitigação:** protocolo de roots na ABI, GC stress e testes com alocação em todos os
-pontos do dispatch.
+**Mitigação:** protocolo de roots na ABI, ausência de callback C→Clojure no P1, GC
+stress e testes com alocação na construção do request e em todos os pontos do dispatch.
 
 ---
 
-## 33. Decisões abertas
+## 33. Decisões fechadas pela ADR-0013
 
-As decisões abaixo devem gerar ADRs ou serem resolvidas antes do marco indicado:
+| Tema | Decisão para P1 |
+| --- | --- |
+| Provider | subsistema C próprio, POSIX/Linux, atrás da ABI atual |
+| Parser | C próprio, incremental, estrito e limitado ao framing aceito |
+| `Bytes` | reutilizar `T_BYTES`; string exige UTF-8 estrito |
+| Sinais | self-pipe não bloqueante + flag `sig_atomic_t`, observado por `poll` |
+| Namespace | `cljn.pedestal.*`; nenhum código próprio em `io.pedestal.*` |
+| Stdlib | fontes em `stdlib/cljn`, resolvidas por grafo estático offline |
+| Roteador | matcher linear determinístico até medição justificar árvore |
+| Prefork | fora de P1; exige ADR posterior |
+| Oracle | versão fixada pela fixture: Pedestal HTTP-Kit `0.8.2-beta-10` |
+| Compatibilidade | fixture P1 nativa separada da fixture upstream P3 |
 
-1. **Provider inicial:** C próprio, biblioteca C ou Rust atrás de ABI C — antes de NC-3.
-2. **Parser HTTP:** implementação e licença — antes de NC-3.
-3. **Representação de `Bytes`:** alinhamento com `IO_SPEC` — antes de NC-1 completo.
-4. **Modelo de sinais:** integração com launcher — antes de NC-3.
-5. **Namespace público final:** `cljn.pedestal.*` ou pacote separado — antes de NC-4.
-6. **Empacotamento de stdlib:** embutido, source bundle ou manifesto — antes de NC-5.
-7. **Roteador inicial:** linear ou árvore — durante NC-4, com medição.
-8. **Prefork:** processo supervisor interno ou externo — após NC-6.
-9. **Versão upstream pinada:** usada no oracle diferencial — antes de NC-2 completo.
-10. **Licenciamento e uso de nomes:** revisar antes de publicar integração como produto.
+Threads, async, keep-alive, TLS, HTTP/2, Maven, provider Rust, parser externo e
+implementação direta do protocolo upstream continuam decisões futuras e exigem ADR
+substituta.
 
 ---
 
@@ -1685,11 +1707,13 @@ O primeiro corte vertical está concluído quando todos os itens abaixo forem ve
 - [ ] inputs HTTP malformados retornam 400 ou categoria apropriada sem crash;
 - [ ] erro da aplicação retorna 500 sem vazar detalhes;
 - [ ] `start!`, `stop!` e restart possuem testes;
+- [ ] `serve!` e `serve-one!` deixam explícita a ausência de execução em background;
 - [ ] `test-request` e rede compartilham o mesmo dispatch;
 - [ ] todos os handles são fechados em sucesso e erro;
 - [ ] GC stress passa;
 - [ ] sanitizers passam no provider;
-- [ ] a fixture Pedestal Hello World deixa de ser apenas inventário `pending`;
+- [ ] a fixture nativa `e.pedestal.native_connector_hello` está `active`;
+- [ ] a fixture upstream `e.pedestal.hello_world_api` permanece classificada como P3;
 - [ ] a documentação declara claramente as limitações;
 - [ ] existe benchmark inicial de startup, RSS e latência;
 - [ ] nenhum resultado é divulgado como “Pedestal completo”.
@@ -1697,6 +1721,13 @@ O primeiro corte vertical está concluído quando todos os itens abaixo forem ve
 ---
 
 ## 35. Primeira sequência de trabalho recomendada
+
+### Etapa 0 — Módulos estáticos
+
+1. implementar grafo literal de namespaces;
+2. adicionar módulos `stdlib/cljn` e `--source-path` local;
+3. implementar inicialização de `def` imutável e roots globais;
+4. validar ciclos, duplicidade, spans por arquivo e GC stress.
 
 ### Etapa 1 — Contrato em memória
 
@@ -1717,7 +1748,7 @@ O primeiro corte vertical está concluído quando todos os itens abaixo forem ve
 
 ### Etapa 3 — Rede mínima
 
-1. escrever ADR do provider/parser;
+1. aplicar a ADR-0013 ao provider/parser;
 2. implementar handle de servidor;
 3. implementar bind/listen/accept;
 4. implementar request line e headers;

@@ -174,6 +174,13 @@ Os CSVs registram, por caso e implementação, tempo de parede, CPU e pico de me
 comparação JVM deve manter versões, warmup, repetição e escala registrados para evitar
 comparar Cranelift frio com HotSpot aquecido sem contexto.
 
+The optional optimization IR has an additional **Planned** native A/B gate defined by
+[OPTIMIZATION_IR_SPEC](OPTIMIZATION_IR_SPEC.md#13-blocking-cormen-non-regression-gate).
+It compares `--ir-opt none` with `--ir-opt safe` on the same commit for at least seven
+paired Cormen repetitions. A checksum difference, aggregate regression, confirmed
+chapter regression, or confirmed per-case regression blocks pass promotion. The JVM
+columns remain contextual and are not rewritten by that native A/B gate.
+
 ## Aceite
 
 Uma mudança está pronta quando:
@@ -183,6 +190,9 @@ Uma mudança está pronta quando:
 3. `make compatibility` passa sem rede e sem JVM;
 4. casos novos têm status, razão, tracking e checksum;
 5. mudanças de desempenho relevantes incluem checksum e metodologia reproduzível.
+
+An IR optimization is ready only after the additional Cormen gate reports zero
+aggregate, chapter, and confirmed per-case execution-time regressions.
 
 Para promover o gate de I/O, também são obrigatórios zero handles vazados, GC stress,
 sanitizers, leitura/escrita em blocos e os snapshots isolados definidos na

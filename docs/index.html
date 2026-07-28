@@ -2244,7 +2244,7 @@
         "@type": "SoftwareSourceCode",
         "name": "clojure-native",
         "description": "Compilador nativo experimental de Clojure sem JVM.",
-        "version": "0.0.1+1dc69b5",
+        "version": "0.0.1+3e71bc1",
         "dateModified": "2026-07-28",
         "codeRepository": "https://github.com/EwertonDCSilv/clojure-compiler",
         "license": [
@@ -2403,12 +2403,12 @@
             </div>
             <a
               class="snapshot-link"
-              href="https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb"
+              href="https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf"
               target="_blank"
               rel="noreferrer"
             >
               <span>HEAD</span>
-              <code>1dc69b5</code>
+              <code>3e71bc1</code>
               <time datetime="2026-07-28">2026-07-28</time>
             </a>
           </div>
@@ -2619,6 +2619,17 @@
                 <code>comp</code>.
               </p>
             </article>
+
+            <article class="feature-card medium reveal">
+              <span class="card-tag" data-i18n="features.integrationTag">
+                Integração nativa
+              </span>
+              <h3 data-i18n="features.integrationTitle">Módulos e HTTP em memória</h3>
+              <p data-i18n="features.integrationBody">
+                Fontes locais multi-arquivo, namespaces isolados, roteamento e
+                interceptors síncronos com parsing e serialização HTTP.
+              </p>
+            </article>
           </div>
 
           <aside class="honesty reveal">
@@ -2626,8 +2637,9 @@
               <span class="honesty-label" data-i18n="honesty.label">Experimental por design</span>
               <p data-i18n-html="honesty.bodyHtml">
                 <strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong>
-                Interop Java, bignums, sequências lazy, namespaces dinâmicos e projetos
-                multi-arquivo continuam fora do caminho nativo atual.
+                Interop Java, bignums, sequências lazy, namespaces dinâmicos e resolução
+                geral de dependências continuam fora do caminho nativo. Fontes locais
+                multi-arquivo já podem ser carregadas estaticamente.
               </p>
             </div>
             <span class="honesty-status" data-i18n="honesty.status">v0.0.1 · em evolução</span>
@@ -2730,7 +2742,7 @@
             <div class="benchmark-summary" aria-live="polite">
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="wall">
-                  26,08 s / 16,39 s
+                  30,06 s / 17,01 s
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryWall">
                   tempo total · nativo / JVM
@@ -2738,7 +2750,7 @@
               </div>
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="cpu">
-                  25,97 s / 31,35 s
+                  29,95 s / 32,66 s
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryCpu">
                   CPU total · nativo / JVM
@@ -2746,7 +2758,7 @@
               </div>
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="memory">
-                  13,2 MiB / 273,0 MiB
+                  13,3 MiB / 273,9 MiB
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryMemory">
                   RSS mediano · nativo / JVM
@@ -2933,7 +2945,7 @@
               <span class="stat-label" data-i18n="stats.cases">casos na matriz A–E</span>
             </div>
             <div class="stat">
-              <span class="stat-value">185<sup data-i18n="stats.active">ATIVOS</sup></span>
+              <span class="stat-value">186<sup data-i18n="stats.active">ATIVOS</sup></span>
               <span class="stat-label" data-i18n="stats.behaviors">comportamentos implementados</span>
             </div>
             <div class="stat">
@@ -3069,9 +3081,9 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/extreme.csv",
-          wall: [26.08, 16.39],
-          cpu: [25.97, 31.35],
-          memory: [13.2, 273.0],
+          wall: [30.06, 17.01],
+          cpu: [29.95, 32.66],
+          memory: [13.3, 273.9],
         },
         cracking: {
           labelKey: "benchmarks.cracking",
@@ -3080,9 +3092,9 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/extreme.csv",
-          wall: [7.71, 22.27],
-          cpu: [7.58, 48.66],
-          memory: [4.6, 120.8],
+          wall: [8.16, 23.22],
+          cpu: [8.06, 50.93],
+          memory: [4.6, 119.9],
         },
         exercism: {
           labelKey: "benchmarks.exercism",
@@ -3091,9 +3103,9 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/extreme.csv",
-          wall: [6.68, 4.22],
-          cpu: [6.66, 8.0],
-          memory: [7.8, 249.6],
+          wall: [7.08, 4.22],
+          cpu: [7.05, 8.04],
+          memory: [7.8, 242.2],
         },
       };
       const benchmarkMetrics = {

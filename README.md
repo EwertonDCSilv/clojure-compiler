@@ -13,7 +13,7 @@ runtime. The repository is named `clojure-compiler`; its command-line binary is
 > Clojure and is not production-ready.
 
 > Documented snapshot and benchmark compiler:
-> [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
 > (2026-07-28).
 > See the [snapshot policy and current measurements](docs/SNAPSHOT.md).
 
@@ -46,6 +46,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
   diagnostics.
 - Bootstrap interpreter used by `eval`, scripts, and macro infrastructure.
 - Cranelift AOT code generation for standalone native executables.
+- Static multi-file source loading with namespace-qualified top-level globals.
 - Functions, closures, higher-order functions, fixed/variadic/multiple arities, and
   `apply`.
 - `if`, `do`, `let`, `loop/recur`, direct recursion, and expansion of the currently
@@ -74,6 +75,8 @@ compatibility boundaries, implementation plans, and architectural decisions live
   paths.
 - The C runtime is split into subsystem files for maintenance while remaining one
   translation unit with the same ABI.
+- An initial in-memory native HTTP/Pedestal slice: strict HTTP/1.x parsing, response
+  serialization, deterministic routing, and synchronous interceptor execution.
 
 For detailed implementation status, see [`specs/README.md`](specs/README.md). The
 optimization roadmap and its decision record are in
@@ -172,8 +175,9 @@ install `clj-kondo` and expose it on `PATH` or through `CLJ_KONDO_BIN`. Delibera
 invalid conformance fixtures are excluded, while both bootstrap cores, examples,
 algorithm benchmarks, and the JVM oracle are checked with warnings treated as errors.
 
-The executable compatibility matrix currently contains 460 cases across levels A–E:
-185 active, 243 expected failures, and 32 pending inventory entries. Levels D and E now
+The executable compatibility matrix currently contains 460 cataloged cases across
+levels A–E. Its live active/xfail counts are produced by `make compatibility`. Levels D
+and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
 target and 13 official Exercism concept exemplars. The matrix covers the complete
@@ -217,19 +221,21 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   tracked separately by the conformance suite.
 
 Reference snapshots are pinned in each suite report. All three suites use compiler
-`1dc69b5`; Cracking and Cormen run at scale 25×, while Exercism uses upstream snapshot
+`3e71bc1`; Cracking and Cormen run at scale 25×, while Exercism uses upstream snapshot
 `4a4c4fd` at scale 5×:
 
 | Suite | Native/JVM wall | Native/JVM CPU | Native/JVM median RSS |
 | --- | ---: | ---: | ---: |
-| Cracking | 7.71 / 22.27 s | 7.58 / 48.66 s | 4.6 / 120.8 MiB |
-| Cormen/CLRS | 26.08 / 16.39 s | 25.97 / 31.35 s | 13.2 / 273.0 MiB |
-| Exercism (scale 5×) | 6.68 / 4.22 s | 6.66 / 8.00 s | 7.8 / 249.6 MiB |
+| Cracking | 8.16 / 23.22 s | 8.06 / 50.93 s | 4.6 / 119.9 MiB |
+| Cormen/CLRS | 30.06 / 17.01 s | 29.95 / 32.66 s | 13.3 / 273.9 MiB |
+| Exercism (scale 5×) | 7.08 / 4.22 s | 7.05 / 8.04 s | 7.8 / 242.2 MiB |
 
 All 98 benchmark cases have matching native/JVM checksums. The Cormen native run uses
-17.2% less aggregate CPU than the JVM, although its aggregate wall time is still
-higher. In the external corpus, 8 of 114 complete upstream solutions currently build;
-the other 106 have a versioned first-blocker classification.
+8.3% less aggregate CPU than the JVM, although its aggregate wall time is still higher.
+Its native wall total is 15.3% above the preceding single-run snapshot, a regression
+signal that must be confirmed with paired repetitions before attribution. In the
+external corpus, 10 of 114 complete upstream solutions currently build;
+the other 104 have a versioned first-blocker classification.
 
 ## Project layout
 
@@ -252,8 +258,9 @@ the other 106 have a versioned first-blocker classification.
 - This is a Clojure subset, not a drop-in replacement for Clojure/JVM.
 - Native compiled execution supports boxed IEEE-754 doubles and mixed
   fixnum/float arithmetic. Bignums, ratios, and BigDecimal are not implemented.
-- User-defined macros, lazy/infinite sequences, dynamic namespace loading, and
-  multi-file project compilation are not available on the native path.
+- User-defined macros, lazy/infinite sequences, dynamic namespace loading, and general
+  dependency resolution are not available on the native path. Static local multi-file
+  source loading is supported.
 - Exception catches are currently catch-all: typed catch hierarchies, multiple catch
   clauses, `ex-info`, and conversion of fatal runtime faults into catchable values
   remain incomplete.

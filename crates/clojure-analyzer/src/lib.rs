@@ -43,7 +43,12 @@ pub enum Ast {
     /// Read a top-level `def` global by its permanent-root index (ADR-0013).
     GlobalRef(u32),
     /// Initialize a top-level `def` global once, in source order (ADR-0013).
-    DefGlobal { index: u32, value: Box<Ast> },
+    DefGlobal {
+        /// Permanent-root slot assigned to the namespace-qualified global.
+        index: u32,
+        /// Expression evaluated once to initialize the global slot.
+        value: Box<Ast>,
+    },
     /// Local slot in the current function or lambda frame.
     Local(u32),
     /// Captured value read from `self->freev[index]`.

@@ -33,7 +33,7 @@ O core compilável em `crates/clojure-native-cli/src/core_compiled.clj` é anali
 com o programa do usuário em todo `build`.
 
 No snapshot documentado em
-[`1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb),
+[`3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf),
 o analyzer também executa um pós-passe conservador de unicidade para acumuladores de
 vetor. O primeiro subconjunto interprocedural propaga um parâmetro linear entre funções
 de topo; ausência de prova mantém o caminho persistente.
@@ -111,7 +111,9 @@ load/store direto. O coletor não escaneia a pilha nativa.
 Os nomes a seguir aparecem em documentos históricos, mas ainda não são crates do
 workspace:
 
-- `clojure-ir`: HIR/LIR e passes próprios;
+- `clojure-ir`: optional verified optimization IR and compiler-owned passes specified
+  by [OPTIMIZATION_IR_SPEC](OPTIMIZATION_IR_SPEC.md) and
+  [ADR-0014](adr/0014-optional-optimization-ir.md);
 - `clojure-macroexpander`: macros de usuário em build-time;
 - `clojure-loader` e `clojure-project`: namespaces e projetos multi-arquivo;
 - `clojure-ffi`: interop C;

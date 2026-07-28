@@ -99,6 +99,10 @@
       "features.coreTitle": "Core compilado",
       "features.coreBody":
         "26 funções, incluindo <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> e <code>comp</code>.",
+      "features.integrationTag": "Integração nativa",
+      "features.integrationTitle": "Módulos e HTTP em memória",
+      "features.integrationBody":
+        "Fontes locais multi-arquivo, namespaces isolados, roteamento e interceptors síncronos com parsing e serialização HTTP.",
       "benchmarks.kicker": "Desempenho verificável",
       "benchmarks.title": "Nativo e JVM, caso a caso.",
       "benchmarks.lead":
@@ -140,7 +144,7 @@
       "benchmarks.fullscreenClose": "Sair da tela cheia",
       "honesty.label": "Experimental por design",
       "honesty.bodyHtml":
-        "<strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong> Interop Java, bignums, sequências lazy, namespaces dinâmicos e projetos multi-arquivo continuam fora do caminho nativo atual.",
+        "<strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong> Interop Java, bignums, sequências lazy, namespaces dinâmicos e resolução geral de dependências continuam fora do caminho nativo. Fontes locais multi-arquivo já podem ser carregadas estaticamente.",
       "honesty.status": "v0.0.1 · em evolução",
       "start.kicker": "Comece em minutos",
       "start.title": "Do clone ao binário nativo.",
@@ -262,6 +266,10 @@
       "features.coreTitle": "Core compilado",
       "features.coreBody":
         "26 funciones, entre ellas <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> y <code>comp</code>.",
+      "features.integrationTag": "Integración nativa",
+      "features.integrationTitle": "Módulos y HTTP en memoria",
+      "features.integrationBody":
+        "Fuentes locales multiarchivo, namespaces aislados, enrutamiento e interceptors síncronos con análisis y serialización HTTP.",
       "benchmarks.kicker": "Rendimiento verificable",
       "benchmarks.title": "Nativo y JVM, caso por caso.",
       "benchmarks.lead":
@@ -303,7 +311,7 @@
       "benchmarks.fullscreenClose": "Salir de pantalla completa",
       "honesty.label": "Experimental por diseño",
       "honesty.bodyHtml":
-        "<strong>Este proyecto aún no sustituye a Clojure/JVM.</strong> La interoperabilidad Java, bignums, secuencias lazy, namespaces dinámicos y proyectos multiarchivo siguen fuera de la ruta nativa actual.",
+        "<strong>Este proyecto aún no sustituye a Clojure/JVM.</strong> La interoperabilidad Java, bignums, secuencias lazy, namespaces dinámicos y la resolución general de dependencias siguen fuera de la ruta nativa. Las fuentes locales multiarchivo ya pueden cargarse de forma estática.",
       "honesty.status": "v0.0.1 · en evolución",
       "start.kicker": "Empieza en minutos",
       "start.title": "Del clon al binario nativo.",
@@ -425,6 +433,10 @@
       "features.coreTitle": "Compiled core",
       "features.coreBody":
         "26 functions including <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code>, and <code>comp</code>.",
+      "features.integrationTag": "Native integration",
+      "features.integrationTitle": "Modules and in-memory HTTP",
+      "features.integrationBody":
+        "Static local multi-file sources, isolated namespaces, routing, and synchronous interceptors with HTTP parsing and serialization.",
       "benchmarks.kicker": "Verifiable performance",
       "benchmarks.title": "Native and JVM, case by case.",
       "benchmarks.lead":
@@ -466,7 +478,7 @@
       "benchmarks.fullscreenClose": "Exit fullscreen",
       "honesty.label": "Experimental by design",
       "honesty.bodyHtml":
-        "<strong>This project is not yet a replacement for Clojure/JVM.</strong> Java interop, bignums, lazy sequences, dynamic namespaces, and multi-file projects remain outside the current native path.",
+        "<strong>This project is not yet a replacement for Clojure/JVM.</strong> Java interop, bignums, lazy sequences, dynamic namespaces, and general dependency resolution remain outside the native path. Local multi-file sources can now be loaded statically.",
       "honesty.status": "v0.0.1 · evolving",
       "start.kicker": "Start in minutes",
       "start.title": "From clone to native binary.",
@@ -588,6 +600,10 @@
       "features.coreTitle": "Core compilé",
       "features.coreBody":
         "26 fonctions, dont <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> et <code>comp</code>.",
+      "features.integrationTag": "Intégration native",
+      "features.integrationTitle": "Modules et HTTP en mémoire",
+      "features.integrationBody":
+        "Sources locales multi-fichiers statiques, namespaces isolés, routage et interceptors synchrones avec analyse et sérialisation HTTP.",
       "benchmarks.kicker": "Performance vérifiable",
       "benchmarks.title": "Natif et JVM, cas par cas.",
       "benchmarks.lead":
@@ -629,7 +645,7 @@
       "benchmarks.fullscreenClose": "Quitter le plein écran",
       "honesty.label": "Expérimental par conception",
       "honesty.bodyHtml":
-        "<strong>Ce projet ne remplace pas encore Clojure/JVM.</strong> L'interop Java, les bignums, les séquences lazy, les namespaces dynamiques et les projets multi-fichiers restent hors de la voie native actuelle.",
+        "<strong>Ce projet ne remplace pas encore Clojure/JVM.</strong> L'interop Java, les bignums, les séquences lazy, les namespaces dynamiques et la résolution générale des dépendances restent hors de la voie native. Les sources locales multi-fichiers peuvent désormais être chargées statiquement.",
       "honesty.status": "v0.0.1 · en évolution",
       "start.kicker": "Démarrez en quelques minutes",
       "start.title": "Du clone au binaire natif.",
@@ -751,6 +767,10 @@
       "features.coreTitle": "Скомпилированный core",
       "features.coreBody":
         "26 функций, включая <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>range</code>, <code>into</code> и <code>comp</code>.",
+      "features.integrationTag": "Нативная интеграция",
+      "features.integrationTitle": "Модули и HTTP в памяти",
+      "features.integrationBody":
+        "Статическая загрузка локальных многофайловых исходников, изолированные пространства имён, маршрутизация и синхронные interceptors с разбором и сериализацией HTTP.",
       "benchmarks.kicker": "Проверяемая производительность",
       "benchmarks.title": "Нативный код и JVM — тест за тестом.",
       "benchmarks.lead":
@@ -792,7 +812,7 @@
       "benchmarks.fullscreenClose": "Выйти из полноэкранного режима",
       "honesty.label": "Экспериментальный по замыслу",
       "honesty.bodyHtml":
-        "<strong>Проект пока не заменяет Clojure/JVM.</strong> Java interop, bignums, ленивые последовательности, динамические namespaces и многофайловые проекты остаются за пределами текущего нативного пути.",
+        "<strong>Проект пока не заменяет Clojure/JVM.</strong> Java interop, bignums, ленивые последовательности, динамические namespaces и общая система разрешения зависимостей остаются за пределами нативного пути. Локальные многофайловые исходники уже можно загружать статически.",
       "honesty.status": "v0.0.1 · развивается",
       "start.kicker": "Начните за несколько минут",
       "start.title": "От клонирования до нативного бинарного файла.",
@@ -910,6 +930,10 @@
       "features.coreTitle": "已编译的 core",
       "features.coreBody":
         "包含 26 个函数，例如 <code>map</code>、<code>filter</code>、<code>reduce</code>、<code>range</code>、<code>into</code> 和 <code>comp</code>。",
+      "features.integrationTag": "原生集成",
+      "features.integrationTitle": "模块与内存 HTTP",
+      "features.integrationBody":
+        "静态加载本地多文件源码，隔离命名空间，并提供路由、同步 interceptors、HTTP 解析与序列化。",
       "benchmarks.kicker": "可验证的性能",
       "benchmarks.title": "原生与 JVM，逐项对比。",
       "benchmarks.lead":
@@ -948,7 +972,7 @@
       "benchmarks.fullscreenClose": "退出全屏",
       "honesty.label": "有意保持实验性",
       "honesty.bodyHtml":
-        "<strong>本项目目前还不能替代 Clojure/JVM。</strong> Java interop、bignums、惰性序列、动态 namespaces 和多文件项目仍不在当前原生路径的范围内。",
+        "<strong>本项目目前还不能替代 Clojure/JVM。</strong> Java interop、bignums、惰性序列、动态 namespaces 和通用依赖解析仍不在原生路径范围内。本地多文件源码现在可以静态加载。",
       "honesty.status": "v0.0.1 · 持续演进",
       "start.kicker": "几分钟即可开始",
       "start.title": "从克隆到原生二进制文件。",

@@ -4,7 +4,7 @@ Este diretório reúne os guias correntes do `clojure-compiler` e a página publ
 GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzido se chama
 `clojure-native`.
 
-> Snapshot documentado: [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> Snapshot documentado: [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
 > em 2026-07-28. Consulte [SNAPSHOT.md](SNAPSHOT.md) para distinguir o HEAD auditado do
 > commit do compilador medido.
 
@@ -18,6 +18,7 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 | [Snapshot](SNAPSHOT.md) | HEAD auditado, mudanças incluídas e benchmark de referência |
 | [Especificações](../specs/README.md) | escopo da linguagem, decisões, planos e ADRs |
 | [Connector Pedestal](../specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | alvo planejado de HTTP nativo e compatibilidade por subconjunto |
+| [IR opcional de otimização](../specs/OPTIMIZATION_IR_SPEC.md) | contrato proposto, gates e política de não regressão Cormen |
 | [Conformidade](../specs/conformance/README.md) | contrato executável da matriz A–E |
 | [Benchmarks](../benchmarks/README.md) | 98 cargas de comparação de desempenho Native × JVM |
 

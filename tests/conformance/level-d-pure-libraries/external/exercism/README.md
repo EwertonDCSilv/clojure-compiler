@@ -17,5 +17,5 @@ performance. The only concept exercise currently present in the benchmark suite 
 `annalyns-infiltration`, because it executes successfully on both Native and
 Clojure/JVM and therefore supports a meaningful runtime comparison.
 
-Current state: 1 active case and 12 expected failures. An `xfail` that begins to pass
+Current state: 2 active cases and 11 expected failures. An `xfail` that begins to pass
 breaks the conformance gate until it is reviewed and promoted to `active`.

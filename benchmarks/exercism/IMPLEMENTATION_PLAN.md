@@ -6,17 +6,18 @@ exemplars into an evolving external gate for `clojure-compiler`. It is based on 
 from the [Exercism Clojure Track](https://github.com/exercism/clojure), with full
 provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and was most recently audited
 with compiler
-[`1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
+[`3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
 
 ## Baseline
 
 - 101 reference implementations audited.
 - 13 concept exemplars versioned and checked against upstream before compilation.
 - 493 Clojure files compiled individually across the complete checkout.
-- 8 of the 114 complete official solutions build without changes.
-- 106 stop at a compiler diagnostic.
-- Across all roles, 116 files build and 377 stop at a diagnostic.
-- 13 concept exemplars are executable conformance fixtures: 1 active and 12 xfail.
+- 10 of the 114 complete official solutions build without changes.
+- 104 stop at a compiler diagnostic.
+- Across all roles, 117 files build and 376 stop at a diagnostic.
+- 13 concept exemplars are executable conformance fixtures: 2 active and 11 xfail;
+  3 compile in the looser inventory.
 - 8 useful workloads have separate Native × JVM benchmark adapters.
 - Java interop remains outside the current native language contract.
 

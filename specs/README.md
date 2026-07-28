@@ -9,7 +9,7 @@ Este diretório registra a arquitetura, o escopo e as decisões do compilador na
 nome do produto e do binário é `clojure-native`; o repositório se chama
 `clojure-compiler`.
 
-> Snapshot documentado: [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> Snapshot documentado: [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
 > em 2026-07-28. A política e o benchmark de referência estão em
 > [`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
 
@@ -52,7 +52,7 @@ Em 2026-07-28, o workspace já possui um corte vertical funcional:
   redirecionamento cobertos pela matriz executável.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
-[`tests/conformance/`](../tests/conformance) possui 460 casos: 185 ativos, 243 falhas
+[`tests/conformance/`](../tests/conformance) possui 460 casos: 186 ativos, 242 falhas
 esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
@@ -60,13 +60,15 @@ arquivo.
 
 O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
 fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
-7,71 s nativos contra 22,27 s na JVM; Cormen acumula 26,08 s contra 16,39 s de parede,
-mas 25,97 s contra 31,35 s de CPU. Os 98 checksums são equivalentes. O corpus
+8,16 s nativos contra 23,22 s na JVM; Cormen acumula 30,06 s contra 17,01 s de parede,
+mas 29,95 s contra 32,66 s de CPU. Os 98 checksums são equivalentes. O aumento de 15,3%
+na parede nativa do Cormen contra o snapshot anterior permanece como sinal de regressão
+a confirmar com medições pareadas. O corpus
 externo Exercism audita 101 soluções práticas e 13 exemplares conceituais oficiais:
-8 compilam e 106 registram o primeiro bloqueador. Oito cargas adequadas formam uma
+10 compilam e 104 registram o primeiro bloqueador. Oito cargas adequadas formam uma
 suíte de desempenho Native × JVM separada; os demais casos pertencem ao relatório de
 conformidade. A varredura literal do checkout cobre 493 arquivos Clojure, dos quais
-116 compilam isoladamente.
+117 compilam isoladamente.
 A metodologia,
 ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study.md), em
 [`benchmarks/exercism/`](../benchmarks/exercism) e em
@@ -99,14 +101,16 @@ Ordem sugerida:
 9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
 10. [PEDESTAL_NATIVE_CONNECTOR_SPEC.md](PEDESTAL_NATIVE_CONNECTOR_SPEC.md) — **Planejado**:
     connector HTTP nativo e subconjunto de aplicação compatível com Pedestal.
-11. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
+11. [OPTIMIZATION_IR_SPEC.md](OPTIMIZATION_IR_SPEC.md) — **Planned**: optional,
+    verified optimization IR with a blocking Cormen non-regression gate.
+12. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
     `assoc` persistente e `nth` genérico.
-12. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
-13. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-14. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
+13. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+14. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+15. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
     regressão.
-15. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-16. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+16. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+17. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 
@@ -117,6 +121,8 @@ Documentos operacionais:
 - [optime.md](optime.md) — plano de otimização.
 - [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — decisão e
   resultados de otimização.
+- [adr/0014-optional-optimization-ir.md](adr/0014-optional-optimization-ir.md) —
+  optional IR decision and its mandatory Cormen performance gate.
 
 Para verificar o estado executável sem confundir itens futuros com recursos entregues:
 
@@ -150,6 +156,10 @@ para reproduzir uma medição histórica.
   unitários, integração e gates de cobertura dos crates Rust (proposta).
 - [0012](adr/0012-rust-crate-modularization.md) — modularização incremental dos crates
   Rust e controle da dívida de arquivos gigantes (proposta).
+- [0013](adr/0013-compiled-clojure-pedestal-native-connector.md) — connector
+  Pedestal-compatible escrito em Clojure compilado sobre provider HTTP C (proposta).
+- [0014](adr/0014-optional-optimization-ir.md) — optional, backend-neutral
+  optimization IR that remains disabled by default (proposed).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -163,7 +173,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Valor nativo | fixnums tagueados + ponteiros para objetos GC | especialização/unboxing medidos |
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
-| Otimização | fast paths inteiros, stores diretos, auto-transient intra/interprocedural inicial e hoisting de literais | safepoints, escape geral e otimização do IR |
+| Otimização | fast paths inteiros, stores diretos, auto-transient intra/interprocedural inicial e hoisting de literais | optional verified IR, safepoint liveness, and passes admitted only by the Cormen gate |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
 | Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | output, flush, redirecionamento, texto em arquivo e streams de string | filesystem amplo, binários e reader/EDN completo conforme IO_SPEC |

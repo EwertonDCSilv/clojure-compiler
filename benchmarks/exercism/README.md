@@ -88,12 +88,14 @@ Current compatibility inventory:
 | Corpus | Total | Pass/active | Fail/xfail |
 | --- | ---: | ---: | ---: |
 | Practice reference solutions | 101 | 7 | 94 |
-| Concept conformance cases | 13 | 1 | 12 |
-| **Complete official solutions** | **114** | **8** | **106** |
-| Whole-checkout files | 493 | 116 | 377 |
+| Concept compiler inventory | 13 | 3 | 10 |
+| **Complete official solutions** | **114** | **10** | **104** |
+| Whole-checkout files | 493 | 117 | 376 |
 
 These counts describe compiler coverage, not benchmark results. A failure category is
 only the first blocker; resolving it may expose another unsupported construct.
+The stricter executable conformance state is 2 active and 11 `xfail`: `cars-assemble`
+builds, but its current driver still exposes an unsupported numeric behavior.
 
 The checkout defaults to `~/github/exercism-clojure` and can be changed through
 `EXERCISM_CLOJURE_CHECKOUT` or `--checkout`.

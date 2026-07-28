@@ -3,7 +3,7 @@
 [Índice da documentação](README.md) · [Uso](usage.md) ·
 [Arquitetura](architecture.md) · [Especificações](../specs/README.md)
 
-> Estado auditado no [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
+> Estado auditado no [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
 > Detalhes do snapshot: [SNAPSHOT.md](SNAPSHOT.md).
 
 O repositório `clojure-compiler` implementa um compilador nativo experimental de
@@ -33,6 +33,10 @@ nem bytecode `.class` em tempo de execução.
 - `defrecord`, `defprotocol` e `extend-type`, inclusive dispatch sobre tipos embutidos.
 - Um core compilado com 26 funções, entre elas `map`, `filter`, `reduce`, `range`,
   `into`, `mapv`, `take`, `drop`, `comp`, `concat` e `mapcat`.
+- Loader estático de fontes locais multi-arquivo, com `def`/`defn` isolados por
+  namespace.
+- Primeiro corte HTTP/Pedestal em memória, com request/response, cadeia síncrona de
+  interceptors, roteador determinístico, parser HTTP/1.x e serializador HTTP/1.1.
 
 ## Otimizações entregues
 
@@ -63,7 +67,7 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 460 casos: 185 ativos, 243 falhas esperadas e 32 itens pendentes. D inclui
+Ela possui 460 casos: 186 ativos, 242 falhas esperadas e 32 itens pendentes. D inclui
 bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
 e lacunas executáveis de ecossistema, além de um projeto-alvo de API HTTP Hello World
 em Pedestal. A verificação é offline, não depende de JVM e gera relatórios em
@@ -81,11 +85,13 @@ runtimes. A auditoria de 101 práticas, 13 conceitos e 493 arquivos alimenta a
 conformidade, não os resultados de desempenho. As três suítes exportam CSV com tempo
 de parede, CPU e pico de memória para o nativo e para Clojure/JVM.
 
-No snapshot de referência, Cracking acumula 7,71 s nativos contra 22,27 s na JVM. Cormen
-acumula 26,08 s nativos contra 16,39 s de parede na JVM, mas usa 25,97 s de CPU contra
-31,35 s da JVM. No Exercism em escala 5×, o nativo soma 6,68 s de parede e 6,66 s de
-CPU, contra 4,22 s e 8,00 s na JVM. Os 98 checksums coincidem. Ambiente, repetição e
-valores por caso estão nos relatórios das suítes.
+No snapshot de referência, Cracking acumula 8,16 s nativos contra 23,22 s na JVM. Cormen
+acumula 30,06 s nativos contra 17,01 s de parede na JVM, mas usa 29,95 s de CPU contra
+32,66 s da JVM. No Exercism em escala 5×, o nativo soma 7,08 s de parede e 7,05 s de
+CPU, contra 4,22 s e 8,04 s na JVM. Os 98 checksums coincidem. A parede nativa do
+Cormen subiu 15,3% contra o snapshot anterior; o dado é um sinal a confirmar com
+repetições pareadas, não uma atribuição causal. Ambiente, repetição e valores por caso
+estão nos relatórios das suítes.
 
 Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 
@@ -107,7 +113,8 @@ O compilador ainda não é uma implementação completa de Clojure. Fixnums e fl
 double-boxed já chegam ao caminho compilado, inclusive em aritmética mista; não há
 bignums, ratios nem BigDecimal.
 Também permanecem fora do caminho nativo: macros definidas pelo usuário, sequências
-lazy/infinitas, namespaces dinâmicos, projetos multi-arquivo e interop Java. Exceções
+lazy/infinitas, namespaces dinâmicos, resolução geral de dependências e interop Java.
+Fontes locais multi-arquivo podem ser carregadas estaticamente. Exceções
 explícitas já são capturáveis, mas catches tipados e tradução de falhas fatais do
 runtime ainda não estão disponíveis.
 O runtime já possui streams, arquivos, paths, bytes, operações de filesystem e reader

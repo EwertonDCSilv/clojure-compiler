@@ -4,7 +4,11 @@ Status: **parcialmente implementado**
 
 Escopo principal: `clojure-codegen`, ABI do runtime compilado e testes e2e.
 
-Decisão arquitetural: [ADR-0006](adr/0006-codegen-optimization.md).
+Architectural decisions:
+[ADR-0006](adr/0006-codegen-optimization.md) for guarded fast paths and rooting, and
+[ADR-0014](adr/0014-optional-optimization-ir.md) for the planned optional optimization
+IR. The detailed IR contract is
+[OPTIMIZATION_IR_SPEC.md](OPTIMIZATION_IR_SPEC.md).
 
 Problemas-alvo originais:
 
@@ -18,7 +22,7 @@ rooting continua eager; as seções de liveness/safepoints descrevem o principal
 restante. `CodegenOptions` também já expõe `none`, `speed` e `speed-and-size`, mas
 `none` permanece padrão após regressão medida no gate Cormen.
 
-Ganhos posteriores, revalidados no `HEAD 1dc69b5`, ampliaram o escopo original:
+Ganhos posteriores, revalidados no `HEAD 3e71bc1`, ampliaram o escopo original:
 
 - `mapv` e `into` constroem vetores por transiente estrutural;
 - acumuladores frescos de `loop` podem ser promovidos automaticamente, incluindo o
@@ -26,11 +30,15 @@ Ganhos posteriores, revalidados no `HEAD 1dc69b5`, ampliaram o escopo original:
 - vetores literais constantes de imediatos são cacheados por site e registrados como
   roots permanentes (`1ca1d79`).
 
-Na rodada completa mais recente, o Cormen chegou a 26,08 s de parede e 25,97 s de CPU,
-contra 16,39 s e 31,35 s na JVM medida na mesma revisão. Essas entregas não implementam rooting por
-liveness, tuplas de retorno sem heap nem uma IR própria. A análise completa está na
+Na rodada completa mais recente, o Cormen chegou a 30,06 s de parede e 29,95 s de CPU,
+contra 17,01 s e 32,66 s na JVM medida na mesma revisão. A parede nativa aumentou 15,3%
+contra o snapshot anterior; o sinal deve ser confirmado pelo gate pareado da ADR-0014
+antes de qualquer atribuição. Essas entregas não implementam rooting por liveness,
+tuplas de retorno sem heap nem uma IR própria. A análise completa está na
 [ADR-0009](adr/0009-benchmark-performance-study.md), e a decisão interprocedural na
-[ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md).
+[ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md). The planned verified IR and
+its blocking Cormen non-regression rules are defined by
+[ADR-0014](adr/0014-optional-optimization-ir.md).
 
 Este plano mantém a representação tagged e o coletor mark-sweep preciso, não-móvel e
 single-thread. Não troca o GC nem muda a semântica da linguagem.

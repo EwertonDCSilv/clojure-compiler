@@ -3,7 +3,7 @@
 [Índice da documentação](README.md) · [Visão geral](overview.md) ·
 [Arquitetura](architecture.md) · [README em português](../README.pt-BR.md)
 
-> Comandos revisados no [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
+> Comandos revisados no [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
 > Veja o [snapshot documentado](SNAPSHOT.md).
 
 O repositório se chama `clojure-compiler`; os comandos abaixo usam o binário
@@ -69,7 +69,7 @@ make install BINDIR=/opt/clojure-native/bin
 | `make quality` | formato, lints Rust/Clojure e testes do workspace |
 | `make coverage` | gates globais e por arquivo |
 | `make compatibility` | matriz de conformidade A–E |
-| `make benchmarks` | 60 casos Cracking, 30 Cormen e 7 Exercism |
+| `make benchmarks` | 60 casos Cracking, 30 Cormen e 8 Exercism |
 | `make benchmarks-compare` | comparação nativo × Clojure/JVM AOT |
 | `make all` | qualidade, cobertura, compatibilidade e benchmarks completos |
 | `make ci` | mesmos comandos dos jobs do GitHub Actions |

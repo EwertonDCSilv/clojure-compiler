@@ -1457,7 +1457,7 @@ a0036f063f0cc660847172c8714324cc3948d9091f6f335ae842674a4b55c238  level-d-pure-l
 0d2236fd300ba207b5ebb49579eaa2c5c85d2ace43af4f3b63e7db38bf09544a  level-d-pure-libraries/external/exercism/log-levels/case.toml
 c6acd0e0445b564d0d6ffa6481f533751f30b90a022964c0c6455ec6d893d811  level-d-pure-libraries/external/exercism/log-levels/expected.stdout
 5af54942bb8ec202fd6a00f55c9811e2c6761144f536ee7a12942d72849714c8  level-d-pure-libraries/external/exercism/log-levels/input.clj
-0c9ee2613db4547a08cec15ff1a442b990c0973d7436ef2aabb7be5d1763ee76  level-d-pure-libraries/external/exercism/lucians-luscious-lasagna/case.toml
+46d58f7d1780eeb48bb7cea43c5aaee0d2d652ec102751965e1f23fc0789e3ea  level-d-pure-libraries/external/exercism/lucians-luscious-lasagna/case.toml
 6e143307e5312a0497ef0891f0de28274280a952fdbe43c0d9e3fe2734db3f77  level-d-pure-libraries/external/exercism/lucians-luscious-lasagna/expected.stdout
 a494e5af720a9aea57b496cb4b35fcb27707c09691a5bcccd0f3a2d37fd646c7  level-d-pure-libraries/external/exercism/lucians-luscious-lasagna/input.clj
 3ee25b5664114ff8aa40266be2bf485b065cd37f37dff9646e5333f549792fb0  level-d-pure-libraries/external/exercism/squeaky-clean/case.toml

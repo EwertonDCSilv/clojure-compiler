@@ -10,14 +10,14 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **460 cases** — 185 active, 243 expected failures, and 32 pending.
+Current inventory: **460 cases** — 186 active, 242 expected failures, and 32 pending.
 The I/O inventory remains intentionally incremental. Output, flushing, dynamic
 redirection, `slurp`/`spit`, `read-string`, and string-backed streams have active
 coverage; the remaining `xfail` cases keep the full proposed I/O gate from being
 reported as delivered.
 
 The 13 official Exercism concept exemplars are included at Level D as an external
-language/stdlib corpus: 1 is active and 12 are `xfail`. They verify observable support
+language/stdlib corpus: 2 are active and 11 are `xfail`. They verify observable support
 and promotion state; they do not measure execution performance. Native × JVM timing,
 CPU and memory comparisons remain in the separate
 [benchmark catalog](../../benchmarks/README.md).
