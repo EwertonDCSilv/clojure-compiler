@@ -151,6 +151,8 @@ static void gc_mark(Value v) {
             v = tv->tail; /* itera o tail */
         } else if (o->type == T_TBOX) {
             v = ((TBox *)v)->inner; /* itera o valor interno */
+        } else if (o->type == T_READER) {
+            v = ((Reader *)v)->src; /* itera a fonte (string ou NIL) */
         } else if (o->type == T_TNODE) {
             TNode *nd = (TNode *)v;
             gc_mark(nd->key);

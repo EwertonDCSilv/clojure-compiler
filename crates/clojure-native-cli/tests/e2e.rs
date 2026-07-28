@@ -435,6 +435,31 @@ fn binding_rebinds_and_restores_dynamic_vars() {
 }
 
 #[test]
+fn read_line_from_with_in_str() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-0: *in* é Var dinâmica; with-in-str rebinda para um Reader de
+    // string; read-line devolve a linha (sem \n) e nil no fim.
+    let src = r#"(ns rl.core)
+(defn read-all [acc]
+  (let [l (read-line)]
+    (if (nil? l) acc (recur (conj acc l)))))
+(defn -main []
+  (println (with-in-str "um\ndois\ntres" (read-all [])))
+  (println (with-in-str "a\nb" (read-all [])))
+  (println (with-in-str "" (nil? (read-line))))
+  (println (with-in-str "\nx" (read-all []))))
+(-main)"#;
+    let expected = "[um dois tres]\n[a b]\ntrue\n[ x]\n";
+    assert_eq!(build_and_run("read_line_wis", src), expected);
+    assert_eq!(
+        build_and_run_env("read_line_wis_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

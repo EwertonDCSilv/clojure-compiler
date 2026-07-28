@@ -224,6 +224,8 @@ struct Runtime {
     with_out_str: FuncId,     // (thunk)->string
     var_get: FuncId,          // (id)->valor da Var dinâmica
     with_binding: FuncId,     // (id,nv,thunk)->valor do corpo
+    read_line: FuncId,        // ()->string|nil (lê linha de *in*)
+    string_reader: FuncId,    // (string)->reader
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -567,6 +569,13 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         with_out_str: una(m, "cljn_with_out_str"),
         var_get: una(m, "cljn_var_get"),
         with_binding: ternary(m, "cljn_with_binding"),
+        read_line: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_read_line", Linkage::Import, &s)
+                .unwrap()
+        },
+        string_reader: una(m, "cljn_string_reader"),
         transient: una(m, "cljn_transient"),
         persistent_bang: una(m, "cljn_persistent_bang"),
         conj_bang: bin(m, "cljn_conj_bang"),
@@ -2270,6 +2279,8 @@ impl<'a> FnGen<'a> {
             Prim::WithOutStr => self.una(self.rt.with_out_str, args),
             Prim::VarGet => self.una(self.rt.var_get, args),
             Prim::WithBinding => self.tern(self.rt.with_binding, args),
+            Prim::ReadLine => Ok(self.call0(self.rt.read_line)),
+            Prim::StringReader => self.una(self.rt.string_reader, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

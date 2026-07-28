@@ -143,6 +143,8 @@ pub enum Prim {
     WithOutStr,
     VarGet,
     WithBinding,
+    ReadLine,
+    StringReader,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -151,6 +153,7 @@ fn dyn_var_id(name: &str) -> Option<i64> {
         "*out*" => Some(0),
         "*err*" => Some(1),
         "*flush-on-newline*" => Some(2),
+        "*in*" => Some(3),
         _ => None,
     }
 }
@@ -952,6 +955,22 @@ impl<'a> Analyzer<'a> {
                 })
             }
             "binding" => self.analyze_binding(args, span),
+            "with-in-str" => {
+                // (with-in-str s corpo...) — rebinda *in* a um Reader sobre s.
+                if args.is_empty() {
+                    return Err(unsupported("with-in-str requer a string de entrada", span));
+                }
+                let s = self.analyze(&args[0], false)?;
+                let reader = Ast::Call {
+                    callee: Callee::Prim(Prim::StringReader),
+                    args: vec![s],
+                };
+                let body_fn = self.make_lambda(vec![], args[1..].to_vec(), span)?;
+                Ok(Ast::Call {
+                    callee: Callee::Prim(Prim::WithBinding),
+                    args: vec![Ast::Int(3), reader, body_fn], // 3 = *in*
+                })
+            }
             "__cljn-with-binding" => {
                 // interno (desugar de binding): (id-int val thunk).
                 let id = self.analyze(&args[0], false)?;
@@ -1766,6 +1785,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "spit" => Prim::Spit,
         "file-exists?" => Prim::FileExists,
         "getenv" => Prim::Getenv,
+        "read-line" => Prim::ReadLine,
         _ => return None,
     })
 }
@@ -1823,6 +1843,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::WithOutStr // idem: só via forma especial
         | Prim::VarGet // sintetizada (leitura de Var dinâmica)
         | Prim::WithBinding // sintetizada (desugar de binding)
+        | Prim::ReadLine // 0-ária; use (fn [] (read-line)) como valor
+        | Prim::StringReader // sintetizada (with-in-str)
         | Prim::Print => return None,
     })
 }
@@ -1863,6 +1885,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::WithOutStr => n == 1,
         Prim::VarGet => n == 1,
         Prim::WithBinding => n == 3,
+        Prim::ReadLine => n == 0,
+        Prim::StringReader => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

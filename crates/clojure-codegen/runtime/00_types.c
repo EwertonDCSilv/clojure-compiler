@@ -38,7 +38,7 @@ typedef intptr_t Value;
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
        T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19,
-       T_WRITER = 20 };
+       T_WRITER = 20, T_READER = 21 };
 
 typedef struct Obj {
     uint8_t type;
@@ -78,6 +78,10 @@ typedef struct { Obj h; } Edit;             /* T_EDIT: token único de posse */
  * direto; kind string acumula num buffer (base de with-out-str). */
 enum { WR_STDOUT = 0, WR_STDERR = 1, WR_STRING = 2 };
 typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; } Writer; /* T_WRITER */
+/* Reader (ADR-0007): fonte de entrada de read-line. kind stdin lê do stdin; kind
+ * string lê de `src` (uma Str) a partir do cursor `pos`. */
+enum { RD_STDIN = 0, RD_STRING = 1 };
+typedef struct { Obj h; int64_t kind; Value src; int64_t pos; } Reader; /* T_READER */
 typedef struct { Obj h; Value inner; } TBox; /* T_TBOX (mapa/set transiente) */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore
