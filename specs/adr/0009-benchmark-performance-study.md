@@ -228,3 +228,29 @@ reduzir operações persistentes e alocações intermediárias é uma alavanca r
 necessária para os vetores efêmeros interprocedurais restantes. A fotografia completa,
 as três repetições e os valores por caso estão no
 [relatório Cormen](../../benchmarks/cormen/results/README.md).
+
+## 10. Acompanhamento após linearidade interprocedural e hoisting de literais
+
+Os commits `e87456e` e `1ca1d79` implementaram, respectivamente, o primeiro padrão de
+acumulador linear interprocedural da ADR-0010 e o cache de vetores literais constantes
+compostos apenas por imediatos. A nova coleta manteve escala 25×, `--opt-level none`,
+as referências JVM anteriores e o protocolo de três rodadas completas.
+
+| Métrica Cormen | `663d2d4` | `1ca1d79` | Variação |
+| --- | ---: | ---: | ---: |
+| Tempo de parede acumulado | 36,21 s | 29,45 s | -18,67% |
+| Tempo de CPU acumulado | 36,07 s | 29,30 s | -18,77% |
+| Mediana `wall_speedup` | 0,726× | 0,958× | +32,0% |
+| Mediana `cpu_speedup` | 1,515× | 1,920× | +26,7% |
+| Mediana da razão RSS JVM/nativo | 20,297× | 26,296× | +29,6% |
+
+O resultado muda qualitativamente a leitura de CPU: o nativo passa de 36,07 s contra
+32,61 s da JVM para **29,30 s**, 10,1% menos CPU acumulada, e vence 19 dos 30 casos
+nessa métrica. Em parede ainda perde no agregado (29,45 s contra 16,91 s), mas divide
+as vitórias por caso em 15/15 e leva a mediana para perto da paridade.
+
+O ganho aparece nas duas frentes previstas pelo estudo: `zero-one-knapsack`, que
+atravessa a fronteira de função com acumulador linear, cai 48,4%; e literais constantes
+reduzem `horner-polynomial` em 91,8%, `prefix-range-sums` em 81,8% e `counting-sort` em
+65,5%. A regressão agregada de 7,7% no capítulo de grafos, concentrada em BFS/DFS,
+permanece como sinal para investigação, sem desfazer o ganho dos outros cinco capítulos.
