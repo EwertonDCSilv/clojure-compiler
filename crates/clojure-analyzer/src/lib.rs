@@ -149,6 +149,9 @@ pub enum Prim {
     IntOf,
     CharP,
     ReadChar,
+    PathJoin,
+    FileName,
+    Parent,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -1798,6 +1801,9 @@ fn prim_of(name: &str) -> Option<Prim> {
         "char" => Prim::CharOf,
         "int" => Prim::IntOf,
         "char?" => Prim::CharP,
+        "path-join" => Prim::PathJoin,
+        "file-name" => Prim::FileName,
+        "parent" => Prim::Parent,
         _ => return None,
     })
 }
@@ -1824,6 +1830,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::CharOf
         | Prim::IntOf
         | Prim::CharP
+        | Prim::FileName
+        | Prim::Parent
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1844,6 +1852,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::ConjBang
         | Prim::DissocBang
         | Prim::Spit
+        | Prim::PathJoin
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -1905,6 +1914,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ReadChar => n == 0,
         Prim::StringReader => n == 1,
         Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
+        Prim::PathJoin => n == 2,
+        Prim::FileName | Prim::Parent => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

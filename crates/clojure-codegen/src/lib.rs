@@ -230,6 +230,9 @@ struct Runtime {
     int_of: FuncId,           // (char|int)->int
     charp: FuncId,            // (x)->bool
     read_char: FuncId,        // ()->char|nil
+    path_join: FuncId,        // (a,b)->string
+    file_name: FuncId,        // (p)->string
+    parent: FuncId,           // (p)->string|nil
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -583,6 +586,9 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         char_of: una(m, "cljn_char"),
         int_of: una(m, "cljn_int"),
         charp: una(m, "cljn_charp"),
+        path_join: bin(m, "cljn_path_join"),
+        file_name: una(m, "cljn_file_name"),
+        parent: una(m, "cljn_parent"),
         read_char: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -2302,6 +2308,9 @@ impl<'a> FnGen<'a> {
             Prim::IntOf => self.una(self.rt.int_of, args),
             Prim::CharP => self.una(self.rt.charp, args),
             Prim::ReadChar => Ok(self.call0(self.rt.read_char)),
+            Prim::PathJoin => self.bin(self.rt.path_join, args),
+            Prim::FileName => self.una(self.rt.file_name, args),
+            Prim::Parent => self.una(self.rt.parent, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

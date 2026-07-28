@@ -487,6 +487,27 @@ fn char_type_literals_conversion_and_read_char() {
 }
 
 #[test]
+fn path_helpers_join_name_parent() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-1: helpers de caminho POSIX (puramente textuais).
+    let src = r#"(ns p.core)
+(defn -main []
+  (println (path-join "/a/b" "c.txt") (path-join "/a/b/" "c") (path-join "x" "y") (path-join "/a" "/abs"))
+  (println (file-name "/a/b/c.txt") (file-name "solo"))
+  (println (parent "/a/b/c.txt") (parent "solo") (parent "/x"))
+  (println (file-name (path-join (parent "/a/b/c.txt") "d.txt"))))
+(-main)"#;
+    let expected = "/a/b/c.txt /a/b/c x/y /abs\nc.txt solo\n/a/b nil /\nd.txt\n";
+    assert_eq!(build_and_run("path_helpers", src), expected);
+    assert_eq!(
+        build_and_run_env("path_helpers_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

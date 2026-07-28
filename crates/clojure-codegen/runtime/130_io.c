@@ -101,6 +101,43 @@ Value cljn_getenv(Value name) {
     return v ? cljn_str_from(v, (long)strlen(v)) : NIL;
 }
 
+/* ---------- Path (ADR-0007 / IO-1): manipulação de caminho POSIX ----------
+ * Operações puramente textuais sobre strings (separador '/'). */
+Value cljn_path_join(Value a, Value b) {
+    if (obj_type(a) != T_STR || obj_type(b) != T_STR) die("path-join: esperava strings");
+    Str *sa = (Str *)a, *sb = (Str *)b;
+    if (sb->len > 0 && sb->data[0] == '/') return b; /* b absoluto vence */
+    if (sa->len == 0) return b;
+    size_t alen = sa->len;
+    while (alen > 1 && sa->data[alen - 1] == '/') alen--; /* remove '/' final de a */
+    size_t total = alen + 1 + sb->len;
+    Str *s = (Str *)obj_alloc(sizeof(Str), T_STR); /* pode coletar; a,b rooteados */
+    s->len = total;
+    s->data = xalloc(total ? total : 1);
+    sa = (Str *)a; sb = (Str *)b; /* revalida após possível GC */
+    memcpy(s->data, sa->data, alen);
+    s->data[alen] = '/';
+    memcpy(s->data + alen + 1, sb->data, sb->len);
+    return (Value)s;
+}
+Value cljn_file_name(Value p) {
+    if (obj_type(p) != T_STR) die("file-name: esperava string");
+    Str *s = (Str *)p;
+    size_t i = s->len;
+    while (i > 0 && s->data[i - 1] != '/') i--;
+    return cljn_str_from(s->data + i, (long)(s->len - i)); /* GC ok: p rooteado */
+}
+Value cljn_parent(Value p) {
+    if (obj_type(p) != T_STR) die("parent: esperava string");
+    Str *s = (Str *)p;
+    size_t i = s->len;
+    while (i > 0 && s->data[i - 1] != '/') i--;
+    if (i == 0) return NIL; /* sem separador → sem pai */
+    size_t end = i;
+    while (end > 1 && s->data[end - 1] == '/') end--; /* mantém "/" da raiz */
+    return cljn_str_from(s->data, (long)end);
+}
+
 /* (with-out-str thunk) — roda o thunk (fn de 0 arg) com *out* rebindado a um Writer
  * de string e devolve o texto acumulado. Restaura *out* mesmo se o corpo lançar
  * (repropaga a exceção), reusando a pilha de handlers de exceção. `old` e `w` ficam
