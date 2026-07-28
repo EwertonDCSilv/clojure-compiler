@@ -14,12 +14,52 @@ static Value mk_fix_checked(intptr_t r, const char *op) {
     if (r < FIXNUM_MIN || r > FIXNUM_MAX) { fprintf(stderr, "erro: overflow em %s\n", op); exit(1); }
     return MK_FIX(r);
 }
-/* Add two fixnums; exits fatally on type or overflow. */
-Value cljn_add(Value a, Value b) { intptr_t r; if (__builtin_add_overflow(need_fix(a,"+"),need_fix(b,"+"),&r)) die("overflow em +"); return mk_fix_checked(r,"+"); }
-/* Subtract two fixnums; exits fatally on type or overflow. */
-Value cljn_sub(Value a, Value b) { intptr_t r; if (__builtin_sub_overflow(need_fix(a,"-"),need_fix(b,"-"),&r)) die("overflow em -"); return mk_fix_checked(r,"-"); }
-/* Multiply two fixnums; exits fatally on type or overflow. */
-Value cljn_mul(Value a, Value b) { intptr_t r; if (__builtin_mul_overflow(need_fix(a,"*"),need_fix(b,"*"),&r)) die("overflow em *"); return mk_fix_checked(r,"*"); }
+/* Box an IEEE-754 double. GC: allocates; heap operands stay rooted by the caller. */
+static Value mk_float(double d) {
+    Float *f = (Float *)obj_alloc(sizeof(Float), T_FLOAT);
+    f->d = d;
+    return (Value)f;
+}
+/* Reinterpret a raw 64-bit pattern as a double and box it (float literals). */
+Value cljn_float_from_bits(Value bits) {
+    double d;
+    int64_t raw = (int64_t)bits;
+    memcpy(&d, &raw, sizeof d);
+    return mk_float(d);
+}
+/* Coerce a numeric Value to double; type errors are fatal. */
+static double num_to_double(Value v, const char *op) {
+    if (IS_FIX(v)) return (double)FIX(v);
+    if (obj_type(v) == T_FLOAT) return ((Float *)v)->d;
+    fprintf(stderr, "erro: argumento não-numérico em %s\n", op); exit(1);
+}
+/* Add: fixnum fast path; otherwise promote to double. */
+Value cljn_add(Value a, Value b) {
+    if (IS_FIX(a) && IS_FIX(b)) { intptr_t r; if (__builtin_add_overflow(FIX(a),FIX(b),&r)) die("overflow em +"); return mk_fix_checked(r,"+"); }
+    return mk_float(num_to_double(a,"+") + num_to_double(b,"+"));
+}
+/* Subtract: fixnum fast path; otherwise promote to double. */
+Value cljn_sub(Value a, Value b) {
+    if (IS_FIX(a) && IS_FIX(b)) { intptr_t r; if (__builtin_sub_overflow(FIX(a),FIX(b),&r)) die("overflow em -"); return mk_fix_checked(r,"-"); }
+    return mk_float(num_to_double(a,"-") - num_to_double(b,"-"));
+}
+/* Multiply: fixnum fast path; otherwise promote to double. */
+Value cljn_mul(Value a, Value b) {
+    if (IS_FIX(a) && IS_FIX(b)) { intptr_t r; if (__builtin_mul_overflow(FIX(a),FIX(b),&r)) die("overflow em *"); return mk_fix_checked(r,"*"); }
+    return mk_float(num_to_double(a,"*") * num_to_double(b,"*"));
+}
+/* Divide: exact fixnum quotient when divisible, otherwise a double. */
+Value cljn_div(Value a, Value b) {
+    if (IS_FIX(a) && IS_FIX(b)) {
+        intptr_t x = FIX(a), y = FIX(b);
+        if (y == 0) die("divisão por zero");
+        if (x % y == 0 && !(x == FIXNUM_MIN && y == -1)) return mk_fix_checked(x / y, "/");
+        return mk_float((double)x / (double)y);
+    }
+    double y = num_to_double(b, "/");
+    if (y == 0.0) die("divisão por zero");
+    return mk_float(num_to_double(a, "/") / y);
+}
 /* Return truncating fixnum quotient; divide-by-zero and overflow are fatal. */
 Value cljn_quot(Value a, Value b) { intptr_t y=need_fix(b,"quot"); if(y==0) die("divisão por zero"); intptr_t x=need_fix(a,"quot"); if(x==FIXNUM_MIN&&y==-1) die("overflow em quot"); return mk_fix_checked(x/y,"quot"); }
 /* Return floored-modulus fixnum; divide-by-zero and type errors are fatal. */
@@ -29,20 +69,26 @@ Value cljn_mod(Value a, Value b) {
     if (r!=0 && ((r<0)!=(y<0))) r+=y;
     return mk_fix_checked(r,"mod");
 }
-/* Increment a fixnum; exits fatally on type or overflow. */
-Value cljn_inc(Value a) { intptr_t r; if(__builtin_add_overflow(need_fix(a,"inc"),(intptr_t)1,&r)) die("overflow em inc"); return mk_fix_checked(r,"inc"); }
-/* Decrement a fixnum; exits fatally on type or overflow. */
-Value cljn_dec(Value a) { intptr_t r; if(__builtin_sub_overflow(need_fix(a,"dec"),(intptr_t)1,&r)) die("overflow em dec"); return mk_fix_checked(r,"dec"); }
+/* Increment: fixnum fast path; otherwise promote to double. */
+Value cljn_inc(Value a) {
+    if (IS_FIX(a)) { intptr_t r; if(__builtin_add_overflow(FIX(a),(intptr_t)1,&r)) die("overflow em inc"); return mk_fix_checked(r,"inc"); }
+    return mk_float(num_to_double(a,"inc") + 1.0);
+}
+/* Decrement: fixnum fast path; otherwise promote to double. */
+Value cljn_dec(Value a) {
+    if (IS_FIX(a)) { intptr_t r; if(__builtin_sub_overflow(FIX(a),(intptr_t)1,&r)) die("overflow em dec"); return mk_fix_checked(r,"dec"); }
+    return mk_float(num_to_double(a,"dec") - 1.0);
+}
 
 static Value b2v(int b) { return b ? TRUEV : FALSEV; }
-/* Return tagged boolean `a < b`; both operands must be fixnums. */
-Value cljn_lt(Value a, Value b) { return b2v(need_fix(a,"<")<need_fix(b,"<")); }
-/* Return tagged boolean `a <= b`; both operands must be fixnums. */
-Value cljn_le(Value a, Value b) { return b2v(need_fix(a,"<=")<=need_fix(b,"<=")); }
-/* Return tagged boolean `a > b`; both operands must be fixnums. */
-Value cljn_gt(Value a, Value b) { return b2v(need_fix(a,">")>need_fix(b,">")); }
-/* Return tagged boolean `a >= b`; both operands must be fixnums. */
-Value cljn_ge(Value a, Value b) { return b2v(need_fix(a,">=")>=need_fix(b,">=")); }
+/* Return tagged boolean `a < b`; fixnum fast path, otherwise as doubles. */
+Value cljn_lt(Value a, Value b) { if (IS_FIX(a)&&IS_FIX(b)) return b2v(FIX(a)<FIX(b)); return b2v(num_to_double(a,"<")<num_to_double(b,"<")); }
+/* Return tagged boolean `a <= b`. */
+Value cljn_le(Value a, Value b) { if (IS_FIX(a)&&IS_FIX(b)) return b2v(FIX(a)<=FIX(b)); return b2v(num_to_double(a,"<=")<=num_to_double(b,"<=")); }
+/* Return tagged boolean `a > b`. */
+Value cljn_gt(Value a, Value b) { if (IS_FIX(a)&&IS_FIX(b)) return b2v(FIX(a)>FIX(b)); return b2v(num_to_double(a,">")>num_to_double(b,">")); }
+/* Return tagged boolean `a >= b`. */
+Value cljn_ge(Value a, Value b) { if (IS_FIX(a)&&IS_FIX(b)) return b2v(FIX(a)>=FIX(b)); return b2v(num_to_double(a,">=")>=num_to_double(b,">=")); }
 
 static int is_seq(int t) { return t == T_CONS || t == T_VEC; }
 static Value seq_nth(Value coll, int t, int64_t i) {
@@ -72,6 +118,8 @@ int cljn_equal_raw(Value a, Value b) {
         Str *x = (Str *)a, *y = (Str *)b;
         return ta == tb && x->len == y->len && memcmp(x->data, y->data, x->len) == 0;
     }
+    /* Floats compare by value; fixnum vs float is unequal, matching Clojure =. */
+    if (ta == T_FLOAT && tb == T_FLOAT) return ((Float *)a)->d == ((Float *)b)->d;
     /* Lists and vectors share element-wise sequential equality. */
     if (is_seq(ta) && is_seq(tb)) {
         int64_t la = seq_len(a, ta), lb = seq_len(b, tb);
@@ -131,15 +179,23 @@ Value cljn_char(Value x) {
     die("char: esperava inteiro ou char");
     return NIL;
 }
-/* Convert a character to its code-point fixnum, or return a fixnum unchanged. */
+/* Convert to a fixnum: char code point, truncated float, or fixnum unchanged. */
 Value cljn_int(Value x) {
     if (IS_CHAR(x)) return MK_FIX((intptr_t)CHAR_CP(x));
     if (IS_FIX(x)) return x;
-    die("int: esperava char ou inteiro");
+    if (obj_type(x) == T_FLOAT) return mk_fix_checked((intptr_t)((Float *)x)->d, "int");
+    die("int: esperava char, inteiro ou float");
     return NIL;
 }
 /* Return tagged boolean indicating whether `x` is an immediate character. */
 Value cljn_charp(Value x) { return b2v(IS_CHAR(x)); }
+/* Coerce a number to a boxed double (fixnum or float). */
+Value cljn_double(Value x) {
+    if (obj_type(x) == T_FLOAT) return x;
+    return mk_float(num_to_double(x, "double"));
+}
+/* Return tagged boolean indicating whether `x` is a boxed float. */
+Value cljn_floatp(Value x) { return b2v(obj_type(x) == T_FLOAT); }
 
 /* Return raw C truthiness: only NIL and FALSEV are false. */
 int cljn_truthy(Value v) { return (v != NIL && v != FALSEV) ? 1 : 0; }

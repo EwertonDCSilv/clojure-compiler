@@ -260,6 +260,10 @@ struct Runtime {
     filep: FuncId,            // (path)->bool
     file_size: FuncId,        // (path)->fixnum
     file_modified: FuncId,    // (path)->fixnum
+    div: FuncId,              // (a,b)->fixnum|float
+    floatp: FuncId,           // (x)->bool
+    double_of: FuncId,        // (x)->float
+    float_from_bits: FuncId,  // (raw_i64)->float (literais)
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -654,6 +658,10 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         filep: una(m, "cljn_filep"),
         file_size: una(m, "cljn_file_size"),
         file_modified: una(m, "cljn_file_modified"),
+        div: bin(m, "cljn_div"),
+        floatp: una(m, "cljn_floatp"),
+        double_of: una(m, "cljn_double"),
+        float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -708,15 +716,12 @@ impl VKind {
 
 /// Tests whether every path of a primitive returns an immediate Value.
 fn prim_imm_result(p: Prim) -> bool {
+    // Add/Sub/Mul/Inc/Dec are excluded: with floats they may return a boxed
+    // (heap) double, so their results must be treated as heap-capable and rooted.
     matches!(
         p,
-        Prim::Add
-            | Prim::Sub
-            | Prim::Mul
-            | Prim::Quot
+        Prim::Quot
             | Prim::Mod
-            | Prim::Inc
-            | Prim::Dec
             | Prim::Eq
             | Prim::Lt
             | Prim::Le
@@ -749,6 +754,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::FileP
             | Prim::FileSize
             | Prim::FileModified
+            | Prim::FloatP
     )
 }
 
@@ -826,7 +832,8 @@ impl<'a> FnGen<'a> {
         use VKind::{Heap, Imm};
         match ast {
             Ast::Int(_) | Ast::Bool(_) | Ast::Nil => Imm,
-            Ast::Str(_)
+            Ast::Float(_) // boxeado no heap
+            | Ast::Str(_)
             | Ast::Keyword(_)
             | Ast::VecLit(_)
             | Ast::SetLit(_)
@@ -1331,6 +1338,14 @@ impl<'a> FnGen<'a> {
             Ast::Int(n) => {
                 let tagged = (*n as i128) << 1 | 1;
                 Flow::Val(self.konst(tagged as i64))
+            }
+            // Boxed float: pass raw bits for the runtime to reinterpret.
+            // It is heap-capable and must satisfy the `expr_pushes` root invariant.
+            Ast::Float(x) => {
+                let bits = self.builder.ins().iconst(types::I64, x.to_bits() as i64);
+                let v = self.call1(self.rt.float_from_bits, bits);
+                self.gc_push_val(v);
+                Flow::Val(v)
             }
             Ast::Bool(b) => Flow::Val(self.konst(if *b { TRUEV } else { FALSEV })),
             Ast::Nil => Flow::Val(self.konst(NIL)),
@@ -2430,6 +2445,9 @@ impl<'a> FnGen<'a> {
             Prim::FileP => self.una(self.rt.filep, args),
             Prim::FileSize => self.una(self.rt.file_size, args),
             Prim::FileModified => self.una(self.rt.file_modified, args),
+            Prim::Div => self.bin(self.rt.div, args),
+            Prim::FloatP => self.una(self.rt.floatp, args),
+            Prim::DoubleOf => self.una(self.rt.double_of, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

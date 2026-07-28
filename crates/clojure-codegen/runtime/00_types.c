@@ -44,7 +44,7 @@ typedef intptr_t Value;
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
        T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19,
-       T_WRITER = 20, T_READER = 21, T_BYTES = 22 };
+       T_WRITER = 20, T_READER = 21, T_BYTES = 22, T_FLOAT = 23 };
 
 typedef struct Obj {
     uint8_t type;
@@ -83,6 +83,8 @@ enum { RD_STDIN = 0, RD_STRING = 1, RD_FILE = 2 };
 typedef struct { Obj h; int64_t kind; Value src; int64_t pos; void *fp; } Reader; /* T_READER; fp=FILE* p/ RD_FILE */
 /* Immutable binary array. GC treats it as a leaf and sweep frees `data`. */
 typedef struct { Obj h; int64_t len; uint8_t *data; } Bytes; /* T_BYTES */
+/* Boxed IEEE-754 double. GC leaf; arithmetic promotes fixnums to this. */
+typedef struct { Obj h; double d; } Float; /* T_FLOAT */
 typedef struct { Obj h; Value inner; } TBox; /* T_TBOX (mapa/set transiente) */
 /* Persistent 32-way bitmapped vector trie. A tail of up to 32 values gives
  * amortized O(1) conj; tree access and updates are O(log32 n). VNode.edit is NIL

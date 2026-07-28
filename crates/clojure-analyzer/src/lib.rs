@@ -24,6 +24,8 @@ pub use expand::expand_all;
 pub enum Ast {
     /// Signed 64-bit integer literal.
     Int(i64),
+    /// IEEE-754 double literal (boxed at runtime).
+    Float(f64),
     /// Boolean literal.
     Bool(bool),
     /// The `nil` literal.
@@ -295,6 +297,12 @@ pub enum Prim {
     FileSize,
     /// File last-modified time in seconds.
     FileModified,
+    /// Division (`/`): exact fixnum quotient when divisible, otherwise a double.
+    Div,
+    /// Test whether a value is a boxed float.
+    FloatP,
+    /// Coerce a number to a boxed double.
+    DoubleOf,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -964,11 +972,8 @@ impl<'a> Analyzer<'a> {
             Form::Nil => Ok(Ast::Nil),
             Form::Bool(b) => Ok(Ast::Bool(*b)),
             Form::Int(n) => Ok(Ast::Int(*n)),
+            Form::Float(x) => Ok(Ast::Float(*x)),
             Form::Str(s) => Ok(Ast::Str(s.clone())),
-            Form::Float(_) => Err(unsupported(
-                "ponto flutuante ainda não é compilável (slice inteiro)",
-                f.span,
-            )),
             Form::Char(c) => Ok(Ast::Call {
                 // Character literals lower through `char` to an immediate code point.
                 callee: Callee::Prim(Prim::CharOf),
@@ -1679,6 +1684,7 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
     match e {
         Ast::Local(x) => *x != s || tail, // A bare `s` is valid only as a tail transfer.
         Ast::Int(_)
+        | Ast::Float(_)
         | Ast::Bool(_)
         | Ast::Nil
         | Ast::Str(_)
@@ -2094,6 +2100,9 @@ fn prim_of(name: &str) -> Option<Prim> {
         "file?" => Prim::FileP,
         "file-size" => Prim::FileSize,
         "file-modified" => Prim::FileModified,
+        "/" => Prim::Div,
+        "float?" => Prim::FloatP,
+        "double" => Prim::DoubleOf,
         _ => return None,
     })
 }
@@ -2138,6 +2147,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::FileP
         | Prim::FileSize
         | Prim::FileModified
+        | Prim::FloatP
+        | Prim::DoubleOf
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -2162,6 +2173,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Bget
         | Prim::SpitBytes
         | Prim::Rename
+        | Prim::Div
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -2237,8 +2249,10 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::DirectoryP
         | Prim::FileP
         | Prim::FileSize
-        | Prim::FileModified => n == 1,
-        Prim::Rename => n == 2,
+        | Prim::FileModified
+        | Prim::FloatP
+        | Prim::DoubleOf => n == 1,
+        Prim::Rename | Prim::Div => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

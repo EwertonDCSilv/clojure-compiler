@@ -613,6 +613,33 @@ fn file_streams_and_with_open() {
 }
 
 #[test]
+fn float_type_arithmetic_and_predicates() {
+    if !have_cc() {
+        return;
+    }
+    // IO-1: boxed floats cover mixed arithmetic, division, comparisons,
+    // predicates/conversions, printing, and survival across GC allocations.
+    let src = r#"(ns f.core)
+(defn media [xs] (/ (reduce + 0.0 xs) (count xs)))
+(defn -main []
+  (println 3.14 1.0 0.5 (- 2.5))
+  (println (+ 1 2.0) (* 3 1.5) (- 10 0.5) (+ 1.5 2.5))
+  (println (/ 6 2) (/ 7 2) (/ 1.0 4) (/ 10.0 4))
+  (println (< 1 1.5) (> 2.0 3) (= 1.0 1.0) (= 1 1.0) (<= 2.5 2.5))
+  (println (float? 1.5) (float? 1) (double 5) (int 3.9))
+  (println (inc 1.5) (dec 2.5) (media [1.0 2.0 3.0 4.0]))
+  (let [x (+ 0.5 0.5) _ (reduce (fn [a i] (cons i a)) (list) (range 400))]
+    (println x)))
+(-main)"#;
+    let expected = "3.14 1.0 0.5 -2.5\n3.0 4.5 9.5 4.0\n3 3.5 0.25 2.5\ntrue false true false true\ntrue false 5.0 3\n2.5 1.5 2.5\n1.0\n";
+    assert_eq!(build_and_run("float_type", src), expected);
+    assert_eq!(
+        build_and_run_env("float_type_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn command_line_args_and_file_metadata() {
     if !have_cc() {
         return;
