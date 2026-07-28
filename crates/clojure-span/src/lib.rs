@@ -1,28 +1,56 @@
-//! Posições de origem: `SourceId`, `Span`, `Spanned<T>` e um `SourceMap` que
-//! resolve offsets de byte para linha/coluna. Base de diagnósticos e stack traces.
+//! Source locations shared by the compiler frontend.
 //!
-//! Ver `specs/ARCHITECTURE.md` (crate `clojure-span`).
+//! [`Span`] and [`Spanned`] preserve half-open UTF-8 byte ranges as source text
+//! moves from the reader into syntax and diagnostics. [`SourceMap`] owns the
+//! corresponding source buffers and converts byte offsets to one-based
+//! character columns for human-readable diagnostics. This crate has no
+//! dependency on Clojure syntax and is the lowest layer of the frontend.
 
 use std::fmt;
 
-/// Identificador de uma fonte registrada no [`SourceMap`].
+/// Numeric handle for a source registered in a [`SourceMap`].
+///
+/// Handles are local to the map that allocated them and are assigned in
+/// insertion order.
 pub type SourceId = u32;
 
-/// Intervalo de bytes `[start, end)` dentro de uma fonte.
+/// Half-open UTF-8 byte range `[start, end)` within one source.
+///
+/// Offsets are bytes, not Unicode scalar values or display columns. Consumers
+/// that slice source text must keep them on UTF-8 boundaries.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
+    /// Source containing this range.
     pub source: SourceId,
+    /// Inclusive start byte offset.
     pub start: u32,
+    /// Exclusive end byte offset.
     pub end: u32,
 }
 
 impl Span {
+    /// Creates a source range.
+    ///
+    /// # Panics
+    ///
+    /// Debug builds panic when `start > end`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clojure_span::Span;
+    ///
+    /// let span = Span::new(0, 4, 7);
+    /// assert_eq!(span.len(), 3);
+    /// ```
     pub fn new(source: SourceId, start: u32, end: u32) -> Self {
         debug_assert!(start <= end);
         Span { source, start, end }
     }
 
-    /// Span vazio em uma posição (útil para nós sintéticos/erros de EOF).
+    /// Creates an empty range at `at`.
+    ///
+    /// Point spans represent synthetic nodes and end-of-file diagnostics.
     pub fn point(source: SourceId, at: u32) -> Self {
         Span {
             source,
@@ -31,7 +59,10 @@ impl Span {
         }
     }
 
-    /// Une dois spans (assume mesma fonte).
+    /// Returns the smallest range covering `self` and `other`.
+    ///
+    /// INVARIANT: callers provide spans from the same source. The method does
+    /// not check source IDs; mixing them produces a meaningless range.
     pub fn to(self, other: Span) -> Span {
         Span {
             source: self.source,
@@ -40,10 +71,12 @@ impl Span {
         }
     }
 
+    /// Returns the range length in bytes.
     pub fn len(self) -> u32 {
         self.end - self.start
     }
 
+    /// Returns whether the range contains no bytes.
     pub fn is_empty(self) -> bool {
         self.start == self.end
     }
@@ -55,18 +88,22 @@ impl fmt::Debug for Span {
     }
 }
 
-/// Um valor anotado com seu span de origem.
+/// Value annotated with the source range that produced it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Spanned<T> {
+    /// Parsed or analyzed value.
     pub node: T,
+    /// Source range associated with `node`.
     pub span: Span,
 }
 
 impl<T> Spanned<T> {
+    /// Associates `node` with `span`.
     pub fn new(node: T, span: Span) -> Self {
         Spanned { node, span }
     }
 
+    /// Transforms the node while preserving its source range.
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
         Spanned {
             node: f(self.node),
@@ -74,6 +111,7 @@ impl<T> Spanned<T> {
         }
     }
 
+    /// Borrows the node while copying its source range.
     pub fn as_ref(&self) -> Spanned<&T> {
         Spanned {
             node: &self.node,
@@ -84,26 +122,32 @@ impl<T> Spanned<T> {
 
 impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Debug foca no nó; o span é ruído na maioria dos dumps.
+        // Keep syntax dumps readable; callers can inspect `.span` explicitly.
         fmt::Debug::fmt(&self.node, f)
     }
 }
 
-/// Linha e coluna 1-indexadas (colunas em caracteres, não bytes).
+/// One-based line and character-column location.
+///
+/// Columns count Unicode scalar values from the start of the line, rather than
+/// UTF-8 bytes or terminal display cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineCol {
+    /// One-based line number.
     pub line: u32,
+    /// One-based Unicode scalar-value column.
     pub col: u32,
 }
 
-/// Uma fonte registrada: nome (caminho) + conteúdo + índice de início de linhas.
+/// Registered source buffer and its precomputed line index.
 struct Source {
     name: String,
     text: String,
-    /// Offset de byte do início de cada linha (line_starts[0] == 0).
+    /// Byte offset of every line start; the first entry is always zero.
     line_starts: Vec<u32>,
 }
 
+/// Builds a byte-offset index in one linear pass over the source.
 fn compute_line_starts(text: &str) -> Vec<u32> {
     let mut starts = vec![0u32];
     for (i, b) in text.bytes().enumerate() {
@@ -114,21 +158,39 @@ fn compute_line_starts(text: &str) -> Vec<u32> {
     starts
 }
 
-/// Registro de todas as fontes compiladas. Resolve spans para linha/coluna e
-/// extrai o trecho de código de uma linha (para renderizar diagnósticos).
+/// Owns compiler source buffers and resolves their byte locations.
+///
+/// Sources remain stable after insertion, so every [`SourceId`] and [`Span`]
+/// stays valid for the lifetime of the map. Line lookup uses a binary search in
+/// the precomputed line-start table.
 #[derive(Default)]
 pub struct SourceMap {
     sources: Vec<Source>,
 }
 
 impl SourceMap {
+    /// Creates an empty source registry.
     pub fn new() -> Self {
         SourceMap {
             sources: Vec::new(),
         }
     }
 
-    /// Registra uma fonte e devolve seu id.
+    /// Registers source text and returns its stable identifier.
+    ///
+    /// # Panics
+    ///
+    /// Panics if more than `u32::MAX` sources are registered.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clojure_span::{SourceMap, Span};
+    ///
+    /// let mut sources = SourceMap::new();
+    /// let id = sources.add("example.clj", "(println :ok)");
+    /// assert_eq!(sources.snippet(Span::new(id, 1, 8)), "println");
+    /// ```
     pub fn add(&mut self, name: impl Into<String>, text: impl Into<String>) -> SourceId {
         let text = text.into();
         let line_starts = compute_line_starts(&text);
@@ -141,24 +203,48 @@ impl SourceMap {
         id
     }
 
+    /// Returns the registered display name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` does not belong to this map.
     pub fn name(&self, id: SourceId) -> &str {
         &self.sources[id as usize].name
     }
 
+    /// Returns the complete registered UTF-8 source text.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` does not belong to this map.
     pub fn text(&self, id: SourceId) -> &str {
         &self.sources[id as usize].text
     }
 
-    /// Fatia de fonte coberta por um span.
+    /// Returns the source slice covered by `span`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source ID is invalid, either offset is out of bounds, or an
+    /// offset is not on a UTF-8 boundary.
     pub fn snippet(&self, span: Span) -> &str {
         let s = &self.sources[span.source as usize];
         &s.text[span.start as usize..span.end as usize]
     }
 
-    /// Resolve um offset de byte para linha/coluna 1-indexadas.
+    /// Resolves a byte offset to a one-based line and character column.
+    ///
+    /// The lookup is `O(log L + C)`, where `L` is the number of lines and `C`
+    /// is the number of Unicode scalar values from the line start to `offset`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source ID is invalid, `offset` is outside the source, or it
+    /// is not on a UTF-8 boundary.
     pub fn line_col(&self, source: SourceId, offset: u32) -> LineCol {
         let s = &self.sources[source as usize];
-        // Maior line_start <= offset.
+        // INVARIANT: line_starts is sorted and begins with zero, so the
+        // insertion point is never zero for an in-range offset.
         let line_idx = match s.line_starts.binary_search(&offset) {
             Ok(i) => i,
             Err(i) => i - 1,
@@ -171,7 +257,11 @@ impl SourceMap {
         }
     }
 
-    /// Texto completo da linha (sem o `\n`) que contém `offset`.
+    /// Returns the complete line containing `offset`, without its newline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source ID is invalid or `offset` is outside the source.
     pub fn line_text(&self, source: SourceId, offset: u32) -> &str {
         let s = &self.sources[source as usize];
         let line_idx = match s.line_starts.binary_search(&offset) {
@@ -198,7 +288,7 @@ mod tests {
         assert_eq!(sm.line_col(id, 0), LineCol { line: 1, col: 1 });
         assert_eq!(sm.line_col(id, 2), LineCol { line: 1, col: 3 });
         assert_eq!(sm.line_col(id, 4), LineCol { line: 2, col: 1 });
-        // '(' de "(x)" está no início da linha 3.
+        // '(' in "(x)" is at the start of the third line.
         assert_eq!(sm.line_col(id, 8), LineCol { line: 3, col: 1 });
         assert_eq!(sm.line_text(id, 9), "(x)");
     }

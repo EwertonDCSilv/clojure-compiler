@@ -1,22 +1,36 @@
-//! `Form`: a representação de dados produzida pelo reader (o "código como dado").
+//! Source-level Clojure forms produced by the reader.
 //!
-//! Bootstrap: nomes de símbolos/keywords são `String` (interning é otimização futura,
-//! ver specs/ARCHITECTURE.md — não começar pela otimização). Todo nó carrega `Span`
-//! via [`clojure_span::Spanned`].
+//! [`Form`] is deliberately structural: lists are not calls and symbols are not
+//! resolved until `clojure-analyzer` consumes them. Every node is wrapped in
+//! [`SForm`] so reader byte ranges survive macro expansion and diagnostics.
+//! Symbols and keywords use owned strings in this bootstrap representation;
+//! this is separate from the tagged native runtime ABI.
 
 use clojure_span::Spanned;
 use std::fmt;
 
+/// A source-level form paired with its UTF-8 byte range.
 pub type SForm = Spanned<Form>;
 
-/// Nome qualificado opcionalmente por namespace: `ns/name` ou apenas `name`.
+/// Symbol or keyword name, optionally qualified as `namespace/name`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Name {
+    /// Namespace before the slash, or `None` for an unqualified name.
     pub ns: Option<String>,
+    /// Unqualified name component.
     pub name: String,
 }
 
 impl Name {
+    /// Creates an unqualified name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clojure_syntax::Name;
+    ///
+    /// assert_eq!(Name::simple("map").to_string(), "map");
+    /// ```
     pub fn simple(name: impl Into<String>) -> Self {
         Name {
             ns: None,
@@ -24,6 +38,10 @@ impl Name {
         }
     }
 
+    /// Creates a namespace-qualified name.
+    ///
+    /// The constructor does not validate slash placement; the reader owns token
+    /// syntax validation.
     pub fn qualified(ns: impl Into<String>, name: impl Into<String>) -> Self {
         Name {
             ns: Some(ns.into()),
@@ -47,40 +65,57 @@ impl fmt::Debug for Name {
     }
 }
 
-/// Uma forma lida. `List` em posição de operador vira chamada/forma especial no
-/// analisador; aqui é apenas estrutura.
+/// Structural source form.
+///
+/// A [`Form::List`] is only data at this layer. Operator position, special forms,
+/// lexical bindings, and calls are assigned meaning by `clojure-analyzer`.
 #[derive(Clone, PartialEq)]
 pub enum Form {
+    /// The `nil` literal.
     Nil,
+    /// A boolean literal.
     Bool(bool),
+    /// A signed 64-bit integer literal.
     Int(i64),
+    /// An IEEE-754 double-precision literal.
     Float(f64),
+    /// A Unicode scalar-value character literal.
     Char(char),
+    /// An owned UTF-8 string literal after escape decoding.
     Str(String),
+    /// A symbol that may be namespace-qualified.
     Symbol(Name),
+    /// A keyword that may be namespace-qualified.
     Keyword(Name),
+    /// Parenthesized forms in source order.
     List(Vec<SForm>),
+    /// Bracketed forms in source order.
     Vector(Vec<SForm>),
-    /// Pares chave/valor preservando a ordem de leitura.
+    /// Key/value pairs preserving reader order.
     Map(Vec<(SForm, SForm)>),
+    /// Set elements preserving reader order at this stage.
     Set(Vec<SForm>),
-    /// Metadata de leitura (`^meta form`): a forma com sua metadata anexada.
+    /// Reader metadata (`^meta form`) attached to another form.
     Meta {
+        /// Metadata expression following `^`.
         meta: Box<SForm>,
+        /// Form carrying the metadata.
         form: Box<SForm>,
     },
 }
 
 impl Form {
+    /// Creates an unqualified symbol form.
     pub fn sym(name: &str) -> Form {
         Form::Symbol(Name::simple(name))
     }
 
+    /// Creates an unqualified keyword form.
     pub fn kw(name: &str) -> Form {
         Form::Keyword(Name::simple(name))
     }
 
-    /// Nome da variante, para mensagens de erro.
+    /// Returns a stable human-readable category for diagnostics.
     pub fn kind(&self) -> &'static str {
         match self {
             Form::Nil => "nil",
@@ -99,7 +134,9 @@ impl Form {
         }
     }
 
-    /// Se for `Meta`, devolve a forma subjacente; senão, ela mesma.
+    /// Recursively removes outer metadata wrappers.
+    ///
+    /// Non-metadata forms are returned unchanged by reference.
     pub fn strip_meta(&self) -> &Form {
         match self {
             Form::Meta { form, .. } => form.node.strip_meta(),
@@ -108,7 +145,7 @@ impl Form {
     }
 }
 
-/// Impressão estilo `pr-str` (determinística), usada em dumps e golden tests.
+/// Produces deterministic `pr-str`-like text for dumps and golden tests.
 impl fmt::Display for Form {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -116,7 +153,8 @@ impl fmt::Display for Form {
             Form::Bool(b) => write!(f, "{b}"),
             Form::Int(n) => write!(f, "{n}"),
             Form::Float(x) => {
-                // Sempre com marca de float para não confundir com inteiro.
+                // Preserve an explicit floating-point marker for integral
+                // finite values so dumps do not change the form category.
                 if x.fract() == 0.0 && x.is_finite() {
                     write!(f, "{x:.1}")
                 } else {

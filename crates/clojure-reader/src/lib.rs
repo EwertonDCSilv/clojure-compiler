@@ -1,16 +1,42 @@
-//! Reader de `clojure-native`: texto-fonte → `Vec<SForm>` com spans.
+//! Reads UTF-8 Clojure source into spanned structural forms.
 //!
-//! Escopo (specs/LANGUAGE_SCOPE.md — Reader, coluna MVP): números `i64`/`f64`,
-//! strings, chars, símbolos, keywords, listas/vetores/mapas/sets, metadata `^`,
-//! `quote '`, `deref @`, `var #'`, discard `#_`, anon-fn `#(...)`.
-//! Fora do MVP inicial (erro diagnóstico claro): syntax-quote `` ` ``, unquote,
-//! reader conditionals `#?`, regex `#"..."`, ratios, bignum/bigdec, `::kw`.
+//! [`read_all`] tokenizes one source buffer and returns [`SForm`] values whose
+//! [`Span`] offsets refer to that exact buffer. The reader recognizes numeric,
+//! string, character, symbol, keyword, collection, metadata, quote, dereference,
+//! var-quote, discard, and anonymous-function syntax. It performs no macro
+//! expansion or name resolution.
+//!
+//! Unsupported reader features fail with stable diagnostics rather than being
+//! accepted approximately. These currently include syntax quote, unquote,
+//! reader conditionals, regex literals, ratios, arbitrary-precision numeric
+//! literals, and auto-resolved keywords.
 
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use clojure_span::{SourceId, Span, Spanned};
 use clojure_syntax::{Form, Name, SForm};
 
-/// Lê todas as forms de nível superior de uma fonte.
+/// Reads every top-level form from `text`.
+///
+/// `src` is copied into every returned span and must identify the same text in
+/// the caller's source map. Commas, whitespace, comments, shebang lines, and
+/// discarded forms are treated as trivia.
+///
+/// # Errors
+///
+/// Returns the first lexical or structural error as a [`Diagnostics`]
+/// collection. Successfully read forms before that error are not returned.
+///
+/// # Examples
+///
+/// ```
+/// use clojure_reader::read_all;
+/// use clojure_syntax::Form;
+///
+/// let forms = read_all(7, "(inc 1) :done").unwrap();
+/// assert_eq!(forms.len(), 2);
+/// assert!(matches!(forms[0].node, Form::List(_)));
+/// assert_eq!(forms[0].span.source, 7);
+/// ```
 pub fn read_all(src: SourceId, text: &str) -> Result<Vec<SForm>, Diagnostics> {
     let mut r = Reader::new(src, text);
     let mut forms = Vec::new();
@@ -27,7 +53,7 @@ pub fn read_all(src: SourceId, text: &str) -> Result<Vec<SForm>, Diagnostics> {
             Ok(f) => forms.push(f),
             Err(d) => {
                 diags.push(d);
-                break; // recuperação simples: para no primeiro erro estrutural
+                break; // Recovery is intentionally limited to the first error.
             }
         }
     }
@@ -40,9 +66,9 @@ pub fn read_all(src: SourceId, text: &str) -> Result<Vec<SForm>, Diagnostics> {
 
 struct Reader<'a> {
     src: SourceId,
-    /// (offset de byte, char) para cada caractere; permite spans exatos em UTF-8.
+    /// `(byte offset, scalar value)` pairs preserve exact UTF-8 spans.
     chars: Vec<(u32, char)>,
-    /// Comprimento em bytes da fonte (offset do EOF).
+    /// Source length in bytes, also used as the EOF offset.
     len: u32,
     pos: usize,
     #[allow(dead_code)]
@@ -73,7 +99,7 @@ impl<'a> Reader<'a> {
         self.chars.get(self.pos + 1).map(|&(_, c)| c)
     }
 
-    /// Offset de byte da posição atual (ou EOF).
+    /// Returns the current byte offset, or the source length at EOF.
     fn offset(&self) -> u32 {
         self.chars
             .get(self.pos)
@@ -97,7 +123,10 @@ impl<'a> Reader<'a> {
         Diagnostic::error(code, msg).with_span(span)
     }
 
-    /// Pula whitespace, vírgulas, comentários `;`/shebang `#!` e formas descartadas `#_`.
+    /// Skips whitespace, commas, comments, shebang lines, and `#_` forms.
+    ///
+    /// Discard is recursive because the ignored form is parsed with the normal
+    /// reader, including nested discard macros.
     fn skip_trivia(&mut self) -> Result<(), Diagnostic> {
         loop {
             match self.peek() {
@@ -113,7 +142,7 @@ impl<'a> Reader<'a> {
                     }
                 }
                 Some('#') if self.peek2() == Some('!') => {
-                    // shebang: trata a linha como comentário
+                    // A shebang occupies the same trivia category as a comment.
                     while let Some(c) = self.peek() {
                         self.bump();
                         if c == '\n' {
@@ -122,7 +151,7 @@ impl<'a> Reader<'a> {
                     }
                 }
                 Some('#') if self.peek2() == Some('_') => {
-                    // discard: consome `#_` e a próxima form (que é ignorada)
+                    // Parse the discarded form to preserve delimiter validation.
                     self.bump();
                     self.bump();
                     self.read_form()?;
@@ -192,9 +221,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// `'form` → `(quote form)`, `@form` → `(deref form)`.
+    /// Desugars `'form` to `(quote form)` and `@form` to `(deref form)`.
     fn read_wrapper(&mut self, start: u32, op: &str) -> Result<SForm, Diagnostic> {
-        self.bump(); // consome ' ou @
+        self.bump(); // Consume either quote or dereference.
         let inner = self.read_form()?;
         let span = self.span_from(start);
         let op_form = Spanned::new(Form::sym(op), Span::point(self.src, start));
@@ -216,14 +245,14 @@ impl<'a> Reader<'a> {
     }
 
     fn read_dispatch(&mut self, start: u32) -> Result<SForm, Diagnostic> {
-        self.bump(); // consome '#'
+        self.bump(); // Consume '#'.
         match self.peek() {
             Some('{') => {
                 let (items, span) = self.read_coll(start, '{', '}')?;
                 Ok(Spanned::new(Form::Set(items), span))
             }
             Some('\'') => {
-                // #'x → (var x)
+                // #'x desugars to (var x).
                 self.bump();
                 let inner = self.read_form()?;
                 let span = self.span_from(start);
@@ -253,17 +282,20 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// `#(...)` → `(fn* [%1 %2 ... %&?] (...))`, com `%` canonizado para `%1`.
+    /// Desugars `#(...)` to an `fn*` form with inferred `%N` parameters.
+    ///
+    /// The highest positional placeholder determines fixed arity; `%&` appends
+    /// a rest binding. Bare `%` is canonicalized to `%1`.
     fn read_anon_fn(&mut self, start: u32) -> Result<SForm, Diagnostic> {
         let (body_items, span) = self.read_coll(start, '(', ')')?;
         let body = Spanned::new(Form::List(body_items), span);
 
-        // Descobre a maior aridade posicional e se usa rest (`%&`).
+        // Infer the highest positional placeholder and rest usage first.
         let mut max_pos = 0u32;
         let mut has_rest = false;
         collect_pct(&body, &mut max_pos, &mut has_rest);
 
-        // Reescreve `%` → `%1` no corpo.
+        // Canonicalize `%` only after parameter inference.
         let body = rewrite_pct(body);
 
         let mut params: Vec<SForm> = Vec::new();
@@ -290,7 +322,7 @@ impl<'a> Reader<'a> {
         close: char,
     ) -> Result<(Vec<SForm>, Span), Diagnostic> {
         debug_assert_eq!(self.peek(), Some(open));
-        self.bump(); // consome delimitador de abertura
+        self.bump(); // Consume the opening delimiter.
         let mut items = Vec::new();
         loop {
             self.skip_trivia()?;
@@ -409,12 +441,12 @@ impl<'a> Reader<'a> {
 
     fn read_char(&mut self, start: u32) -> Result<SForm, Diagnostic> {
         self.bump(); // '\'
-                     // Primeiro caractere após a barra é obrigatório.
+                     // A character after the slash is mandatory.
         let first = match self.bump() {
             Some(c) => c,
             None => return Err(self.err("E0015", "`\\` sem caractere", self.span_from(start))),
         };
-        // Se for início de palavra, pode ser um char nomeado (newline, uXXXX, ...).
+        // Alphabetic input may start a named character such as newline or uXXXX.
         if first.is_alphabetic() {
             let mut word = String::new();
             word.push(first);
@@ -485,7 +517,7 @@ impl<'a> Reader<'a> {
         Ok(Spanned::new(Form::Keyword(name), self.span_from(start)))
     }
 
-    /// Lê um átomo: número, `nil`/`true`/`false`, ou símbolo.
+    /// Reads a numeric literal, scalar literal, or symbol.
     fn read_atom(&mut self, start: u32) -> Result<SForm, Diagnostic> {
         let tok = self.read_token_str();
         let span = self.span_from(start);
@@ -581,7 +613,7 @@ fn is_terminator(c: char) -> bool {
         )
 }
 
-/// Divide um token em `ns/name`. `/` só separa se não estiver na borda.
+/// Splits `namespace/name`; a slash at either edge remains part of the name.
 fn parse_name(tok: &str) -> Name {
     if let Some(idx) = tok.find('/') {
         if idx > 0 && idx < tok.len() - 1 {
@@ -591,7 +623,10 @@ fn parse_name(tok: &str) -> Name {
     Name::simple(tok)
 }
 
-/// Coleta a maior posição `%N` e presença de `%&` no corpo de um `#(...)`.
+/// Finds the highest `%N` and whether `%&` occurs in an anonymous function.
+///
+/// INVARIANT: metadata and every collection container are traversed, so
+/// placeholder discovery and rewriting observe the same tree.
 fn collect_pct(f: &SForm, max_pos: &mut u32, has_rest: &mut bool) {
     match &f.node {
         Form::Symbol(n) if n.ns.is_none() => {
@@ -625,7 +660,7 @@ fn collect_pct(f: &SForm, max_pos: &mut u32, has_rest: &mut bool) {
     }
 }
 
-/// Reescreve `%` → `%1` recursivamente.
+/// Recursively rewrites bare `%` to `%1`, preserving every source span.
 fn rewrite_pct(f: SForm) -> SForm {
     let span = f.span;
     let node = match f.node {
