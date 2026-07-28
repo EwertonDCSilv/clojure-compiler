@@ -63,6 +63,7 @@ embed_runtime_modules!(
     ("multimethods", "../runtime/110_multimethods.c"),
     ("test-introspection", "../runtime/120_test_introspection.c"),
     ("io", "../runtime/130_io.c"),
+    ("reader", "../runtime/140_reader.c"),
 );
 
 /// Nível de otimização aplicado pelo Cranelift ao código gerado.
@@ -238,6 +239,7 @@ struct Runtime {
     bget: FuncId,             // (bytes,i)->fixnum
     slurp_bytes: FuncId,      // (path)->bytes
     spit_bytes: FuncId,       // (path,bytes)->nil
+    read_string: FuncId,      // (string)->valor EDN
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -599,6 +601,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         bget: bin(m, "cljn_bget"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
+        read_string: una(m, "cljn_read_string"),
         read_char: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -2328,6 +2331,7 @@ impl<'a> FnGen<'a> {
             Prim::Bget => self.bin(self.rt.bget, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
+            Prim::ReadString => self.una(self.rt.read_string, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

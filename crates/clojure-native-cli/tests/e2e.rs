@@ -532,6 +532,31 @@ fn bytes_type_and_binary_io() {
 }
 
 #[test]
+fn read_string_edn_reader() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-5: read-string lê um valor EDN (subconjunto) em runtime.
+    let src = r##"(ns rs.core)
+(defn -main []
+  (println (read-string "42") (read-string "-7") (read-string "nil") (read-string "true"))
+  (println (read-string ":kw") (= :abc (read-string ":abc")))
+  (println (read-string "[1 [2 {:x [3 4]}] :k \"s\"]"))
+  (println (read-string "#{1 2 3}") (read-string "(1 2 3)"))
+  (println (= \newline (read-string "\\newline")) (read-string "\\u0041"))
+  (let [cfg (read-string "{:port 8080 :hosts [\"a\" \"b\"]}")]
+    (println (get cfg :port) (get cfg :hosts)))
+  (println (read-string "[1, 2, 3]")))
+(-main)"##;
+    let expected = "42 -7 nil true\n:kw true\n[1 [2 {:x [3 4]}] :k s]\n#{1 2 3} (1 2 3)\ntrue A\n8080 [a b]\n[1 2 3]\n";
+    assert_eq!(build_and_run("read_string_edn", src), expected);
+    assert_eq!(
+        build_and_run_env("read_string_edn_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;
