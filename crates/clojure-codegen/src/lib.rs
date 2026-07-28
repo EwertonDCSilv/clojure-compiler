@@ -260,6 +260,8 @@ struct Runtime {
     filep: FuncId,            // (path)->bool
     file_size: FuncId,        // (path)->fixnum
     file_modified: FuncId,    // (path)->fixnum
+    global_get: FuncId,       // (idx)->valor do def global (ADR-0013)
+    global_set: FuncId,       // (idx,v)->v (inicializa def global)
     div: FuncId,              // (a,b)->fixnum|float
     floatp: FuncId,           // (x)->bool
     double_of: FuncId,        // (x)->float
@@ -658,6 +660,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         filep: una(m, "cljn_filep"),
         file_size: una(m, "cljn_file_size"),
         file_modified: una(m, "cljn_file_modified"),
+        global_get: una(m, "cljn_global_get"),
+        global_set: bin(m, "cljn_global_set"),
         div: bin(m, "cljn_div"),
         floatp: una(m, "cljn_floatp"),
         double_of: una(m, "cljn_double"),
@@ -832,7 +836,9 @@ impl<'a> FnGen<'a> {
         use VKind::{Heap, Imm};
         match ast {
             Ast::Int(_) | Ast::Bool(_) | Ast::Nil => Imm,
+            Ast::DefGlobal { .. } => Imm, // inicializador; produz nil
             Ast::Float(_) // boxeado no heap
+            | Ast::GlobalRef(_) // valor arbitrário lido de um global
             | Ast::Str(_)
             | Ast::Keyword(_)
             | Ast::VecLit(_)
@@ -1346,6 +1352,23 @@ impl<'a> FnGen<'a> {
                 let v = self.call1(self.rt.float_from_bits, bits);
                 self.gc_push_val(v);
                 Flow::Val(v)
+            }
+            // Read a top-level def global: heap-capable → satisfy the root invariant.
+            Ast::GlobalRef(idx) => {
+                let i = self.builder.ins().iconst(types::I64, *idx as i64);
+                let v = self.call1(self.rt.global_get, i);
+                self.gc_push_val(v);
+                Flow::Val(v)
+            }
+            // Initialize a top-level def global once, in source order; yields nil.
+            Ast::DefGlobal { index, value } => {
+                let (v, pushed) = self.operand(value)?;
+                let i = self.builder.ins().iconst(types::I64, *index as i64);
+                self.call2(self.rt.global_set, i, v); // store; now a permanent root
+                if pushed {
+                    self.gc_popn(1);
+                }
+                Flow::Val(self.konst(NIL))
             }
             Ast::Bool(b) => Flow::Val(self.konst(if *b { TRUEV } else { FALSEV })),
             Ast::Nil => Flow::Val(self.konst(NIL)),
@@ -2580,6 +2603,8 @@ fn collect_strings(ast: &Ast, out: &mut Vec<String>) {
             collect_strings(body, out);
         }
         Ast::Call { args, .. } => args.iter().for_each(|a| collect_strings(a, out)),
+        Ast::DefGlobal { value, .. } => collect_strings(value, out),
+        Ast::RegisterMulti { dispatch_fn, .. } => collect_strings(dispatch_fn, out),
         _ => {}
     }
 }
@@ -2675,6 +2700,7 @@ mod tests {
             functions: vec![],
             main_body: vec![Ast::Int(42), Ast::Str("done".into())],
             main_local_count: 0,
+            global_count: 0,
         };
         let object = compile_object(&program).expect("minimal program should compile");
         assert!(object.len() > 100);
@@ -2687,6 +2713,7 @@ mod tests {
             functions: vec![],
             main_body: vec![Ast::Int(42)],
             main_local_count: 0,
+            global_count: 0,
         };
 
         for optimization_level in [

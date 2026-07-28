@@ -118,6 +118,35 @@ fn rejects_invalid_cranelift_optimization_level() {
 }
 
 #[test]
+fn top_level_def_globals_are_rooted() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 1: initialized top-level `def` data, resolved as a global,
+    // initialized once before -main, backed by a permanent GC root. Globals are
+    // reachable from functions and survive GC stress.
+    let src = r#"(ns d.core)
+(def base 40)
+(def answer (+ base 2))
+(def routes [:a :b :c])
+(def config {:port 8080 :name "svc"})
+(defn describe [] (str "answer=" answer " port=" (get config :port)))
+(defn -main []
+  (println base answer)
+  (println routes (count routes))
+  (println (describe))
+  (let [_ (reduce (fn [a i] (cons i a)) (list) (range 500))]
+    (println answer (get config :name))))
+(-main)"#;
+    let expected = "40 42\n[:a :b :c] 3\nanswer=42 port=8080\n42 svc\n";
+    assert_eq!(build_and_run("top_level_def", src), expected);
+    assert_eq!(
+        build_and_run_env("top_level_def_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn compiles_and_runs_hello() {
     if !have_cc() {
         eprintln!("pulando: `cc` indisponível");

@@ -244,6 +244,31 @@ static void gc_mark_consts(void) {
     for (int64_t i = 0; i < const_hi; i++) gc_mark(cljn_const_cache[i]);
 }
 
+/* Top-level `def` globals (ADR-0013 Gate 1). Initialized once in source order
+ * before -main; permanent GC roots. Uninitialized slots hold 0 and are skipped
+ * by gc_mark (which ignores the null Value). */
+#define GLOBALS_MAX 8192
+Value cljn_globals[GLOBALS_MAX];
+static int64_t globals_hi = 0;
+/*
+ * Store `v` in global slot `idx` (raw index) and return it.
+ *
+ * ABI: GLOBALS_MAX must match GLOBALS_MAX in clojure-codegen/src/lib.rs; idx is a
+ * raw index, not a tagged fixnum.
+ * GC: does not allocate; `v` becomes a permanent root at the next collection.
+ */
+Value cljn_global_set(Value idx, Value v) {
+    int64_t i = (int64_t)idx;
+    cljn_globals[i] = v;
+    if (i + 1 > globals_hi) globals_hi = i + 1;
+    return v;
+}
+/* Read global slot `idx` (raw index). */
+Value cljn_global_get(Value idx) { return cljn_globals[(int64_t)idx]; }
+static void gc_mark_globals(void) {
+    for (int64_t i = 0; i < globals_hi; i++) gc_mark(cljn_globals[i]);
+}
+
 static void gc_mark_method_table(void); /* fwd */
 static void gc_mark_exceptions(void);   /* fwd */
 static void gc_mark_multi(void);        /* fwd */
@@ -255,6 +280,7 @@ static void gc_collect(void) {
     gc_mark_multi();        /* Multimethod dispatch functions and :default. */
     gc_mark_consts();       /* Cached constant vector literals. */
     gc_mark_dynvars();      /* Built-in dynamic Vars. */
+    gc_mark_globals();      /* Top-level def globals (ADR-0013). */
     gc_sweep();
     alloc_since_gc = 0;
 }

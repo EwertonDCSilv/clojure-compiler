@@ -40,6 +40,10 @@ pub enum Ast {
     SetLit(Vec<Ast>),
     /// Map literal whose key/value pairs preserve source order.
     MapLit(Vec<(Ast, Ast)>),
+    /// Read a top-level `def` global by its permanent-root index (ADR-0013).
+    GlobalRef(u32),
+    /// Initialize a top-level `def` global once, in source order (ADR-0013).
+    DefGlobal { index: u32, value: Box<Ast> },
     /// Local slot in the current function or lambda frame.
     Local(u32),
     /// Captured value read from `self->freev[index]`.
@@ -372,6 +376,8 @@ pub struct Program {
     pub main_body: Vec<Ast>,
     /// Local slots required by the synthesized native entry point.
     pub main_local_count: u32,
+    /// Number of top-level `def` globals; each owns a permanent GC root slot.
+    pub global_count: u32,
 }
 
 /// Expands and analyzes top-level forms into a compilable program.
@@ -400,9 +406,21 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut records: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Multimethod names share the positive runtime method-ID namespace.
     let mut multis: HashMap<String, i64> = HashMap::new();
+    // Top-level `def` globals: name -> permanent-root index, in source order.
+    let mut globals: HashMap<String, u32> = HashMap::new();
     let mut next_mid: i64 = 1;
     for f in forms {
-        if let Some((name, decls)) = match_defn(f) {
+        if let Some((name, _)) = match_def(f) {
+            if globals.contains_key(&name) {
+                diags.push(
+                    Diagnostic::error("E0113", format!("redefinição de def não suportada: {name}"))
+                        .with_span(f.span),
+                );
+            } else {
+                let idx = globals.len() as u32;
+                globals.insert(name, idx);
+            }
+        } else if let Some((name, decls)) = match_defn(f) {
             sigs.insert(
                 name,
                 decls
@@ -430,6 +448,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         sigs: &sigs,
         protos: &protos,
         records: &records,
+        globals: &globals,
         frames: Vec::new(),
         functions: Vec::new(),
         lam: 0,
@@ -444,7 +463,16 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         if is_ns(f) {
             continue;
         }
-        if let Some((name, decls)) = match_defn(f) {
+        if let Some((name, value_form)) = match_def(f) {
+            let index = an.globals[&name];
+            match an.analyze(&value_form, false) {
+                Ok(value) => main_body.push(Ast::DefGlobal {
+                    index,
+                    value: Box::new(value),
+                }),
+                Err(d) => diags.push(d),
+            }
+        } else if let Some((name, decls)) = match_defn(f) {
             match an.analyze_methods(&decls, false, f.span) {
                 Ok((methods, lc, _caps)) => an.functions.push(Function {
                     name,
@@ -616,6 +644,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         functions,
         main_body,
         main_local_count: main_frame.max_slots,
+        global_count: globals.len() as u32,
     })
 }
 
@@ -649,6 +678,31 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     }
     let methods = parse_methods(rest)?;
     Some((name, methods))
+}
+
+/// Recognizes `(def name value)` (top-level data). Returns the name and the
+/// initializer form. A docstring between name and value is ignored.
+fn match_def(f: &SForm) -> Option<(String, SForm)> {
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let head = items.first()?;
+    let Form::Symbol(n) = head.node.strip_meta() else {
+        return None;
+    };
+    if n.ns.is_some() || n.name != "def" {
+        return None;
+    }
+    let name = match items.get(1).map(|f| f.node.strip_meta()) {
+        Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
+        _ => return None,
+    };
+    let mut rest = &items[2..];
+    if rest.len() > 1 && matches!(rest[0].node.strip_meta(), Form::Str(_)) {
+        rest = &rest[1..]; // skip docstring
+    }
+    let value = rest.first()?.clone();
+    Some((name, value))
 }
 
 /// Recognizes `(defrecord Name [fields...])`.
@@ -896,6 +950,8 @@ struct Analyzer<'a> {
     sigs: &'a HashMap<String, Vec<(usize, bool)>>,
     protos: &'a HashMap<String, (i64, usize)>,
     records: &'a std::collections::HashSet<String>,
+    /// Top-level `def` name -> permanent-root index (ADR-0013 Gate 1).
+    globals: &'a HashMap<String, u32>,
     frames: Vec<Frame>,
     functions: Vec<Function>,
     lam: u32,
@@ -1035,6 +1091,9 @@ impl<'a> Analyzer<'a> {
                 callee: Callee::Prim(Prim::VarGet),
                 args: vec![Ast::Int(id)],
             });
+        }
+        if let Some(&idx) = self.globals.get(name) {
+            return Ok(Ast::GlobalRef(idx)); // top-level def global (ADR-0013)
         }
         if self.sigs.contains_key(name) {
             return Ok(Ast::FnRef(name.to_string()));
@@ -1690,6 +1749,7 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
         | Ast::Str(_)
         | Ast::Keyword(_)
         | Ast::Capture(_)
+        | Ast::GlobalRef(_) // reads a global; independent of slot s
         | Ast::FnRef(_) => true,
         Ast::Call {
             callee: Callee::Prim(p),
@@ -1772,6 +1832,8 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
             linear_ok(key, s, pos, false, lin) && linear_ok(impl_fn, s, pos, false, lin)
         }
         Ast::RegisterMulti { dispatch_fn, .. } => linear_ok(dispatch_fn, s, pos, false, lin),
+        // Top-level only; never appears inside an analyzed loop body.
+        Ast::DefGlobal { value, .. } => linear_ok(value, s, pos, false, lin),
     }
 }
 /// Counts occurrences of local slot `s` throughout an AST.
