@@ -7,6 +7,7 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 compiler="$repo_root/target/release/clojure-native"
 opt_level=""
 ir_opt="none"
+ir_experiment="none"
 chapter=""
 gc_stress=0
 list_only=0
@@ -22,6 +23,7 @@ usage() {
     "  --compiler PATH     Usa um binário específico do compilador" \
     "  --opt-level LEVEL   Usa none, speed ou speed-and-size no Cranelift" \
     "  --ir-opt MODE       Usa none ou safe na IR do compilador (padrão: none)" \
+    "  --ir-experiment ID  Ativa bundle candidato: none ou adr15" \
     "  --gc-stress         Executa com CLJN_GC_STRESS=1" \
     "  --extreme           Multiplica a carga interna por 25" \
     "  --scale N           Multiplica a carga interna por N" \
@@ -47,6 +49,10 @@ while (($# > 0)); do
       ;;
     --ir-opt)
       ir_opt="${2:-}"
+      shift 2
+      ;;
+    --ir-experiment)
+      ir_experiment="${2:-}"
       shift 2
       ;;
     --gc-stress)
@@ -106,6 +112,18 @@ case "$ir_opt" in
     ;;
 esac
 
+case "$ir_experiment" in
+  none|adr15) ;;
+  *)
+    printf 'Experimento de IR inválido: %s\n' "$ir_experiment" >&2
+    exit 2
+    ;;
+esac
+if [[ "$ir_experiment" != "none" && "$ir_opt" != "safe" ]]; then
+  printf 'Experimentos de IR requerem --ir-opt safe\n' >&2
+  exit 2
+fi
+
 declare -a sources=()
 while IFS= read -r source; do
   relative="${source#"$script_dir/"}"
@@ -164,6 +182,9 @@ fi
 if [[ "$ir_opt" != "none" ]]; then
   mode="$mode-ir-$ir_opt"
 fi
+if [[ "$ir_experiment" != "none" ]]; then
+  mode="$mode-experiment-$ir_experiment"
+fi
 
 if [[ -n "$csv_path" ]]; then
   mkdir -p "$(dirname "$csv_path")"
@@ -207,6 +228,9 @@ for source in "${sources[@]}"; do
     build_args+=(--opt-level "$opt_level")
   fi
   build_args+=(--ir-opt "$ir_opt")
+  if [[ "$ir_experiment" != "none" ]]; then
+    build_args+=(--ir-experiment "$ir_experiment")
+  fi
 
   compile_start="$(date +%s%N)"
   if ! build_output="$("$compiler" "${build_args[@]}" 2>&1)"; then

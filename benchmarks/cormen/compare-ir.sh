@@ -12,18 +12,24 @@ scale=25
 raw_path="$suite_dir/results/ir-ab-raw.csv"
 report_path="$suite_dir/results/ir-ab-report.md"
 chapter=""
+control_ir_opt="none"
+candidate_ir_opt="safe"
+candidate_experiment="none"
 
 usage() {
   printf '%s\n' \
     "Uso: benchmarks/cormen/compare-ir.sh [opções]" \
     "" \
-    "Compara a IR opcional com o pipeline nativo direto no mesmo commit." \
-    "A ordem none/safe é alternada para reduzir viés temporal." \
+    "Compara dois perfis nativos no mesmo commit." \
+    "A ordem control/candidate é alternada para reduzir viés temporal." \
     "" \
     "  --repetitions N    Pares por caso (padrão: 7; mínimo do gate: 7)" \
     "  --scale N          Multiplicador da carga (padrão: 25)" \
     "  --chapter PREFIX   Restringe a um capítulo; não satisfaz o gate global" \
     "  --compiler PATH    Usa um compilador release específico" \
+    "  --control-ir-opt M IR do controle: none ou safe (padrão: none)" \
+    "  --candidate-ir-opt M IR candidata: none ou safe (padrão: safe)" \
+    "  --candidate-experiment ID  Experimento candidato: none ou adr15" \
     "  --raw PATH         CSV de amostras brutas" \
     "  --report PATH      Relatório Markdown agregado" \
     "  -h, --help         Mostra esta ajuda"
@@ -45,6 +51,18 @@ while (($# > 0)); do
       ;;
     --compiler)
       compiler="${2:-}"
+      shift 2
+      ;;
+    --control-ir-opt)
+      control_ir_opt="${2:-}"
+      shift 2
+      ;;
+    --candidate-ir-opt)
+      candidate_ir_opt="${2:-}"
+      shift 2
+      ;;
+    --candidate-experiment)
+      candidate_experiment="${2:-}"
       shift 2
       ;;
     --raw)
@@ -75,6 +93,13 @@ if [[ ! "$scale" =~ ^[1-9][0-9]*$ ]]; then
   printf 'Escala inválida: %s\n' "$scale" >&2
   exit 2
 fi
+case "$control_ir_opt:$candidate_ir_opt:$candidate_experiment" in
+  none:none:none|none:safe:none|safe:none:none|safe:safe:none|safe:safe:adr15) ;;
+  *)
+    printf 'Combinação de perfis IR inválida\n' >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -x "$compiler" ]]; then
   cargo build --manifest-path "$repo_root/Cargo.toml" --release \
@@ -114,8 +139,9 @@ metadata_path="${raw_path%.csv}.metadata.txt"
   printf 'repetitions=%s\n' "$repetitions"
   printf 'scale=%s\n' "$scale"
   printf 'chapter=%s\n' "${chapter:-all}"
-  printf 'control=--ir-opt none --opt-level none\n'
-  printf 'candidate=--ir-opt safe --opt-level none\n'
+  printf 'control=--ir-opt %s --opt-level none\n' "$control_ir_opt"
+  printf 'candidate=--ir-opt %s --ir-experiment %s --opt-level none\n' \
+    "$candidate_ir_opt" "$candidate_experiment"
 } > "$metadata_path"
 
 temporary="$(mktemp -d)"
@@ -150,24 +176,31 @@ run_profile() {
   local profile="$1"
   local repetition="$2"
   local order="$3"
+  local ir_opt="$4"
+  local experiment="$5"
   local csv="$temporary/$repetition-$order-$profile.csv"
-  local -a arguments=(--scale "$scale" --ir-opt "$profile" --csv "$csv")
+  local -a arguments=(--scale "$scale" --ir-opt "$ir_opt" --csv "$csv")
+  if [[ "$experiment" != "none" ]]; then
+    arguments+=(--ir-experiment "$experiment")
+  fi
   if [[ -n "$chapter" ]]; then
     arguments+=(--chapter "$chapter")
   fi
-  printf 'Repetição %s/%s, ordem %s: IR %s\n' \
-    "$repetition" "$repetitions" "$order" "$profile" >&2
+  printf 'Repetição %s/%s, ordem %s: %s (IR %s, experimento %s)\n' \
+    "$repetition" "$repetitions" "$order" "$profile" "$ir_opt" "$experiment" >&2
   "$runner" "${arguments[@]}" >"$temporary/$repetition-$order-$profile.log" || return 1
   append_samples "$csv" "$repetition" "$order" "$profile"
 }
 
 for ((repetition = 1; repetition <= repetitions; repetition++)); do
   if ((repetition % 2 == 1)); then
-    run_profile none "$repetition" 1 || exit 1
-    run_profile safe "$repetition" 2 || exit 1
+    run_profile control "$repetition" 1 "$control_ir_opt" none || exit 1
+    run_profile candidate "$repetition" 2 "$candidate_ir_opt" \
+      "$candidate_experiment" || exit 1
   else
-    run_profile safe "$repetition" 1 || exit 1
-    run_profile none "$repetition" 2 || exit 1
+    run_profile candidate "$repetition" 1 "$candidate_ir_opt" \
+      "$candidate_experiment" || exit 1
+    run_profile control "$repetition" 2 "$control_ir_opt" none || exit 1
   fi
 done
 
@@ -178,6 +211,14 @@ declare -a analyzer_args=(
   "$repetitions"
   "--scale"
   "$scale"
+  "--control-profile"
+  "control"
+  "--candidate-profile"
+  "candidate"
+  "--control-label"
+  "--ir-opt $control_ir_opt --opt-level none"
+  "--candidate-label"
+  "--ir-opt $candidate_ir_opt --ir-experiment $candidate_experiment --opt-level none"
 )
 if [[ -n "$chapter" ]]; then
   analyzer_args+=("--partial")

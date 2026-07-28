@@ -20,6 +20,7 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 | [Especificações](../specs/README.md) | escopo da linguagem, decisões, planos e ADRs |
 | [Connector Pedestal](../specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | alvo planejado de HTTP nativo e compatibilidade por subconjunto |
 | [IR opcional de otimização](../specs/OPTIMIZATION_IR_SPEC.md) | implementação parcial, gates e política de não regressão Cormen |
+| [Valores, roots e ABI internos](../specs/adr/0015-internal-value-root-and-abi-specialization.md) | implementação experimental isolada de unboxing, compactação de roots e chamadas diretas especializadas |
 | [Conformidade](../specs/conformance/README.md) | contrato executável da matriz A–E |
 | [Benchmarks](../benchmarks/README.md) | 98 cargas de comparação de desempenho Native × JVM |
 

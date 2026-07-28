@@ -160,8 +160,8 @@ Na comparação diferencial:
 - no mínimo 82% de linhas;
 - no mínimo 30% de linhas em cada arquivo medido.
 
-No último resultado registrado, o workspace atingiu 84,73% de regiões, 82,44% de
-funções e 83,88% de linhas.
+No último resultado registrado, o workspace atingiu 84,08% de regiões, 82,66% de
+funções e 83,45% de linhas.
 
 ## Benchmarks
 
@@ -186,6 +186,19 @@ compiled corpus through the opt-in IR adapter. The dedicated performance gate is
 `make benchmarks-cormen-ir`; passing ordinary conformance alone does not promote the
 profile. The current seven-pair, scale-25 result passes at 0.9568 wall and 0.9565 CPU
 candidate/control while preserving every Cormen checksum.
+
+ADR-0015 candidates use the same paired runner with an explicit control:
+
+```bash
+benchmarks/cormen/compare-ir.sh \
+  --control-ir-opt safe \
+  --candidate-ir-opt safe \
+  --candidate-experiment adr15 \
+  --repetitions 7 --scale 25
+```
+
+The first ADR-0015 run was correctly rejected at 1.0066 wall and 1.0054 CPU because it
+regressed in aggregate and exceeded the per-case median point-estimate ceiling.
 
 ## Aceite
 

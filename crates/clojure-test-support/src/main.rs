@@ -23,6 +23,7 @@ struct Common {
     classpath: Option<String>,
     java: PathBuf,
     ir_optimization: Option<String>,
+    ir_experiment: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -55,6 +56,7 @@ fn run(args: Vec<String>) -> Result<bool, String> {
                 jobs: common.jobs,
                 filters: common.filters,
                 ir_optimization: common.ir_optimization,
+                ir_experiment: common.ir_experiment,
             })?;
             println!("{}", human_summary(&report));
             Ok(report.success)
@@ -120,6 +122,7 @@ fn parse_common(args: &[String]) -> Result<Common, String> {
         classpath: None,
         java: PathBuf::from("java"),
         ir_optimization: None,
+        ir_experiment: None,
     };
     let mut index = 0;
     while index < args.len() {
@@ -150,9 +153,25 @@ fn parse_common(args: &[String]) -> Result<Common, String> {
                     ))
                 }
             },
+            "--ir-experiment" => match value.as_str() {
+                "none" | "adr15" => common.ir_experiment = Some(value.clone()),
+                _ => {
+                    return Err(format!(
+                        "invalid --ir-experiment value `{value}`; expected none or adr15"
+                    ))
+                }
+            },
             _ => return Err(format!("unknown option `{flag}`")),
         }
         index += 2;
+    }
+    if common
+        .ir_experiment
+        .as_deref()
+        .is_some_and(|value| value != "none")
+        && common.ir_optimization.as_deref() != Some("safe")
+    {
+        return Err("--ir-experiment adr15 requires --ir-opt safe".to_string());
     }
     Ok(common)
 }
@@ -161,7 +180,7 @@ fn print_usage() {
     println!(
         "clojure-conformance\n\n\
          Usage:\n\
-           clojure-conformance verify [filters] [--jobs 1..4] [--ir-opt none|safe]\n\
+           clojure-conformance verify [filters] [--jobs 1..4] [--ir-opt none|safe] [--ir-experiment none|adr15]\n\
            clojure-conformance list [filters]\n\
            clojure-conformance oracle --check [filters] [--classpath PATH]\n\
            clojure-conformance oracle --bless [filters] [--classpath PATH]\n\n\

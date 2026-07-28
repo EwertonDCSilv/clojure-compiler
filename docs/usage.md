@@ -141,6 +141,18 @@ continua sendo o padrão estável. `safe` é opt-in e a implementação continua
 mas o perfil atual passou `make benchmarks-cormen-ir`: 0,9568 em wall e 0,9565 em CPU
 contra o pipeline direto no gate de sete pares e escala 25.
 
+O bundle diagnóstico da ADR-0015 exige o perfil `safe`:
+
+```bash
+clojure-native build arquivo.clj -o programa-adr15 \
+  --ir-opt safe --ir-experiment adr15 \
+  --ir-stats target/arquivo-adr15.stats.json
+```
+
+O experimento não integra o perfil `safe`: o primeiro gate completo preservou os
+checksums, mas registrou 1,0066 em wall e 1,0054 em CPU no agregado e ultrapassou o teto
+de estimativa pontual por caso.
+
 Sem `-o`/`--output`, o nome de saída é o nome do arquivo sem a extensão. O binário
 produzido não requer JVM em tempo de execução, mas o build invoca o compilador C do
 sistema para o link final.

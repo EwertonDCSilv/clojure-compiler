@@ -20,7 +20,8 @@ use cranelift_codegen::{isa, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 use target_lexicon::Triple;
 
@@ -124,6 +125,27 @@ impl FromStr for IrOptimizationMode {
     }
 }
 
+/// Diagnostic optimization bundles that have not yet entered `safe`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrExperiment {
+    /// Use only the currently admitted `safe` passes.
+    None,
+    /// Evaluate ADR-0015 root, representation, and call-boundary specialization.
+    Adr15,
+}
+
+impl FromStr for IrExperiment {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "adr15" => Ok(Self::Adr15),
+            _ => Err("esperado: none ou adr15"),
+        }
+    }
+}
+
 /// Backend options independent of the C runtime compilation profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CodegenOptions {
@@ -131,6 +153,8 @@ pub struct CodegenOptions {
     pub optimization_level: OptimizationLevel,
     /// Optional compiler-owned optimization IR mode.
     pub ir_optimization: IrOptimizationMode,
+    /// Candidate bundle isolated from the admitted `safe` profile.
+    pub ir_experiment: IrExperiment,
 }
 
 impl CodegenOptions {
@@ -139,6 +163,7 @@ impl CodegenOptions {
         Self {
             optimization_level: OptimizationLevel::None,
             ir_optimization: IrOptimizationMode::None,
+            ir_experiment: IrExperiment::None,
         }
     }
 
@@ -147,6 +172,7 @@ impl CodegenOptions {
         Self {
             optimization_level: OptimizationLevel::Speed,
             ir_optimization: IrOptimizationMode::None,
+            ir_experiment: IrExperiment::None,
         }
     }
 }
@@ -156,6 +182,64 @@ impl Default for CodegenOptions {
         // Speed remains opt-in: the 2026-07-26 Cormen baseline regressed in
         // 25/30 cases due to additional spills and larger frames.
         Self::unoptimized()
+    }
+}
+
+/// Deterministic aggregate structural metrics for optional lowering.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OptimizationStats {
+    /// Generic callable entries emitted.
+    pub generic_entries: u64,
+    /// Raw-fixnum internal entries emitted.
+    pub specialized_entries: u64,
+    /// Direct calls through the generic callable ABI.
+    pub generic_direct_calls: u64,
+    /// Direct calls through the raw-fixnum ABI.
+    pub specialized_direct_calls: u64,
+    /// Arguments spilled solely to form generic `argv`.
+    pub generic_argv_spills: u64,
+    /// Compact fixed root slots reserved across generated functions.
+    pub root_slots: u64,
+    /// Shadow-stack frame entries emitted.
+    pub root_frame_entries: u64,
+    /// Stores emitted into fixed local root slots.
+    pub root_stores: u64,
+    /// Local definitions kept as untagged fixnum payloads.
+    pub raw_fixnum_bindings: u64,
+    /// Calls emitted to imported C runtime symbols.
+    pub runtime_abi_calls: u64,
+}
+
+impl OptimizationStats {
+    /// Renders stable JSON without introducing a serialization dependency.
+    pub fn to_json(&self) -> String {
+        format!(
+            concat!(
+                "{{\n",
+                "  \"schema\": \"clojure-compiler-optimization-stats-v1\",\n",
+                "  \"generic_entries\": {},\n",
+                "  \"specialized_entries\": {},\n",
+                "  \"generic_direct_calls\": {},\n",
+                "  \"specialized_direct_calls\": {},\n",
+                "  \"generic_argv_spills\": {},\n",
+                "  \"root_slots\": {},\n",
+                "  \"root_frame_entries\": {},\n",
+                "  \"root_stores\": {},\n",
+                "  \"raw_fixnum_bindings\": {},\n",
+                "  \"runtime_abi_calls\": {}\n",
+                "}}\n"
+            ),
+            self.generic_entries,
+            self.specialized_entries,
+            self.generic_direct_calls,
+            self.specialized_direct_calls,
+            self.generic_argv_spills,
+            self.root_slots,
+            self.root_frame_entries,
+            self.root_stores,
+            self.raw_fixnum_bindings,
+            self.runtime_abi_calls,
+        )
     }
 }
 
@@ -343,6 +427,24 @@ pub fn compile_object_with_options(
     program: &Program,
     options: CodegenOptions,
 ) -> Result<Vec<u8>, Diagnostics> {
+    compile_object_with_options_and_stats(program, options).map(|(object, _)| object)
+}
+
+/// Compiles a program and returns deterministic structural lowering metrics.
+///
+/// The object bytes are identical to [`compile_object_with_options`] for the
+/// same inputs and options; collecting counters does not alter generated IR.
+pub fn compile_object_with_options_and_stats(
+    program: &Program,
+    options: CodegenOptions,
+) -> Result<(Vec<u8>, OptimizationStats), Diagnostics> {
+    if options.ir_experiment != IrExperiment::None
+        && options.ir_optimization != IrOptimizationMode::Safe
+    {
+        return Err(single(
+            "experimentos de IR requerem `--ir-opt safe`".to_owned(),
+        ));
+    }
     let optimized_program;
     let program = match options.ir_optimization {
         IrOptimizationMode::None => program,
@@ -372,6 +474,8 @@ pub fn compile_object_with_options(
     let mut module = ObjectModule::new(builder);
     let ptr = module.target_config().pointer_type();
     let runtime = declare_runtime(&mut module, ptr);
+    let enable_adr15 = options.ir_experiment == IrExperiment::Adr15;
+    let stats = RefCell::new(OptimizationStats::default());
 
     // Materialize unique string bytes as local object data.
     let mut strings: Vec<String> = Vec::new();
@@ -427,6 +531,34 @@ pub fn compile_object_with_options(
         fn_ids.insert(f.name.clone(), (id, arity0));
     }
 
+    // ADR-0015: eligible closed methods receive a raw-fixnum entry in addition
+    // to the generic tagged callable entry. Symbols are compiler-private and
+    // indexed rather than derived from source names, keeping them deterministic
+    // and valid for every namespace spelling.
+    let mut specialized_fn_ids: HashMap<(String, usize), FuncId> = HashMap::new();
+    if enable_adr15 {
+        for (function_index, function) in program.functions.iter().enumerate() {
+            if function.dispatch != Dispatch::None || function.is_lambda {
+                continue;
+            }
+            for (method_index, method) in function.methods.iter().enumerate() {
+                if !method.optimization.specialized_fixnum_abi {
+                    continue;
+                }
+                let mut signature = module.make_signature();
+                for _ in &method.params {
+                    signature.params.push(AbiParam::new(types::I64));
+                }
+                signature.returns.push(AbiParam::new(types::I64));
+                let symbol = format!("__cljn_adr15_{function_index}_{method_index}");
+                let id = module
+                    .declare_function(&symbol, Linkage::Local, &signature)
+                    .map_err(|error| single(format!("declare_function {symbol}: {error}")))?;
+                specialized_fn_ids.insert((function.name.clone(), method.params.len()), id);
+            }
+        }
+    }
+
     let mut diags = Diagnostics::new();
     let next_const = std::cell::Cell::new(0u32); // sites de vetor literal constante
 
@@ -447,8 +579,11 @@ pub fn compile_object_with_options(
                 ptr,
                 &runtime,
                 &fn_ids,
+                &specialized_fn_ids,
                 &str_data,
                 &next_const,
+                enable_adr15,
+                &stats,
             );
             fg.build_entry(&f.methods, f.local_count, f.dispatch)
         };
@@ -459,6 +594,54 @@ pub fn compile_object_with_options(
                 }
             }
             Err(d) => diags.push(d),
+        }
+    }
+
+    if enable_adr15 {
+        for function in &program.functions {
+            for method in &function.methods {
+                let Some(id) = specialized_fn_ids
+                    .get(&(function.name.clone(), method.params.len()))
+                    .copied()
+                else {
+                    continue;
+                };
+                let mut ctx = Context::new();
+                ctx.func.signature = module
+                    .declarations()
+                    .get_function_decl(id)
+                    .signature
+                    .clone();
+                let mut fbctx = FunctionBuilderContext::new();
+                let result = {
+                    let generator = FnGen::new(
+                        &mut module,
+                        &mut ctx.func,
+                        &mut fbctx,
+                        ptr,
+                        &runtime,
+                        &fn_ids,
+                        &specialized_fn_ids,
+                        &str_data,
+                        &next_const,
+                        true,
+                        &stats,
+                    );
+                    generator.build_specialized_fixnum_entry(method)
+                };
+                match result {
+                    Ok(()) => {
+                        if let Err(error) = module.define_function(id, &mut ctx) {
+                            diags.push(single_d(format!(
+                                "define_function {} aridade {}: {error}",
+                                function.name,
+                                method.params.len()
+                            )));
+                        }
+                    }
+                    Err(diagnostic) => diags.push(diagnostic),
+                }
+            }
         }
     }
 
@@ -481,8 +664,11 @@ pub fn compile_object_with_options(
                 ptr,
                 &runtime,
                 &fn_ids,
+                &specialized_fn_ids,
                 &str_data,
                 &next_const,
+                enable_adr15,
+                &stats,
             );
             fg.build_main(&program.main_body, program.main_local_count)
         };
@@ -500,9 +686,10 @@ pub fn compile_object_with_options(
         return Err(diags);
     }
     let product = module.finish();
-    product
+    let object = product
         .emit()
-        .map_err(|e| single(format!("emit do objeto: {e}")))
+        .map_err(|e| single(format!("emit do objeto: {e}")))?;
+    Ok((object, stats.into_inner()))
 }
 
 fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
@@ -763,17 +950,33 @@ enum Flow {
 /// omit roots. Unwritten frame slots remain NIL after `cljn_gc_enter`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum VKind {
+    Fixnum,
     Imm,
     Heap,
 }
 impl VKind {
     fn join(self, other: VKind) -> VKind {
-        if self == VKind::Imm && other == VKind::Imm {
-            VKind::Imm
-        } else {
-            VKind::Heap
+        match (self, other) {
+            (VKind::Heap, _) | (_, VKind::Heap) => VKind::Heap,
+            (VKind::Fixnum, VKind::Fixnum) => VKind::Fixnum,
+            _ => VKind::Imm,
         }
     }
+}
+
+/// Tests whether every successful path returns a tagged fixnum.
+fn prim_fixnum_result(p: Prim) -> bool {
+    matches!(
+        p,
+        Prim::Quot
+            | Prim::Mod
+            | Prim::Count
+            | Prim::Compare
+            | Prim::IntOf
+            | Prim::Bget
+            | Prim::FileSize
+            | Prim::FileModified
+    )
 }
 
 /// Tests whether every path of a primitive returns an immediate Value.
@@ -839,17 +1042,26 @@ struct FnGen<'a> {
     ptr: types::Type,
     rt: &'a Runtime,
     fn_ids: &'a HashMap<String, (FuncId, usize)>,
+    specialized_fn_ids: &'a HashMap<(String, usize), FuncId>,
     str_data: &'a HashMap<String, (DataId, usize)>,
     vars: HashMap<u32, Variable>,
     /// Static Value kind for each in-scope local slot.
     kinds: HashMap<u32, VKind>,
+    /// Locals stored as untagged fixnum payloads in the ADR-0015 candidate.
+    raw_fixnum_slots: HashSet<u32>,
     recur_targets: Vec<RecurTarget>,
     /// Raw shadow-stack frame base established at function entry.
     frame_base: Option<Variable>,
+    /// Compact source-local to shadow-stack slot mapping.
+    root_slots: HashMap<u32, u32>,
     /// Current closure `self`, used to read capture slots.
     self_var: Option<Variable>,
     /// Program-wide constant-vector site counter.
     next_const: &'a std::cell::Cell<u32>,
+    /// Whether the isolated ADR-0015 candidate bundle is enabled.
+    enable_adr15: bool,
+    /// Shared aggregate metrics for every generated entry.
+    stats: &'a RefCell<OptimizationStats>,
 }
 
 impl<'a> FnGen<'a> {
@@ -861,8 +1073,11 @@ impl<'a> FnGen<'a> {
         ptr: types::Type,
         rt: &'a Runtime,
         fn_ids: &'a HashMap<String, (FuncId, usize)>,
+        specialized_fn_ids: &'a HashMap<(String, usize), FuncId>,
         str_data: &'a HashMap<String, (DataId, usize)>,
         next_const: &'a std::cell::Cell<u32>,
+        enable_adr15: bool,
+        stats: &'a RefCell<OptimizationStats>,
     ) -> Self {
         FnGen {
             module,
@@ -870,13 +1085,18 @@ impl<'a> FnGen<'a> {
             ptr,
             rt,
             fn_ids,
+            specialized_fn_ids,
             str_data,
             vars: HashMap::new(),
             kinds: HashMap::new(),
+            raw_fixnum_slots: HashSet::new(),
             recur_targets: Vec::new(),
             frame_base: None,
+            root_slots: HashMap::new(),
             self_var: None,
             next_const,
+            enable_adr15,
+            stats,
         }
     }
 
@@ -897,9 +1117,10 @@ impl<'a> FnGen<'a> {
 
     /// Classifies an expression, with `extra` overriding not-yet-bound slots.
     fn kind_of(&self, ast: &Ast, extra: &HashMap<u32, VKind>) -> VKind {
-        use VKind::{Heap, Imm};
+        use VKind::{Fixnum, Heap, Imm};
         match ast {
-            Ast::Int(_) | Ast::Bool(_) | Ast::Nil => Imm,
+            Ast::Int(_) => Fixnum,
+            Ast::Bool(_) | Ast::Nil => Imm,
             Ast::DefGlobal { .. } => Imm, // inicializador; produz nil
             Ast::Float(_) // boxeado no heap
             | Ast::GlobalRef(_) // valor arbitrário lido de um global
@@ -929,7 +1150,17 @@ impl<'a> FnGen<'a> {
             }
             Ast::Recur(_) => Imm, // Diverges and never materializes a Value.
             Ast::Call { callee, .. } => match callee {
+                Callee::ProvenFixnumPrim(
+                    Prim::Add
+                    | Prim::Sub
+                    | Prim::Mul
+                    | Prim::Quot
+                    | Prim::Mod
+                    | Prim::Inc
+                    | Prim::Dec,
+                ) => Fixnum,
                 Callee::ProvenFixnumPrim(_) => Imm,
+                Callee::Prim(p) if prim_fixnum_result(*p) => Fixnum,
                 Callee::Prim(p) if prim_imm_result(*p) => Imm,
                 _ => Heap,
             },
@@ -955,7 +1186,7 @@ impl<'a> FnGen<'a> {
             e.insert(*slot, init_kinds[i]);
         }
         loop {
-            let mut rec = vec![VKind::Imm; slot_ids.len()];
+            let mut rec = vec![VKind::Fixnum; slot_ids.len()];
             let mut seen = false;
             self.collect_recur_kinds(body, &e, &mut rec, &mut seen);
             let mut changed = false;
@@ -1013,6 +1244,130 @@ impl<'a> FnGen<'a> {
         }
     }
 
+    /// Plans compact root slots from conservative method representation facts.
+    fn plan_method_roots(&mut self, methods: &[FnMethod]) {
+        let mut rooted = BTreeSet::new();
+        for method in methods {
+            let mut environment = HashMap::new();
+            for slot in 0..method.params.len() {
+                // Parameters remain generic tagged roots until ADR-0015's
+                // specialized entry owns the complete call boundary.
+                let kind = VKind::Heap;
+                environment.insert(slot as u32, kind);
+                if kind == VKind::Heap {
+                    rooted.insert(slot as u32);
+                }
+            }
+            if method.rest.is_some() {
+                let slot = method.params.len() as u32;
+                environment.insert(slot, VKind::Heap);
+                rooted.insert(slot);
+            }
+            self.collect_bound_roots(&method.body, &environment, &mut rooted);
+        }
+        self.root_slots = rooted
+            .into_iter()
+            .enumerate()
+            .map(|(root_slot, source_slot)| (source_slot, root_slot as u32))
+            .collect();
+    }
+
+    fn collect_bound_roots(
+        &self,
+        ast: &Ast,
+        environment: &HashMap<u32, VKind>,
+        rooted: &mut BTreeSet<u32>,
+    ) {
+        match ast {
+            Ast::Let { slots, body } => {
+                let mut local = environment.clone();
+                for (slot, initializer) in slots {
+                    self.collect_bound_roots(initializer, &local, rooted);
+                    let kind = self.kind_of(initializer, &local);
+                    local.insert(*slot, kind);
+                    if kind == VKind::Heap {
+                        rooted.insert(*slot);
+                    }
+                }
+                self.collect_bound_roots(body, &local, rooted);
+            }
+            Ast::Loop { slots, body } => {
+                let loop_environment = self.loop_slot_kinds(slots, body, environment);
+                for (slot, initializer) in slots {
+                    self.collect_bound_roots(initializer, environment, rooted);
+                    if loop_environment.get(slot).copied() == Some(VKind::Heap) {
+                        rooted.insert(*slot);
+                    }
+                }
+                self.collect_bound_roots(body, &loop_environment, rooted);
+            }
+            Ast::If(test, then, otherwise) => {
+                for expression in [test.as_ref(), then.as_ref(), otherwise.as_ref()] {
+                    self.collect_bound_roots(expression, environment, rooted);
+                }
+            }
+            Ast::VecLit(items) | Ast::SetLit(items) | Ast::Do(items) | Ast::Recur(items) => {
+                for item in items {
+                    self.collect_bound_roots(item, environment, rooted);
+                }
+            }
+            Ast::MapLit(pairs) => {
+                for (key, value) in pairs {
+                    self.collect_bound_roots(key, environment, rooted);
+                    self.collect_bound_roots(value, environment, rooted);
+                }
+            }
+            Ast::DefGlobal { value, .. } => {
+                self.collect_bound_roots(value, environment, rooted);
+            }
+            Ast::MakeFn { captures, .. } => {
+                for capture in captures {
+                    self.collect_bound_roots(capture, environment, rooted);
+                }
+            }
+            Ast::Call { args, .. } => {
+                for argument in args {
+                    self.collect_bound_roots(argument, environment, rooted);
+                }
+            }
+            Ast::CallValue { f, args } => {
+                self.collect_bound_roots(f, environment, rooted);
+                for argument in args {
+                    self.collect_bound_roots(argument, environment, rooted);
+                }
+            }
+            Ast::Apply { f, fixed, coll } => {
+                self.collect_bound_roots(f, environment, rooted);
+                for argument in fixed {
+                    self.collect_bound_roots(argument, environment, rooted);
+                }
+                self.collect_bound_roots(coll, environment, rooted);
+            }
+            Ast::MakeRecord { fields, .. } => {
+                for (_, value) in fields {
+                    self.collect_bound_roots(value, environment, rooted);
+                }
+            }
+            Ast::RegisterMethod { key, impl_fn, .. } => {
+                self.collect_bound_roots(key, environment, rooted);
+                self.collect_bound_roots(impl_fn, environment, rooted);
+            }
+            Ast::RegisterMulti { dispatch_fn, .. } => {
+                self.collect_bound_roots(dispatch_fn, environment, rooted);
+            }
+            Ast::Nil
+            | Ast::Bool(_)
+            | Ast::Int(_)
+            | Ast::Float(_)
+            | Ast::Str(_)
+            | Ast::Keyword(_)
+            | Ast::GlobalRef(_)
+            | Ast::Local(_)
+            | Ast::Capture(_)
+            | Ast::FnRef(_) => {}
+        }
+    }
+
     /// Returns whether evaluating `ast` leaves a temporary shadow-stack root.
     ///
     /// Heap expressions normally push. A local does not because either it is
@@ -1048,6 +1403,37 @@ impl<'a> FnGen<'a> {
         let pushed = self.expr_pushes(ast, &HashMap::new());
         let v = self.expr_val(ast)?;
         Ok((v, pushed))
+    }
+
+    /// Evaluates a proven fixnum as an untagged payload.
+    ///
+    /// Raw locals and nested proven arithmetic remain unboxed. Other proven
+    /// expressions cross the tagged boundary once and retain the ordinary
+    /// temporary-root accounting.
+    fn raw_fixnum_operand(&mut self, ast: &Ast) -> Result<(CValue, usize), Diagnostic> {
+        match ast {
+            Ast::Int(value) => Ok((self.builder.ins().iconst(types::I64, *value), 0)),
+            Ast::Local(slot) if self.raw_fixnum_slots.contains(slot) => {
+                let variable = *self.vars.get(slot).ok_or_else(|| {
+                    Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)"))
+                })?;
+                Ok((self.builder.use_var(variable), 0))
+            }
+            Ast::Call {
+                callee: Callee::ProvenFixnumPrim(primitive),
+                args,
+            } if matches!(
+                primitive,
+                Prim::Add | Prim::Sub | Prim::Mul | Prim::Quot | Prim::Mod | Prim::Inc | Prim::Dec
+            ) =>
+            {
+                self.gen_raw_fixnum_prim(*primitive, args)
+            }
+            _ => {
+                let (tagged, pushed) = self.operand(ast)?;
+                Ok((self.builder.ins().sshr_imm(tagged, 1), pushed as usize))
+            }
+        }
     }
 
     /// Evaluates a call argument and guarantees a contiguous shadow-stack slot.
@@ -1124,9 +1510,14 @@ impl<'a> FnGen<'a> {
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
         let base_var = self.frame_base.expect("frame_base definido");
         let base = self.builder.use_var(base_var);
-        let idx = self.builder.ins().iadd_imm(base, slot as i64);
+        let root_slot = *self
+            .root_slots
+            .get(&slot)
+            .expect("slot heap-capable precisa de root planejado");
+        let idx = self.builder.ins().iadd_imm(base, root_slot as i64);
         let elem = self.slot_addr(idx);
         self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
+        self.stats.borrow_mut().root_stores += 1;
     }
     /// Binds a heap-capable local and mirrors it into its root slot.
     fn bind_local(&mut self, slot: u32, v: CValue) {
@@ -1142,6 +1533,7 @@ impl<'a> FnGen<'a> {
             Some(v) => *v,
             None => self.new_var(slot),
         };
+        self.raw_fixnum_slots.remove(&slot);
         self.builder.def_var(var, v);
         self.kinds.insert(slot, kind);
         if kind == VKind::Heap {
@@ -1149,16 +1541,41 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Enters a GC frame with `local_count` slots and records its raw base.
-    fn enter_frame(&mut self, local_count: u32) {
-        let k = self.builder.ins().iconst(types::I64, local_count as i64);
+    /// Binds one local as an untagged fixnum payload.
+    fn bind_raw_fixnum(&mut self, slot: u32, raw: CValue) {
+        let var = match self.vars.get(&slot) {
+            Some(variable) => *variable,
+            None => self.new_var(slot),
+        };
+        self.builder.def_var(var, raw);
+        self.kinds.insert(slot, VKind::Fixnum);
+        self.raw_fixnum_slots.insert(slot);
+        self.stats.borrow_mut().raw_fixnum_bindings += 1;
+    }
+
+    /// Enters a compact GC frame, omitting it when no local needs a root.
+    fn enter_planned_frame(&mut self) {
+        if self.root_slots.is_empty() {
+            return;
+        }
+        {
+            let mut stats = self.stats.borrow_mut();
+            stats.root_slots += self.root_slots.len() as u64;
+            stats.root_frame_entries += 1;
+        }
+        let k = self
+            .builder
+            .ins()
+            .iconst(types::I64, self.root_slots.len() as i64);
         let base = self.call1(self.rt.gc_enter, k);
         let base_var = self.builder.declare_var(types::I64);
         self.builder.def_var(base_var, base);
         self.frame_base = Some(base_var);
     }
     fn leave_frame(&mut self) {
-        let base_var = self.frame_base.expect("frame_base");
+        let Some(base_var) = self.frame_base else {
+            return;
+        };
         let base = self.builder.use_var(base_var);
         self.call_void(self.rt.gc_leave, &[base]);
     }
@@ -1166,9 +1583,10 @@ impl<'a> FnGen<'a> {
     fn build_entry(
         mut self,
         methods: &[FnMethod],
-        local_count: u32,
+        _local_count: u32,
         dispatch: Dispatch,
     ) -> Result<(), Diagnostic> {
+        self.stats.borrow_mut().generic_entries += 1;
         let entry = self.builder.create_block();
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
@@ -1198,7 +1616,12 @@ impl<'a> FnGen<'a> {
             Dispatch::None => {}
         }
 
-        self.enter_frame(local_count);
+        if self.enable_adr15 {
+            self.plan_method_roots(methods);
+        } else {
+            self.root_slots = (0.._local_count).map(|slot| (slot, slot)).collect();
+        }
+        self.enter_planned_frame();
 
         // Arity dispatch is a chain of argc checks.
         for m in methods {
@@ -1227,6 +1650,66 @@ impl<'a> FnGen<'a> {
         let z = self.konst(NIL);
         self.builder.ins().return_(&[z]);
 
+        self.builder.finalize();
+        Ok(())
+    }
+
+    /// Builds the compiler-private raw-fixnum entry for one closed method.
+    ///
+    /// Parameters and the return value are untagged signed payloads. The
+    /// existing body lowering still owns checked arithmetic and semantic slow
+    /// paths, so values are tagged once at entry and untagged once at return.
+    /// Direct recursive calls use the same specialized ABI and never construct
+    /// a generic `argv` array.
+    fn build_specialized_fixnum_entry(mut self, method: &FnMethod) -> Result<(), Diagnostic> {
+        debug_assert!(method.optimization.specialized_fixnum_abi);
+        debug_assert!(method.rest.is_none());
+        self.stats.borrow_mut().specialized_entries += 1;
+
+        let entry = self.builder.create_block();
+        self.builder.append_block_params_for_function_params(entry);
+        self.builder.switch_to_block(entry);
+        self.builder.seal_block(entry);
+
+        let mut environment = HashMap::new();
+        for slot in 0..method.params.len() {
+            environment.insert(slot as u32, VKind::Fixnum);
+        }
+        let mut rooted = BTreeSet::new();
+        self.collect_bound_roots(&method.body, &environment, &mut rooted);
+        self.root_slots = rooted
+            .into_iter()
+            .enumerate()
+            .map(|(root_slot, source_slot)| (source_slot, root_slot as u32))
+            .collect();
+        self.enter_planned_frame();
+
+        let parameters = self.builder.block_params(entry).to_vec();
+        let mut parameter_slots = Vec::with_capacity(parameters.len());
+        for (slot, raw) in parameters.into_iter().enumerate() {
+            self.bind_raw_fixnum(slot as u32, raw);
+            parameter_slots.push(slot as u32);
+        }
+
+        let header = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        self.recur_targets.push(RecurTarget {
+            header,
+            slots: parameter_slots,
+        });
+
+        let flow = self.expr(&method.body);
+        self.recur_targets.pop();
+        self.builder.seal_block(header);
+        match flow? {
+            Flow::Val(tagged) => {
+                self.leave_frame();
+                let raw = self.builder.ins().sshr_imm(tagged, 1);
+                self.builder.ins().return_(&[raw]);
+            }
+            Flow::Diverged => {}
+        }
         self.builder.finalize();
         Ok(())
     }
@@ -1285,7 +1768,7 @@ impl<'a> FnGen<'a> {
                 self.builder
                     .ins()
                     .load(types::I64, MemFlags::trusted(), argv_v, (slot * 8) as i32);
-            self.bind_local(slot as u32, val);
+            self.bind_local_kind(slot as u32, val, VKind::Heap);
             param_slots.push(slot as u32);
         }
         if m.rest.is_some() {
@@ -1327,7 +1810,8 @@ impl<'a> FnGen<'a> {
         let argv = self.builder.block_params(entry)[1];
         let argc64 = self.builder.ins().uextend(types::I64, argc);
         self.call_void(self.rt.set_args, &[argc64, argv]);
-        self.enter_frame(local_count);
+        self.root_slots = (0..local_count).map(|slot| (slot, slot)).collect();
+        self.enter_planned_frame();
         for a in body {
             let (_, pushed) = self.operand(a)?;
             if pushed {
@@ -1346,30 +1830,36 @@ impl<'a> FnGen<'a> {
     }
 
     fn call1(&mut self, id: FuncId, a: CValue) -> CValue {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[a]);
         self.builder.inst_results(c)[0]
     }
     fn call2(&mut self, id: FuncId, a: CValue, b: CValue) -> CValue {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[a, b]);
         self.builder.inst_results(c)[0]
     }
     fn call0(&mut self, id: FuncId) -> CValue {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[]);
         self.builder.inst_results(c)[0]
     }
     fn call3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) -> CValue {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let call = self.builder.ins().call(r, &[a, b, c]);
         self.builder.inst_results(call)[0]
     }
     fn call_void3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c]);
     }
     fn call_void4(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue, d: CValue) {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c, d]);
     }
@@ -1379,6 +1869,7 @@ impl<'a> FnGen<'a> {
         self.builder.ins().func_addr(self.ptr, r)
     }
     fn call_void(&mut self, id: FuncId, args: &[CValue]) {
+        self.stats.borrow_mut().runtime_abi_calls += 1;
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, args);
     }
@@ -1453,7 +1944,12 @@ impl<'a> FnGen<'a> {
                 // A local needs no additional root: an immediate is not a pointer,
                 // while a heap local remains in its stable frame slot. Consumers
                 // that require contiguous stack storage call `spill_arg`.
-                Flow::Val(self.builder.use_var(var))
+                let value = self.builder.use_var(var);
+                if self.raw_fixnum_slots.contains(slot) {
+                    Flow::Val(self.fix_retag(value))
+                } else {
+                    Flow::Val(value)
+                }
             }
             Ast::Do(stmts) => {
                 if stmts.is_empty() {
@@ -1470,11 +1966,17 @@ impl<'a> FnGen<'a> {
             }
             Ast::Let { slots, body } => {
                 for (slot, init) in slots {
-                    let (val, pushed) = self.operand(init)?;
                     let kind = self.kind_of(init, &HashMap::new());
-                    self.bind_local_kind(*slot, val, kind); // Root only heap values.
-                    if pushed {
-                        self.gc_popn(1); // The frame slot now owns the heap root.
+                    if self.enable_adr15 && kind == VKind::Fixnum {
+                        let (raw, pushed) = self.raw_fixnum_operand(init)?;
+                        self.bind_raw_fixnum(*slot, raw);
+                        self.gc_popn(pushed);
+                    } else {
+                        let (val, pushed) = self.operand(init)?;
+                        self.bind_local_kind(*slot, val, kind); // Root only heap values.
+                        if pushed {
+                            self.gc_popn(1); // The frame slot now owns the heap root.
+                        }
                     }
                 }
                 self.expr(body)?
@@ -1949,6 +2451,7 @@ impl<'a> FnGen<'a> {
 
     /// Emits an indirect callable invocation with net-zero shadow-stack depth.
     fn gen_call_value(&mut self, f: &Ast, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        self.stats.borrow_mut().generic_argv_spills += args.len() as u64;
         let f_val = self.spill_arg(f)?;
         for a in args {
             self.spill_arg(a)?;
@@ -1975,6 +2478,7 @@ impl<'a> FnGen<'a> {
 
     /// Lowers apply by rooting callable/fixed args and spreading the collection.
     fn gen_apply(&mut self, f: &Ast, fixed: &[Ast], coll: &Ast) -> Result<CValue, Diagnostic> {
+        self.stats.borrow_mut().generic_argv_spills += fixed.len() as u64;
         let f_val = self.spill_arg(f)?; // shadow: [f]
         for a in fixed {
             self.spill_arg(a)?; // [f, fixed...]
@@ -2079,11 +2583,17 @@ impl<'a> FnGen<'a> {
         let slot_kinds = self.loop_slot_kinds(slots, body, &HashMap::new());
         let mut slot_ids = Vec::with_capacity(slots.len());
         for (slot, init) in slots {
-            let (v0, pushed) = self.operand(init)?;
             let k = *slot_kinds.get(slot).unwrap_or(&VKind::Heap);
-            self.bind_local_kind(*slot, v0, k); // Root only heap-capable slots.
-            if pushed {
-                self.gc_popn(1);
+            if self.enable_adr15 && k == VKind::Fixnum {
+                let (raw, pushed) = self.raw_fixnum_operand(init)?;
+                self.bind_raw_fixnum(*slot, raw);
+                self.gc_popn(pushed);
+            } else {
+                let (v0, pushed) = self.operand(init)?;
+                self.bind_local_kind(*slot, v0, k); // Root only heap-capable slots.
+                if pushed {
+                    self.gc_popn(1);
+                }
             }
             slot_ids.push(*slot);
         }
@@ -2110,15 +2620,25 @@ impl<'a> FnGen<'a> {
         // Evaluate every argument before rebinding to avoid clobbering locals.
         let mut vals = Vec::with_capacity(args.len());
         let mut pushed = 0usize;
-        for a in args {
-            let (v, p) = self.operand(a)?;
-            pushed += p as usize;
-            vals.push(v);
+        for (slot, argument) in target.slots.iter().zip(args) {
+            if self.raw_fixnum_slots.contains(slot) {
+                let (raw, roots) = self.raw_fixnum_operand(argument)?;
+                pushed += roots;
+                vals.push((raw, true));
+            } else {
+                let (tagged, was_pushed) = self.operand(argument)?;
+                pushed += was_pushed as usize;
+                vals.push((tagged, false));
+            }
         }
-        for (slot, val) in target.slots.iter().zip(vals) {
+        for (slot, (value, is_raw)) in target.slots.iter().zip(vals) {
             // Loop fixed point guarantees an immediate slot never receives heap.
-            let k = *self.kinds.get(slot).unwrap_or(&VKind::Heap);
-            self.bind_local_kind(*slot, val, k);
+            if is_raw {
+                self.bind_raw_fixnum(*slot, value);
+            } else {
+                let kind = *self.kinds.get(slot).unwrap_or(&VKind::Heap);
+                self.bind_local_kind(*slot, value, kind);
+            }
         }
         self.gc_popn(pushed); // Only heap temporaries were pushed.
         self.builder.ins().jump(target.header, &[]);
@@ -2135,7 +2655,36 @@ impl<'a> FnGen<'a> {
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::ProvenFixnumPrim(p) => self.gen_proven_fixnum_prim(*p, args),
             Callee::Fn(name) => {
+                if let Some(specialized) = self
+                    .specialized_fn_ids
+                    .get(&(name.clone(), args.len()))
+                    .copied()
+                {
+                    self.stats.borrow_mut().specialized_direct_calls += 1;
+                    // The adapter proved every argument is a fixnum at every
+                    // call site. Keep raw locals and arithmetic islands
+                    // unboxed while evaluating in source order.
+                    let mut raw_arguments = Vec::with_capacity(args.len());
+                    let mut pushed = 0usize;
+                    for argument in args {
+                        let (raw, roots) = self.raw_fixnum_operand(argument)?;
+                        pushed += roots;
+                        raw_arguments.push(raw);
+                    }
+                    let function = self
+                        .module
+                        .declare_func_in_func(specialized, self.builder.func);
+                    let call = self.builder.ins().call(function, &raw_arguments);
+                    let raw_result = self.builder.inst_results(call)[0];
+                    self.gc_popn(pushed);
+                    return Ok(self.fix_retag(raw_result));
+                }
                 let (id, _) = self.fn_ids[name];
+                {
+                    let mut stats = self.stats.borrow_mut();
+                    stats.generic_direct_calls += 1;
+                    stats.generic_argv_spills += args.len() as u64;
+                }
                 // `argv` points into roots for every argument, including spills.
                 for a in args {
                     self.spill_arg(a)?; // One contiguous slot per argument.
@@ -2450,12 +2999,267 @@ impl<'a> FnGen<'a> {
         Ok(r)
     }
 
+    /// Checked raw fixnum addition/subtraction with the tagged runtime as the
+    /// semantic overflow slow path.
+    fn gen_raw_fix_arith(
+        &mut self,
+        left: CValue,
+        right: CValue,
+        add: bool,
+        slow: FuncId,
+    ) -> CValue {
+        let result = if add {
+            self.builder.ins().iadd(left, right)
+        } else {
+            self.builder.ins().isub(left, right)
+        };
+        let in_range = self.fix_in_range(result);
+        let fast = self.builder.create_block();
+        let slow_block = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder
+            .ins()
+            .brif(in_range, fast, &[], slow_block, &[]);
+
+        self.builder.switch_to_block(fast);
+        self.builder.seal_block(fast);
+        self.builder.ins().jump(merge, &[result.into()]);
+
+        self.builder.switch_to_block(slow_block);
+        self.builder.seal_block(slow_block);
+        let tagged_left = self.fix_retag(left);
+        let tagged_right = self.fix_retag(right);
+        let tagged = self.call2(slow, tagged_left, tagged_right);
+        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        self.builder.ins().jump(merge, &[raw.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    fn gen_raw_fix_mul(&mut self, left: CValue, right: CValue) -> CValue {
+        let result = self.builder.ins().imul(left, right);
+        let high = self.builder.ins().smulhi(left, right);
+        let expected_high = self.builder.ins().sshr_imm(result, 63);
+        let no_overflow = self.builder.ins().icmp(IntCC::Equal, high, expected_high);
+        let in_range = self.fix_in_range(result);
+        let valid = self.builder.ins().band(no_overflow, in_range);
+        let fast = self.builder.create_block();
+        let slow_block = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(valid, fast, &[], slow_block, &[]);
+
+        self.builder.switch_to_block(fast);
+        self.builder.seal_block(fast);
+        self.builder.ins().jump(merge, &[result.into()]);
+
+        self.builder.switch_to_block(slow_block);
+        self.builder.seal_block(slow_block);
+        let tagged_left = self.fix_retag(left);
+        let tagged_right = self.fix_retag(right);
+        let tagged = self.call2(self.rt.mul, tagged_left, tagged_right);
+        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        self.builder.ins().jump(merge, &[raw.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    fn gen_raw_fix_unop(&mut self, value: CValue, delta: i64, slow: FuncId) -> CValue {
+        let result = self.builder.ins().iadd_imm(value, delta);
+        let in_range = self.fix_in_range(result);
+        let fast = self.builder.create_block();
+        let slow_block = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder
+            .ins()
+            .brif(in_range, fast, &[], slow_block, &[]);
+
+        self.builder.switch_to_block(fast);
+        self.builder.seal_block(fast);
+        self.builder.ins().jump(merge, &[result.into()]);
+
+        self.builder.switch_to_block(slow_block);
+        self.builder.seal_block(slow_block);
+        let tagged_value = self.fix_retag(value);
+        let tagged = self.call1(slow, tagged_value);
+        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        self.builder.ins().jump(merge, &[raw.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    fn gen_raw_fix_div(
+        &mut self,
+        left: CValue,
+        right: CValue,
+        quotient: bool,
+        slow: FuncId,
+    ) -> CValue {
+        let zero = self.builder.ins().icmp_imm(IntCC::Equal, right, 0);
+        let slow_block = self.builder.create_block();
+        let divide = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        self.builder.ins().brif(zero, slow_block, &[], divide, &[]);
+
+        self.builder.switch_to_block(divide);
+        self.builder.seal_block(divide);
+        if quotient {
+            let result = self.builder.ins().sdiv(left, right);
+            let in_range = self.fix_in_range(result);
+            let fast = self.builder.create_block();
+            self.builder
+                .ins()
+                .brif(in_range, fast, &[], slow_block, &[]);
+            self.builder.switch_to_block(fast);
+            self.builder.seal_block(fast);
+            self.builder.ins().jump(merge, &[result.into()]);
+        } else {
+            let remainder = self.builder.ins().srem(left, right);
+            let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, remainder, 0);
+            let signs_differ = {
+                let xor = self.builder.ins().bxor(remainder, right);
+                self.builder.ins().icmp_imm(IntCC::SignedLessThan, xor, 0)
+            };
+            let adjust = self.builder.ins().band(nonzero, signs_differ);
+            let adjusted = self.builder.ins().iadd(remainder, right);
+            let result = self.builder.ins().select(adjust, adjusted, remainder);
+            self.builder.ins().jump(merge, &[result.into()]);
+        }
+
+        self.builder.switch_to_block(slow_block);
+        self.builder.seal_block(slow_block);
+        let tagged_left = self.fix_retag(left);
+        let tagged_right = self.fix_retag(right);
+        let tagged = self.call2(slow, tagged_left, tagged_right);
+        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        self.builder.ins().jump(merge, &[raw.into()]);
+
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge)[0]
+    }
+
+    /// Lowers one proven arithmetic island entirely in raw fixnum form.
+    fn gen_raw_fixnum_prim(
+        &mut self,
+        primitive: Prim,
+        arguments: &[Ast],
+    ) -> Result<(CValue, usize), Diagnostic> {
+        let mut values = Vec::with_capacity(arguments.len());
+        let mut pushed = 0usize;
+        for argument in arguments {
+            let (value, roots) = self.raw_fixnum_operand(argument)?;
+            values.push(value);
+            pushed += roots;
+        }
+        let result = match primitive {
+            Prim::Add => {
+                let mut result = values[0];
+                for value in &values[1..] {
+                    result = self.gen_raw_fix_arith(result, *value, true, self.rt.add);
+                }
+                result
+            }
+            Prim::Sub if values.len() == 1 => {
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                self.gen_raw_fix_arith(zero, values[0], false, self.rt.sub)
+            }
+            Prim::Sub => {
+                let mut result = values[0];
+                for value in &values[1..] {
+                    result = self.gen_raw_fix_arith(result, *value, false, self.rt.sub);
+                }
+                result
+            }
+            Prim::Mul => {
+                let mut result = values[0];
+                for value in &values[1..] {
+                    result = self.gen_raw_fix_mul(result, *value);
+                }
+                result
+            }
+            Prim::Quot => self.gen_raw_fix_div(values[0], values[1], true, self.rt.quot),
+            Prim::Mod => self.gen_raw_fix_div(values[0], values[1], false, self.rt.mod_),
+            Prim::Inc => self.gen_raw_fix_unop(values[0], 1, self.rt.inc),
+            Prim::Dec => self.gen_raw_fix_unop(values[0], -1, self.rt.dec),
+            _ => {
+                return Err(Diagnostic::error(
+                    "E0120",
+                    "primitiva sem lowering fixnum raw",
+                ))
+            }
+        };
+        Ok((result, pushed))
+    }
+
     /// Lowers an IR-proven fixnum primitive without redundant tag guards.
     ///
     /// Overflow, division by zero, and fixnum-range failures still branch to
     /// the original runtime slow path. Only the operand type checks are
     /// removed, because `clojure-ir` proved their tagged representation.
     fn gen_proven_fixnum_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        if !self.enable_adr15 {
+            return self.gen_tagged_proven_fixnum_prim(prim, args);
+        }
+        if matches!(
+            prim,
+            Prim::Add | Prim::Sub | Prim::Mul | Prim::Quot | Prim::Mod | Prim::Inc | Prim::Dec
+        ) {
+            let (raw, pushed) = self.gen_raw_fixnum_prim(prim, args)?;
+            let tagged = self.fix_retag(raw);
+            self.gc_popn(pushed);
+            return Ok(tagged);
+        }
+        match prim {
+            Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => {
+                let (left, left_roots) = self.raw_fixnum_operand(&args[0])?;
+                let (right, right_roots) = self.raw_fixnum_operand(&args[1])?;
+                let condition = match prim {
+                    Prim::Lt => IntCC::SignedLessThan,
+                    Prim::Le => IntCC::SignedLessThanOrEqual,
+                    Prim::Gt => IntCC::SignedGreaterThan,
+                    Prim::Ge => IntCC::SignedGreaterThanOrEqual,
+                    _ => unreachable!(),
+                };
+                let comparison = self.builder.ins().icmp(condition, left, right);
+                let truth = self.builder.ins().iconst(types::I64, TRUEV);
+                let falsehood = self.builder.ins().iconst(types::I64, FALSEV);
+                let result = self.builder.ins().select(comparison, truth, falsehood);
+                self.gc_popn(left_roots + right_roots);
+                Ok(result)
+            }
+            Prim::Eq => {
+                let (left, left_roots) = self.raw_fixnum_operand(&args[0])?;
+                let (right, right_roots) = self.raw_fixnum_operand(&args[1])?;
+                let equal = self.builder.ins().icmp(IntCC::Equal, left, right);
+                let truth = self.builder.ins().iconst(types::I64, TRUEV);
+                let falsehood = self.builder.ins().iconst(types::I64, FALSEV);
+                let result = self.builder.ins().select(equal, truth, falsehood);
+                self.gc_popn(left_roots + right_roots);
+                Ok(result)
+            }
+            _ => Err(Diagnostic::error(
+                "E0120",
+                "primitiva marcada como fixnum sem lowering especializado",
+            )),
+        }
+    }
+
+    /// Preserves the admitted ADR-0014 tagged lowering when ADR-0015 is off.
+    fn gen_tagged_proven_fixnum_prim(
+        &mut self,
+        prim: Prim,
+        args: &[Ast],
+    ) -> Result<CValue, Diagnostic> {
         match prim {
             Prim::Add => self.fold_fix(args, true, self.rt.add, false),
             Prim::Sub => {
@@ -2963,6 +3767,176 @@ mod tests {
             Ok(OptimizationLevel::SpeedAndSize)
         );
         assert!("fast".parse::<OptimizationLevel>().is_err());
+        assert_eq!("adr15".parse::<IrExperiment>(), Ok(IrExperiment::Adr15));
+        assert!("future".parse::<IrExperiment>().is_err());
+    }
+
+    #[test]
+    fn adr15_reports_a_specialized_call_without_generic_argv_spills() {
+        let function_name = "test/add".to_string();
+        let program = Program {
+            functions: vec![clojure_analyzer::Function {
+                name: function_name.clone(),
+                methods: vec![FnMethod {
+                    params: vec!["left".into(), "right".into()],
+                    rest: None,
+                    body: Ast::Call {
+                        callee: Callee::Prim(Prim::Add),
+                        args: vec![Ast::Local(0), Ast::Local(1)],
+                    },
+                    optimization: Default::default(),
+                }],
+                local_count: 2,
+                is_lambda: false,
+                dispatch: Dispatch::None,
+            }],
+            main_body: vec![Ast::Call {
+                callee: Callee::Fn(function_name),
+                args: vec![Ast::Int(20), Ast::Int(22)],
+            }],
+            main_local_count: 0,
+            global_count: 0,
+        };
+
+        let (_, stats) = compile_object_with_options_and_stats(
+            &program,
+            CodegenOptions {
+                ir_optimization: IrOptimizationMode::Safe,
+                ir_experiment: IrExperiment::Adr15,
+                ..CodegenOptions::default()
+            },
+        )
+        .expect("ADR-0015 candidate should compile");
+
+        assert_eq!(stats.specialized_entries, 1);
+        assert_eq!(stats.specialized_direct_calls, 1);
+        assert_eq!(stats.generic_direct_calls, 0);
+        assert_eq!(stats.generic_argv_spills, 0);
+        assert!(stats.raw_fixnum_bindings >= 2);
+        assert!(stats
+            .to_json()
+            .contains("\"schema\": \"clojure-compiler-optimization-stats-v1\""));
+    }
+
+    #[test]
+    fn adr15_compacts_fixnum_locals_but_keeps_an_escaped_generic_boundary() {
+        let function_name = "test/escaped".to_string();
+        let program = Program {
+            functions: vec![clojure_analyzer::Function {
+                name: function_name.clone(),
+                methods: vec![FnMethod {
+                    params: vec!["unknown".into()],
+                    rest: None,
+                    body: Ast::Let {
+                        slots: vec![(1, Ast::Int(41))],
+                        body: Box::new(Ast::Local(0)),
+                    },
+                    optimization: Default::default(),
+                }],
+                local_count: 2,
+                is_lambda: false,
+                dispatch: Dispatch::None,
+            }],
+            main_body: vec![Ast::FnRef(function_name)],
+            main_local_count: 0,
+            global_count: 0,
+        };
+        let (_, control) = compile_object_with_options_and_stats(
+            &program,
+            CodegenOptions {
+                ir_optimization: IrOptimizationMode::Safe,
+                ..CodegenOptions::default()
+            },
+        )
+        .expect("safe control should compile");
+        let (_, candidate) = compile_object_with_options_and_stats(
+            &program,
+            CodegenOptions {
+                ir_optimization: IrOptimizationMode::Safe,
+                ir_experiment: IrExperiment::Adr15,
+                ..CodegenOptions::default()
+            },
+        )
+        .expect("ADR-0015 candidate should compile");
+
+        assert_eq!(candidate.specialized_entries, 0);
+        assert_eq!(candidate.root_slots, 1);
+        assert_eq!(control.root_slots, 2);
+    }
+
+    #[test]
+    fn adr15_compiles_every_raw_fixnum_operation_and_loop_slot() {
+        let call = |primitive, args| Ast::Call {
+            callee: Callee::Prim(primitive),
+            args,
+        };
+        let binary = |primitive| call(primitive, vec![Ast::Local(0), Ast::Local(1)]);
+        let unary = |primitive| call(primitive, vec![Ast::Local(0)]);
+        let loop_body = Ast::Loop {
+            slots: vec![(2, Ast::Local(0))],
+            body: Box::new(Ast::If(
+                Box::new(call(Prim::Lt, vec![Ast::Local(2), Ast::Local(1)])),
+                Box::new(Ast::Recur(vec![call(Prim::Inc, vec![Ast::Local(2)])])),
+                Box::new(Ast::Local(2)),
+            )),
+        };
+        let body = Ast::Do(vec![
+            binary(Prim::Add),
+            unary(Prim::Sub),
+            binary(Prim::Sub),
+            binary(Prim::Mul),
+            binary(Prim::Quot),
+            binary(Prim::Mod),
+            unary(Prim::Inc),
+            unary(Prim::Dec),
+            binary(Prim::Eq),
+            binary(Prim::Lt),
+            binary(Prim::Le),
+            binary(Prim::Gt),
+            binary(Prim::Ge),
+            Ast::Let {
+                slots: vec![(3, call(Prim::Add, vec![Ast::Local(0), Ast::Int(1)]))],
+                body: Box::new(Ast::Local(3)),
+            },
+            loop_body,
+        ]);
+        let function_name = "test/raw-operations".to_string();
+        let program = Program {
+            functions: vec![clojure_analyzer::Function {
+                name: function_name.clone(),
+                methods: vec![FnMethod {
+                    params: vec!["left".into(), "right".into()],
+                    rest: None,
+                    body,
+                    optimization: Default::default(),
+                }],
+                local_count: 4,
+                is_lambda: false,
+                dispatch: Dispatch::None,
+            }],
+            main_body: vec![Ast::Call {
+                callee: Callee::Fn(function_name),
+                args: vec![Ast::Int(4), Ast::Int(9)],
+            }],
+            main_local_count: 0,
+            global_count: 0,
+        };
+
+        let (object, stats) = compile_object_with_options_and_stats(
+            &program,
+            CodegenOptions {
+                ir_optimization: IrOptimizationMode::Safe,
+                ir_experiment: IrExperiment::Adr15,
+                ..CodegenOptions::default()
+            },
+        )
+        .expect("all ADR-0015 raw operations should lower");
+
+        assert!(!object.is_empty());
+        assert_eq!(stats.specialized_entries, 1);
+        assert_eq!(stats.specialized_direct_calls, 1);
+        assert!(stats.raw_fixnum_bindings >= 6);
+        assert!(stats.runtime_abi_calls > 0, "slow paths must stay imported");
     }
 
     #[test]

@@ -37,11 +37,35 @@ pub(super) fn optimize_program(program: &Program) -> Result<Program, Diagnostic>
         .map(optimize_ast)
         .collect::<Result<_, _>>()?;
 
-    let parameter_facts = infer_parameter_facts(&optimized);
+    let (parameter_facts, directly_called_methods) = infer_parameter_facts(&optimized);
     for function in &mut optimized.functions {
         for (method_index, method) in function.methods.iter_mut().enumerate() {
+            let method_id = (function.name.clone(), method_index);
             let environment = method_environment(&parameter_facts, &function.name, method_index);
+            method.optimization.proven_fixnum_params = environment
+                .iter()
+                .filter_map(|(slot, representation)| {
+                    (*slot < method.params.len() as u32)
+                        .then_some((*slot as usize, *representation))
+                })
+                .fold(
+                    vec![false; method.params.len()],
+                    |mut parameters, (slot, representation)| {
+                        parameters[slot] = representation == Representation::FixnumTagged;
+                        parameters
+                    },
+                );
             method.body = specialize_fixnums(method.body.clone(), &environment);
+            method.optimization.proven_fixnum_return =
+                infer_representation(&method.body, &environment) == Representation::FixnumTagged;
+            method.optimization.specialized_fixnum_abi = method.rest.is_none()
+                && directly_called_methods.contains(&method_id)
+                && method
+                    .optimization
+                    .proven_fixnum_params
+                    .iter()
+                    .all(|proven| *proven)
+                && method.optimization.proven_fixnum_return;
         }
     }
     optimized.main_body = optimized
@@ -52,15 +76,33 @@ pub(super) fn optimize_program(program: &Program) -> Result<Program, Diagnostic>
     Ok(optimized)
 }
 
-fn infer_parameter_facts(program: &Program) -> HashMap<MethodId, Vec<Representation>> {
+fn infer_parameter_facts(
+    program: &Program,
+) -> (HashMap<MethodId, Vec<Representation>>, HashSet<MethodId>) {
     let escaped = escaped_functions(program);
     let signatures = direct_method_signatures(program);
+    let eligible_methods = program
+        .functions
+        .iter()
+        .flat_map(|function| {
+            let escaped = &escaped;
+            function
+                .methods
+                .iter()
+                .enumerate()
+                .filter(move |(_, method)| {
+                    function.dispatch == Dispatch::None
+                        && !function.is_lambda
+                        && method.rest.is_none()
+                        && !escaped.contains(&function.name)
+                })
+                .map(move |(method_index, _)| (function.name.clone(), method_index))
+        })
+        .collect::<HashSet<_>>();
     let mut facts = HashMap::new();
     for function in &program.functions {
         for (method_index, method) in function.methods.iter().enumerate() {
-            let eligible = function.dispatch == Dispatch::None
-                && method.rest.is_none()
-                && !escaped.contains(&function.name);
+            let eligible = eligible_methods.contains(&(function.name.clone(), method_index));
             facts.insert(
                 (function.name.clone(), method_index),
                 vec![
@@ -118,9 +160,7 @@ fn infer_parameter_facts(program: &Program) -> HashMap<MethodId, Vec<Representat
         for function in &program.functions {
             for (method_index, method) in function.methods.iter().enumerate() {
                 let method_id = (function.name.clone(), method_index);
-                let eligible = function.dispatch == Dispatch::None
-                    && method.rest.is_none()
-                    && !escaped.contains(&function.name);
+                let eligible = eligible_methods.contains(&method_id);
                 let observed = &incoming[&method_id];
                 let next = if eligible && observed.direct_call_seen {
                     observed.arguments.clone()
@@ -134,7 +174,14 @@ fn infer_parameter_facts(program: &Program) -> HashMap<MethodId, Vec<Representat
             }
         }
         if !changed {
-            return facts;
+            let directly_called = incoming
+                .into_iter()
+                .filter_map(|(method, observed)| {
+                    (observed.direct_call_seen && eligible_methods.contains(&method))
+                        .then_some(method)
+                })
+                .collect();
+            return (facts, directly_called);
         }
     }
 }
@@ -912,6 +959,12 @@ fn infer_representation(ast: &Ast, environment: &HashMap<u32, Representation>) -
             let local = loop_representations(slots, body, environment);
             infer_representation(body, &local)
         }
+        Ast::If(_, then, otherwise) if always_diverges(then) => {
+            infer_representation(otherwise, environment)
+        }
+        Ast::If(_, then, otherwise) if always_diverges(otherwise) => {
+            infer_representation(then, environment)
+        }
         Ast::If(_, then, otherwise) => infer_representation(then, environment)
             .join(infer_representation(otherwise, environment)),
         Ast::Call { callee, args }
@@ -962,6 +1015,17 @@ fn infer_representation(ast: &Ast, environment: &HashMap<u32, Representation>) -
             ..
         } => Representation::FixnumTagged,
         _ => Representation::UnknownTagged,
+    }
+}
+
+/// Returns whether an expression has no normal value-producing path.
+fn always_diverges(ast: &Ast) -> bool {
+    match ast {
+        Ast::Recur(_) => true,
+        Ast::Do(expressions) => expressions.last().is_some_and(always_diverges),
+        Ast::Let { body, .. } | Ast::Loop { body, .. } => always_diverges(body),
+        Ast::If(_, then, otherwise) => always_diverges(then) && always_diverges(otherwise),
+        _ => false,
     }
 }
 
@@ -1163,6 +1227,7 @@ mod tests {
                     params: vec!["value".to_owned()],
                     rest: None,
                     body: binary(Prim::Add, Ast::Local(0), Ast::Int(1)),
+                    optimization: Default::default(),
                 }],
                 local_count: 1,
                 is_lambda: false,
@@ -1183,6 +1248,22 @@ mod tests {
                 ..
             }
         ));
+        assert_eq!(
+            optimized.functions[0].methods[0]
+                .optimization
+                .proven_fixnum_params,
+            vec![true]
+        );
+        assert!(
+            optimized.functions[0].methods[0]
+                .optimization
+                .proven_fixnum_return
+        );
+        assert!(
+            optimized.functions[0].methods[0]
+                .optimization
+                .specialized_fixnum_abi
+        );
     }
 
     #[test]
@@ -1194,6 +1275,7 @@ mod tests {
                     params: vec!["value".to_owned()],
                     rest: None,
                     body: binary(Prim::Add, Ast::Local(0), Ast::Int(1)),
+                    optimization: Default::default(),
                 }],
                 local_count: 1,
                 is_lambda: false,
@@ -1217,6 +1299,11 @@ mod tests {
                 ..
             }
         ));
+        assert!(
+            !optimized.functions[0].methods[0]
+                .optimization
+                .specialized_fixnum_abi
+        );
     }
 
     #[test]
@@ -1228,6 +1315,7 @@ mod tests {
                     params: vec!["value".to_owned()],
                     rest: None,
                     body: binary(Prim::Add, Ast::Local(0), Ast::Int(1)),
+                    optimization: Default::default(),
                 }],
                 local_count: 1,
                 is_lambda: false,

@@ -137,9 +137,11 @@ runtime checks into catchable values are **Planned**; see
 1. Extend the optional verified scalar IR from
    [`OPTIMIZATION_IR_SPEC.md`](OPTIMIZATION_IR_SPEC.md) to complete function CFGs.
 2. Lower verified IR directly to Cranelift and consume its root plan at safepoints.
-3. Promote compiler-owned passes only after their blocking Cormen non-regression gate.
-4. Extend escape and uniqueness analysis beyond current vector patterns.
-5. Execute user macros deterministically through the bootstrap path.
+3. Specialize internal values, root state, and closed direct calls according to
+   [ADR-0015](adr/0015-internal-value-root-and-abi-specialization.md).
+4. Promote compiler-owned passes only after their blocking Cormen non-regression gate.
+5. Extend escape and uniqueness analysis beyond current vector patterns.
+6. Execute user macros deterministically through the bootstrap path.
 
 Documentation requirements for every stage are defined in
 [`DOCUMENTATION_STYLE.md`](DOCUMENTATION_STYLE.md), and the delivery baseline is
