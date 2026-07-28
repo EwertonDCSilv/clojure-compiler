@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 enum Expected {
     Edn(&'static str),
     Stdout(&'static str),
-    StdoutBinary(&'static [u8]),
     Stderr(&'static str),
     None,
 }
@@ -33,6 +32,7 @@ struct Fixture {
     namespace: Option<&'static str>,
     input: &'static str,
     expected: Expected,
+    expected_stderr: Option<&'static str>,
     extra_files: &'static [(&'static str, &'static str)],
     extra_binary_files: &'static [(&'static str, &'static [u8])],
     manifest_tail: &'static str,
@@ -171,12 +171,13 @@ fn write_fixture(root: &Path, fixture: &Fixture) {
         Expected::Stdout(value) => {
             fs::write(directory.join("expected.stdout"), value).expect("write expected.stdout")
         }
-        Expected::StdoutBinary(value) => fs::write(directory.join("expected.stdout.bin"), value)
-            .expect("write expected.stdout.bin"),
         Expected::Stderr(value) => {
             fs::write(directory.join("expected.stderr"), value).expect("write expected.stderr")
         }
         Expected::None => {}
+    }
+    if let Some(value) = fixture.expected_stderr {
+        fs::write(directory.join("expected.stderr"), value).expect("write expected.stderr");
     }
     for (relative_path, contents) in fixture.extra_files {
         let path = directory.join(relative_path);
@@ -226,6 +227,7 @@ fn fixture(
         namespace,
         input,
         expected,
+        expected_stderr: None,
         extra_files: &[],
         extra_binary_files: &[],
         manifest_tail: "",
@@ -250,6 +252,11 @@ fn with_binary_files(
 
 fn with_run(mut fixture: Fixture, manifest_tail: &'static str) -> Fixture {
     fixture.manifest_tail = manifest_tail;
+    fixture
+}
+
+fn with_expected_stderr(mut fixture: Fixture, expected_stderr: &'static str) -> Fixture {
+    fixture.expected_stderr = Some(expected_stderr);
     fixture
 }
 
@@ -697,11 +704,31 @@ const IO_CASE_FILES: &[(&str, &str)] = &[
     ("work.before/tree/nested/b.txt", "b\n"),
 ];
 
+const SPIT_NORMAL_FILES: &[(&str, &str)] = &[("work.after/created.txt", "hello\n")];
+
 const INVALID_UTF8_FILE: &[(&str, &[u8])] = &[("stdin-invalid.bin", &[0x66, 0x80, 0x6f])];
 
 fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> Fixture {
     let function_slug = sanitize(api.function);
     let namespace_slug = sanitize(api.namespace);
+    let observed_expression = match (api.namespace, api.function, scenario) {
+        ("clojure.core", "slurp", "normal") => {
+            leak(format!("(= \"alpha\\nbeta\\n\" {expression})"))
+        }
+        ("clojure.core", "slurp", "boundary") | ("clojure.core", "with-out-str", "boundary") => {
+            leak(format!("(= \"\" {expression})"))
+        }
+        ("clojure.core", "with-in-str", "normal") | ("clojure.core", "with-out-str", "normal") => {
+            leak(format!("(= \"alpha\" {expression})"))
+        }
+        ("clojure.core", "read-string", "normal") => {
+            leak(format!("(= {{:answer 42}} {expression})"))
+        }
+        ("clojure.core", "with-in-str", "boundary")
+        | ("clojure.core", "read-string", "boundary") => leak(format!("(nil? {expression})")),
+        _ => expression,
+    };
+    let observes_result = observed_expression != expression;
     let body = if scenario == "error" {
         leak(format!(
             "(ns io.{namespace_slug}.{function_slug}.{scenario})\n\
@@ -710,6 +737,12 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
                  (do {expression} (println :unexpected))\n\
                  (catch cljn.io/IOException error\n\
                    (println (:kind (ex-data error))))))\n\
+             (-main)\n"
+        ))
+    } else if observes_result {
+        leak(format!(
+            "(ns io.{namespace_slug}.{function_slug}.{scenario})\n\
+             (defn -main [] (println {observed_expression}))\n\
              (-main)\n"
         ))
     } else {
@@ -721,6 +754,8 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
     };
     let expected = if scenario == "error" {
         ":invalid-input\n"
+    } else if observes_result {
+        "true\n"
     } else {
         ":ok\n"
     };
@@ -759,6 +794,9 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
         .any(|needle| expression.contains(needle))
     {
         value.extra_files = IO_CASE_FILES;
+    }
+    if api.namespace == "clojure.core" && api.function == "spit" && scenario == "normal" {
+        value.extra_files = SPIT_NORMAL_FILES;
     }
     if !matches!(api.namespace, "clojure.core" | "clojure.edn") {
         value.manifest_tail = "[run]\nplatforms = [\"linux\"]\n";
@@ -1785,12 +1823,15 @@ fn fixtures() -> Vec<Fixture> {
             "terminal\n",
             "specs/IO_SPEC.md#standard-streams-and-process-context",
         ),
-        build_xfail(
-            "io/dynamic-bindings",
-            "stderr-redirection",
-            "(ns b.io.stderr)\n(defn -main []\n  (binding [*out* *err*] (println \"problem\"))\n  (println \"ok\"))\n(-main)\n",
-            "ok\n",
-            "specs/IO_SPEC.md#standard-streams-and-process-context",
+        with_expected_stderr(
+            build_xfail(
+                "io/dynamic-bindings",
+                "stderr-redirection",
+                "(ns b.io.stderr)\n(defn -main []\n  (binding [*out* *err*] (println \"problem\"))\n  (println \"ok\"))\n(-main)\n",
+                "ok\n",
+                "specs/IO_SPEC.md#standard-streams-and-process-context",
+            ),
+            "problem\n",
         ),
         build_xfail(
             "io/dynamic-bindings",
@@ -1894,13 +1935,13 @@ fn fixtures() -> Vec<Fixture> {
                 "xfail",
                 "unsupported",
                 "build-run",
-                "equal",
+                "not-applicable",
                 false,
                 "Strict UTF-8 input must raise a categorized native I/O exception.",
                 "specs/IO_SPEC.md#encoding-and-line-rules",
                 None,
-                "(ns b.io.invalid-utf8)\n(defn -main [] (read-line))\n(-main)\n",
-                Expected::StdoutBinary(b""),
+                "(ns b.io.invalid-utf8)\n(defn -main []\n  (println\n    (try\n      (do (read-line) :unexpected)\n      (catch E error (get error :kind)))))\n(-main)\n",
+                Expected::Stdout(":invalid-input\n"),
             ),
             INVALID_UTF8_FILE,
         ),

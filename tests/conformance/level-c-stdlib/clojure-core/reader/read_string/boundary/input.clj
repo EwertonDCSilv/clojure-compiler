@@ -1,3 +1,3 @@
 (ns io.clojure_core.read_string.boundary)
-(defn -main [] (do (read-string "nil") (println :ok)))
+(defn -main [] (println (nil? (read-string "nil"))))
 (-main)

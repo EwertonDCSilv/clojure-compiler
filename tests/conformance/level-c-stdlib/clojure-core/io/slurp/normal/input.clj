@@ -1,3 +1,3 @@
 (ns io.clojure_core.slurp.normal)
-(defn -main [] (do (slurp "input.txt") (println :ok)))
+(defn -main [] (println (= "alpha\nbeta\n" (slurp "input.txt"))))
 (-main)
