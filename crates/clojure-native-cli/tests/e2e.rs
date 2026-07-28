@@ -201,6 +201,35 @@ fn builtin_stdlib_bundle_resolves_cljn_namespaces() {
 }
 
 #[test]
+fn native_connector_test_request_shared_dispatch() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 2 / acceptance #3: test-request threads a request map through
+    // the same handler function the network path would use, producing a response.
+    let app = r#"(ns app.core
+  (:require [cljn.http.request :as req]
+            [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]))
+(defn handler [request]
+  (if (= (req/path request) "/health")
+    (resp/ok "OK")
+    (resp/not-found)))
+(defn -main []
+  (let [c (conn/create-connector handler)
+        r1 (conn/test-request c (req/request :get "/health"))
+        r2 (conn/test-request c (req/request :get "/missing"))]
+    (println (get r1 :status) (get r1 :body))
+    (println (get r2 :status) (get r2 :body))))
+(-main)"#;
+    let expected = "200 OK\n404 Not Found\n";
+    assert_eq!(
+        build_and_run_project("connector", &[("app.clj", app)], "app.clj"),
+        expected
+    );
+}
+
+#[test]
 fn static_module_loader_rejects_dependency_cycle() {
     if !have_cc() {
         return;

@@ -15,10 +15,20 @@ const CORE_COMPILED: &str = include_str!("core_compiled.clj");
 
 /// Compiler-owned built-in namespaces, embedded and resolved ahead of any local
 /// `--source-path` root (ADR-0013 §8). Offline and deterministic.
-const BUILTIN_MODULES: &[(&str, &str)] = &[(
-    "cljn.http.response",
-    include_str!("../../../stdlib/cljn/http/response.clj"),
-)];
+const BUILTIN_MODULES: &[(&str, &str)] = &[
+    (
+        "cljn.http.request",
+        include_str!("../../../stdlib/cljn/http/request.clj"),
+    ),
+    (
+        "cljn.http.response",
+        include_str!("../../../stdlib/cljn/http/response.clj"),
+    ),
+    (
+        "cljn.pedestal.connector",
+        include_str!("../../../stdlib/cljn/pedestal/connector.clj"),
+    ),
+];
 
 /// Returns the embedded source of a built-in namespace, if any.
 fn builtin_source(ns: &str) -> Option<&'static str> {
