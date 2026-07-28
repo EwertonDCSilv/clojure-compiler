@@ -132,3 +132,34 @@ Value cljn_with_out_str(Value thunk) {
     cljn_gc_popn(2);
     return s;
 }
+
+/* (binding [v nv] corpo) — roda o thunk com a Var `id` rebindada a `nv`; devolve o
+ * valor do corpo. Restaura a Var no retorno e na exceção (repropaga). Generaliza
+ * cljn_with_out_str para qualquer Var dinâmica. `nv`/`old` rooteados no corpo;
+ * `i` é volatile para sobreviver ao longjmp. */
+Value cljn_with_binding(Value id, Value nv, Value thunk) {
+    volatile int i = (int)FIX(id);
+    cljn_gc_push(nv);
+    Value old = dynvar_get(i);
+    cljn_gc_push(old);
+    dyn_vars[i] = nv;
+    Handler h;
+    h.prev = handler_top;
+    h.saved_sp = gc_sp;
+    h.saved_gc_disabled = gc_disabled;
+    Value r;
+    if (setjmp(h.env) == 0) {
+        handler_top = &h;
+        r = call_fn0(thunk);
+        handler_top = h.prev;
+    } else {
+        handler_top = h.prev;
+        gc_sp = h.saved_sp;
+        gc_disabled = h.saved_gc_disabled;
+        dyn_vars[i] = gc_stack[h.saved_sp - 1]; /* restaura old */
+        return cljn_throw(exception_value);
+    }
+    dyn_vars[i] = old;
+    cljn_gc_popn(2);
+    return r;
+}

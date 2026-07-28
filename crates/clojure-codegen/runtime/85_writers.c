@@ -55,3 +55,6 @@ Value cljn_writer_to_string(Value w) {
     Writer *wr = (Writer *)w;
     return cljn_str_from(wr->buf ? wr->buf : "", (long)wr->len);
 }
+
+/* Leitura de Var dinâmica como valor (id = fixnum tagged). Ex.: *out* → este writer. */
+Value cljn_var_get(Value id) { return dynvar_get((int)FIX(id)); }

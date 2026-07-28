@@ -411,6 +411,30 @@ fn with_out_str_captures_and_restores_out() {
 }
 
 #[test]
+fn binding_rebinds_and_restores_dynamic_vars() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-0: `binding` rebinda Vars dinâmicas; a Var lida como valor;
+    // restaura no retorno, no valor do corpo e após exceção.
+    let src = r#"(ns bind.core)
+(defn -main []
+  (println *flush-on-newline*)
+  (println (binding [*flush-on-newline* false] *flush-on-newline*))
+  (println *flush-on-newline*)
+  (println (binding [*flush-on-newline* false] (+ 40 2)))
+  (println (try (binding [*flush-on-newline* false] (throw {:e 1})) (catch E e :caught)))
+  (println *flush-on-newline*))
+(-main)"#;
+    let expected = "true\nfalse\ntrue\n42\n:caught\ntrue\n";
+    assert_eq!(build_and_run("binding_dynvars", src), expected);
+    assert_eq!(
+        build_and_run_env("binding_dynvars_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

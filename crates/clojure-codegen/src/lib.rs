@@ -222,6 +222,8 @@ struct Runtime {
     file_exists: FuncId,      // (path)->bool
     getenv: FuncId,           // (name)->string|nil
     with_out_str: FuncId,     // (thunk)->string
+    var_get: FuncId,          // (id)->valor da Var dinâmica
+    with_binding: FuncId,     // (id,nv,thunk)->valor do corpo
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -563,6 +565,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         file_exists: una(m, "cljn_file_exists"),
         getenv: una(m, "cljn_getenv"),
         with_out_str: una(m, "cljn_with_out_str"),
+        var_get: una(m, "cljn_var_get"),
+        with_binding: ternary(m, "cljn_with_binding"),
         transient: una(m, "cljn_transient"),
         persistent_bang: una(m, "cljn_persistent_bang"),
         conj_bang: bin(m, "cljn_conj_bang"),
@@ -2264,6 +2268,8 @@ impl<'a> FnGen<'a> {
             Prim::FileExists => self.una(self.rt.file_exists, args),
             Prim::Getenv => self.una(self.rt.getenv, args),
             Prim::WithOutStr => self.una(self.rt.with_out_str, args),
+            Prim::VarGet => self.una(self.rt.var_get, args),
+            Prim::WithBinding => self.tern(self.rt.with_binding, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

@@ -141,6 +141,18 @@ pub enum Prim {
     FileExists,
     Getenv,
     WithOutStr,
+    VarGet,
+    WithBinding,
+}
+
+/// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
+fn dyn_var_id(name: &str) -> Option<i64> {
+    match name {
+        "*out*" => Some(0),
+        "*err*" => Some(1),
+        "*flush-on-newline*" => Some(2),
+        _ => None,
+    }
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -825,6 +837,13 @@ impl<'a> Analyzer<'a> {
         if let Some(ast) = self.resolve(name) {
             return Ok(ast);
         }
+        if let Some(id) = dyn_var_id(name) {
+            // Var dinâmica lida como valor: (var-get id).
+            return Ok(Ast::Call {
+                callee: Callee::Prim(Prim::VarGet),
+                args: vec![Ast::Int(id)],
+            });
+        }
         if self.sigs.contains_key(name) {
             return Ok(Ast::FnRef(name.to_string()));
         }
@@ -930,6 +949,17 @@ impl<'a> Analyzer<'a> {
                 Ok(Ast::Call {
                     callee: Callee::Prim(Prim::WithOutStr),
                     args: vec![body_fn],
+                })
+            }
+            "binding" => self.analyze_binding(args, span),
+            "__cljn-with-binding" => {
+                // interno (desugar de binding): (id-int val thunk).
+                let id = self.analyze(&args[0], false)?;
+                let val = self.analyze(&args[1], false)?;
+                let thunk = self.analyze(&args[2], false)?;
+                Ok(Ast::Call {
+                    callee: Callee::Prim(Prim::WithBinding),
+                    args: vec![id, val, thunk],
                 })
             }
             "apply" => {
@@ -1248,6 +1278,63 @@ impl<'a> Analyzer<'a> {
             callee: Callee::Prim(Prim::Try),
             args: vec![body_fn, catch_fn, finally_fn],
         })
+    }
+
+    /// `(binding [*out* v ...] corpo...)` — rebinda Vars dinâmicas durante o corpo.
+    /// Desugar: cada par vira `(__cljn-with-binding id valor (fn* [] resto))`,
+    /// aninhando de dentro pra fora; o runtime salva/restaura (inclusive em exceção).
+    /// Nota: os valores são avaliados na ordem, cada um após o `set` do anterior
+    /// (aninhado) — difere do Clojure só se um valor referenciar Var já rebindada.
+    fn analyze_binding(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+        let first = args
+            .first()
+            .ok_or_else(|| unsupported("binding requer vetor de bindings", span))?;
+        let Form::Vector(binds) = first.node.strip_meta() else {
+            return Err(unsupported("binding requer vetor de bindings", span));
+        };
+        if binds.len() % 2 != 0 {
+            return Err(unsupported("binding: bindings em pares", span));
+        }
+        let mut pairs: Vec<(i64, SForm)> = Vec::new();
+        let mut i = 0;
+        while i < binds.len() {
+            let vf = &binds[i];
+            let Form::Symbol(nm) = vf.node.strip_meta() else {
+                return Err(unsupported(
+                    "binding: alvo deve ser uma Var dinâmica (símbolo)",
+                    vf.span,
+                ));
+            };
+            let id = dyn_var_id(&nm.name).ok_or_else(|| {
+                unsupported(
+                    format!(
+                        "binding: `{}` não é Var dinâmica suportada (*out*/*err*/*flush-on-newline*)",
+                        nm.name
+                    ),
+                    vf.span,
+                )
+            })?;
+            pairs.push((id, binds[i + 1].clone()));
+            i += 2;
+        }
+        let sf = |f: Form| SForm::new(f, span);
+        let mut acc: Vec<SForm> = args[1..].to_vec();
+        for (id, val) in pairs.into_iter().rev() {
+            let mut thunk_items = vec![sf(Form::sym("fn*")), sf(Form::Vector(vec![]))];
+            thunk_items.extend(acc);
+            let thunk = sf(Form::List(thunk_items));
+            acc = vec![sf(Form::List(vec![
+                sf(Form::sym("__cljn-with-binding")),
+                sf(Form::Int(id)),
+                val,
+                thunk,
+            ]))];
+        }
+        match acc.len() {
+            0 => Ok(Ast::Nil),
+            1 => self.analyze(&acc[0], false),
+            _ => self.analyze_body(&acc, span, false),
+        }
     }
 
     /// `(fn [params] body...)`, `(fn* nome? [params] body...)` ou multi-aridade
@@ -1734,6 +1821,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Println
         | Prim::Try // sintetizada; nunca usada como valor de 1ª classe
         | Prim::WithOutStr // idem: só via forma especial
+        | Prim::VarGet // sintetizada (leitura de Var dinâmica)
+        | Prim::WithBinding // sintetizada (desugar de binding)
         | Prim::Print => return None,
     })
 }
@@ -1772,6 +1861,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Vals => n == 1,
         Prim::Try => n == 3,
         Prim::WithOutStr => n == 1,
+        Prim::VarGet => n == 1,
+        Prim::WithBinding => n == 3,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List
