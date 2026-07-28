@@ -319,6 +319,8 @@ pub enum Prim {
     MapP,
     /// Test whether a value is a byte array.
     BytesP,
+    /// Split a string on an ASCII separator char into a vector of strings.
+    StrSplit,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2346,6 +2348,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "vector?" => Prim::VectorP,
         "map?" => Prim::MapP,
         "bytes?" => Prim::BytesP,
+        "str-split" => Prim::StrSplit,
         _ => return None,
     })
 }
@@ -2423,6 +2426,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::SpitBytes
         | Prim::Rename
         | Prim::Div
+        | Prim::StrSplit
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -2491,7 +2495,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
-        Prim::Bget | Prim::SpitBytes => n == 2,
+        Prim::Bget | Prim::SpitBytes | Prim::StrSplit => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,
         Prim::Mkdir

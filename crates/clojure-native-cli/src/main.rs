@@ -29,6 +29,10 @@ const BUILTIN_MODULES: &[(&str, &str)] = &[
         include_str!("../../../stdlib/cljn/pedestal/chain.clj"),
     ),
     (
+        "cljn.pedestal.route",
+        include_str!("../../../stdlib/cljn/pedestal/route.clj"),
+    ),
+    (
         "cljn.pedestal.connector",
         include_str!("../../../stdlib/cljn/pedestal/connector.clj"),
     ),

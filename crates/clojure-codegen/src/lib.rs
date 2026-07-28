@@ -271,6 +271,7 @@ struct Runtime {
     vectorp: FuncId,          // (x)->bool
     mapp: FuncId,             // (x)->bool
     bytesp: FuncId,           // (x)->bool
+    str_split: FuncId,        // (string,char)->vetor de strings
     float_from_bits: FuncId,  // (raw_i64)->float (literais)
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
@@ -677,6 +678,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         vectorp: una(m, "cljn_vectorp"),
         mapp: una(m, "cljn_mapp"),
         bytesp: una(m, "cljn_bytesp"),
+        str_split: bin(m, "cljn_str_split"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -2495,6 +2497,7 @@ impl<'a> FnGen<'a> {
             Prim::VectorP => self.una(self.rt.vectorp, args),
             Prim::MapP => self.una(self.rt.mapp, args),
             Prim::BytesP => self.una(self.rt.bytesp, args),
+            Prim::StrSplit => self.bin(self.rt.str_split, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

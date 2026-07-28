@@ -168,6 +168,30 @@ Value cljn_str_concat(Value a, Value b) {
     memcpy(s->data+x->len,y->data,y->len);
     return (Value)s;
 }
+/* Split `s` on the single-byte ASCII separator char `sep` into a vector of
+ * strings (adjacent separators yield empty strings). GC: `s` rooted; a bounded
+ * no-GC region protects the growing vector and substrings. */
+Value cljn_str_split(Value s, Value sep) {
+    if (obj_type(s) != T_STR) die("str-split: esperava string");
+    if (!IS_CHAR(sep)) die("str-split: separador deve ser char");
+    uint32_t cp = CHAR_CP(sep);
+    if (cp > 127) die("str-split: separador deve ser ASCII");
+    char c = (char)cp;
+    cljn_gc_push(s);
+    gc_disabled++;
+    Value v = cljn_vec_empty();
+    Str *ss = (Str *)s;
+    int64_t start = 0;
+    for (int64_t i = 0; i <= (int64_t)ss->len; i++) {
+        if (i == (int64_t)ss->len || ss->data[i] == c) {
+            v = cljn_conj(v, cljn_str_from(ss->data + start, (long)(i - start)));
+            start = i + 1;
+        }
+    }
+    gc_disabled--;
+    cljn_gc_popn(1);
+    return v;
+}
 /* Write one ASCII space to current *out*; may lazily allocate the Writer. */
 void cljn_print_space(void) { writer_write(dynvar_get(VAR_OUT), " ", 1); }
 /* Write one newline to current *out*; may lazily allocate the Writer. */

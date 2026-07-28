@@ -192,6 +192,44 @@ fn rejects_invalid_cranelift_optimization_level() {
 }
 
 #[test]
+fn linear_router_params_404_405_and_via_chain() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 3: linear router with :param captures, 404/405, ambiguity
+    // rejection, run as a normal interceptor through the chain.
+    let app = r#"(ns app.core
+  (:require [cljn.http.request :as req]
+            [cljn.http.response :as resp]
+            [cljn.pedestal.route :as route]
+            [cljn.pedestal.chain :as chain]))
+(defn show-user [request]
+  (resp/ok (str "user " (get (get request :path-params) :id))))
+(defn home [request] (resp/ok "home"))
+(defn -main []
+  (let [routes [{:segments [] :method :get :name :home :handler home}
+                {:segments ["users" :id] :method :get :name :user :handler show-user}
+                {:segments ["users" :id] :method :post :name :edit :handler home}]
+        r (route/router routes)
+        run (fn [m p] (get (chain/execute {:request (req/request m p)} [r]) :response))]
+    (println (get (run :get "/users/42") :body))
+    (println (get (run :get "/") :body))
+    (println (get (run :get "/nope") :status))
+    (println (get (run :delete "/users/42") :status)))
+  (println (try (route/router [{:segments ["a"] :method :get :handler home}
+                               {:segments ["a"] :method :get :handler home}])
+                (catch E e (get e :kind)))))
+(-main)"#;
+    let expected = "user 42\nhome\n404\n405\n:ambiguous-routes\n";
+    let files = &[("app.clj", app)][..];
+    assert_eq!(build_and_run_project("router", files, "app.clj"), expected);
+    assert_eq!(
+        build_and_run_project_env("router_gc", files, "app.clj", &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn interceptor_chain_enter_leave_terminate_recover() {
     if !have_cc() {
         return;
