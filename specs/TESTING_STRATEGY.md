@@ -19,14 +19,15 @@ dependência da CI, do runner `verify` nem do binário produzido.
 | Cobertura | `make coverage` | `cargo-llvm-cov` | gates globais e por arquivo |
 | Conformidade | `make compatibility` | runner A–E offline | ativos/xfail/checksums corretos |
 | GC | casos com `CLJN_GC_STRESS=1` | runtime e conformidade | coleta a cada alocação sem corrupção |
-| Benchmarks | `make benchmarks` | runners Cracking e Cormen | checksum e métricas comparáveis |
+| Benchmarks | `make benchmarks` | runners Cracking, Cormen e Exercism | checksum e métricas comparáveis |
+| Corpus externo | `make exercism-compatibility` | 101 referências e 493 arquivos públicos pinados | transições PASS/FAIL rastreáveis |
 | Oracle JVM | `make compatibility-oracle` | Clojure 1.12.5 local | operação exclusivamente manual |
 
 Os agregadores são:
 
 ```bash
 make quality  # formato, lints e testes
-make all      # quality + cobertura + conformidade + 90 benchmarks
+make all      # quality + cobertura + conformidade + 97 benchmarks
 make ci       # comandos usados pelos jobs do GitHub Actions
 ```
 

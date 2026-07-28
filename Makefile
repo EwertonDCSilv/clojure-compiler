@@ -18,13 +18,16 @@ DESTDIR ?=
 
 CRACKING_ARGS ?=
 CORMEN_ARGS ?=
+EXERCISM_ARGS ?=
 CRACKING_COMPARE_ARGS ?=
 CORMEN_COMPARE_ARGS ?=
+EXERCISM_COMPARE_ARGS ?=
 CONFORMANCE_ARGS ?=
 COVERAGE_ARGS ?=
 BENCHMARK_OUTPUT_DIR ?= target/benchmarks
 CRACKING_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cracking-comparison.csv
 CORMEN_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cormen-comparison.csv
+EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 
 .PHONY: \
 	help all ci quality \
@@ -32,10 +35,11 @@ CORMEN_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cormen-comparison.csv
 	fmt fmt-check lint lint-rust lint-clojure \
 	test test-runtime test-runtime-sanitize test-benchmark-charts coverage \
 	compatibility compatibility-list compatibility-oracle \
-	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-list \
+	exercism-compatibility \
+	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-exercism benchmarks-list \
 	benchmarks-charts \
 	benchmarks-ci benchmarks-compare benchmarks-compare-cracking \
-	benchmarks-compare-cormen \
+	benchmarks-compare-cormen benchmarks-compare-exercism \
 	install \
 	compilar testes compatibilidade instalar
 
@@ -52,9 +56,10 @@ help:
 		"  quality                  Formatação, lint Rust/Clojure e testes" \
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
-		"  benchmarks               Executa as suítes Cracking e Cormen" \
+		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
-		"  benchmarks-compare       Compara as duas suítes com Clojure/JVM AOT" \
+		"  benchmarks-compare       Compara as três suítes com Clojure/JVM AOT" \
+		"  exercism-compatibility   Compila 101 referências e os 493 arquivos Exercism" \
 		"  install                  Instala clojure-native em ~/.local/bin" \
 		"  all                      Executa qualidade, cobertura, compatibilidade e benchmarks" \
 		"  ci                       Reproduz os comandos usados pelo GitHub Actions" \
@@ -67,18 +72,21 @@ help:
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
 		"  compatibility-list       Lista casos da matriz de compatibilidade" \
 		"  compatibility-oracle     Compara com o oracle Clojure/JVM manual" \
-		"  benchmarks-list          Lista todos os casos das duas suítes" \
+		"  benchmarks-list          Lista todos os casos das três suítes" \
 		"  benchmarks-ci            Executa o recorte de benchmarks usado no CI" \
 		"" \
 		"Variáveis úteis:" \
 		"  CONFORMANCE_ARGS='--level A --status active'" \
 		"  CRACKING_ARGS='--chapter 08 --scale 10'" \
 		"  CORMEN_ARGS='--chapter 05'" \
+		"  EXERCISM_ARGS='--scale 5'" \
 		"  CRACKING_COMPARE_ARGS='--chapter 01 --scale 25'" \
 		"  CORMEN_COMPARE_ARGS='--chapter 06 --scale 25'" \
+		"  EXERCISM_COMPARE_ARGS='--scale 5'" \
 		"  COVERAGE_ARGS='--html'" \
 		"  CRACKING_COMPARISON_CSV=/tmp/cracking.csv" \
 		"  CORMEN_COMPARISON_CSV=/tmp/cormen.csv" \
+		"  EXERCISM_COMPARISON_CSV=/tmp/exercism.csv" \
 		"  PREFIX=/usr/local ou BINDIR=/outro/diretorio/bin" \
 		"" \
 		"Observação: coverage, all e ci exigem cargo-llvm-cov e llvm-tools-preview." \
@@ -137,7 +145,13 @@ compatibility-list:
 compatibility-oracle:
 	scripts/conformance.sh oracle --check $(CONFORMANCE_ARGS)
 
-benchmarks: benchmarks-cracking benchmarks-cormen
+exercism-compatibility: release
+	benchmarks/exercism/compile-all.sh
+	benchmarks/exercism/compile-all.sh \
+		--scope all \
+		--report benchmarks/exercism/results/all-files.tsv
+
+benchmarks: benchmarks-cracking benchmarks-cormen benchmarks-exercism
 
 benchmarks-cracking: release
 	benchmarks/cracking/run.sh $(CRACKING_ARGS)
@@ -145,9 +159,13 @@ benchmarks-cracking: release
 benchmarks-cormen: release
 	benchmarks/cormen/run.sh $(CORMEN_ARGS)
 
+benchmarks-exercism: release
+	benchmarks/exercism/run.sh $(EXERCISM_ARGS)
+
 benchmarks-list:
 	benchmarks/cracking/run.sh --list $(CRACKING_ARGS)
 	benchmarks/cormen/run.sh --list $(CORMEN_ARGS)
+	benchmarks/exercism/run.sh --list $(EXERCISM_ARGS)
 
 $(BENCHMARK_CHART_RENDERER): benchmarks/render-benchmark-charts.rs
 	mkdir -p "$(dir $@)"
@@ -170,6 +188,10 @@ benchmarks-charts: $(BENCHMARK_CHART_RENDERER)
 		benchmarks/cormen/results/charts \
 		"Cormen/CLRS"
 	$(BENCHMARK_CHART_RENDERER) \
+		benchmarks/exercism/results/extreme.csv \
+		benchmarks/exercism/results/charts \
+		"Exercism"
+	$(BENCHMARK_CHART_RENDERER) \
 		benchmarks/cracking/results/extreme.csv \
 		docs/assets/benchmarks/cracking \
 		"Cracking"
@@ -182,7 +204,7 @@ benchmarks-ci: release
 	benchmarks/cracking/run.sh --chapter 01
 	benchmarks/cormen/run.sh
 
-benchmarks-compare: benchmarks-compare-cracking benchmarks-compare-cormen
+benchmarks-compare: benchmarks-compare-cracking benchmarks-compare-cormen benchmarks-compare-exercism
 
 benchmarks-compare-cracking: release
 	mkdir -p "$(dir $(CRACKING_COMPARISON_CSV))"
@@ -191,6 +213,10 @@ benchmarks-compare-cracking: release
 benchmarks-compare-cormen: release
 	mkdir -p "$(dir $(CORMEN_COMPARISON_CSV))"
 	benchmarks/cormen/compare-clojure.sh --csv "$(CORMEN_COMPARISON_CSV)" $(CORMEN_COMPARE_ARGS)
+
+benchmarks-compare-exercism: release
+	mkdir -p "$(dir $(EXERCISM_COMPARISON_CSV))"
+	benchmarks/exercism/compare-clojure.sh --csv "$(EXERCISM_COMPARISON_CSV)" $(EXERCISM_COMPARE_ARGS)
 
 install: release
 	@test -n "$(BINDIR)" || { printf '%s\n' "BINDIR não pode ser vazio." >&2; exit 2; }

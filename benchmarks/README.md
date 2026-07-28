@@ -3,11 +3,12 @@
 [README do projeto](../README.pt-BR.md) ·
 [Documentação](../docs/README.md) ·
 [Suíte Cracking](cracking/README.md) ·
-[Suíte Cormen/CLRS](cormen/README.md)
+[Suíte Cormen/CLRS](cormen/README.md) ·
+[Corpus externo Exercism](exercism/README.md)
 
 Catálogo central das cargas de desempenho do `clojure-compiler`.
 
-São **90 programas Clojure autônomos**, distribuídos em duas suítes. Cada caso compila
+São **97 programas Clojure autônomos**, distribuídos em três suítes. Cada caso compila
 para um executável nativo, executa uma carga determinística e imprime um checksum. Além
 de medir desempenho, esse formato ajuda a detectar regressões de compilação, runtime e
 correção sem depender apenas de tempo de execução.
@@ -23,6 +24,7 @@ correção sem depender apenas de tempo de execução.
 - [Entenda as métricas](#entenda-as-métricas)
 - [Catálogo Cracking — 60 casos](#catálogo-cracking--60-casos)
 - [Catálogo Cormen/CLRS — 30 casos](#catálogo-cormenclrs--30-casos)
+- [Corpus externo Exercism — 101 fontes, 7 benchmarks](#corpus-externo-exercism--101-fontes-7-benchmarks)
 - [Consulte os resultados](#consulte-os-resultados)
 - [Adicione um caso](#adicione-um-caso)
 
@@ -32,11 +34,13 @@ correção sem depender apenas de tempo de execução.
 | --- | ---: | --- | --- |
 | [Cracking](cracking/README.md) | 60 | 10 capítulos temáticos | estruturas da linguagem, coleções, records, protocols e algoritmos menores |
 | [Cormen/CLRS](cormen/README.md) | 30 | 6 famílias de algoritmos | ordenação, estruturas de dados, programação dinâmica, grafos e string matching |
-| **Total** | **90** | **16 capítulos** | correção, regressões e comparação nativo × Clojure/JVM |
+| [Exercism](exercism/README.md) | 7 | soluções públicas com adaptadores determinísticos | compatibilidade externa e comparação independente |
+| **Total** | **97** | **17 grupos** | correção, regressões e comparação nativo × Clojure/JVM |
 
-As implementações são originais. Os nomes das suítes servem somente como referência às
-categorias de estudo que inspiraram a organização; nenhum enunciado ou código de livro
-é reproduzido.
+As implementações Cracking e Cormen são originais. A suíte Exercism preserva sete
+soluções públicas MIT do snapshot documentado e adiciona apenas cargas e checksums; o
+catálogo associado também compila as 101 soluções de referência diretamente do
+checkout externo.
 
 ## Execute os benchmarks
 
@@ -56,12 +60,14 @@ make benchmarks
 # Ou execute apenas uma suíte
 make benchmarks-cracking
 make benchmarks-cormen
+make benchmarks-exercism
 ```
 
 Cada runner compila os casos selecionados, executa os binários e compara suas saídas
 com os checksums versionados em
 [`cracking/expected.tsv`](cracking/expected.tsv) e
-[`cormen/expected.tsv`](cormen/expected.tsv). Build quebrado, processo com status
+[`cormen/expected.tsv`](cormen/expected.tsv), além de
+[`exercism/expected.tsv`](exercism/expected.tsv). Build quebrado, processo com status
 não-zero ou checksum divergente faz o comando falhar.
 
 Para localizar um grupo antes de executá-lo:
@@ -70,6 +76,7 @@ Para localizar um grupo antes de executá-lo:
 make benchmarks-list
 make benchmarks-cracking CRACKING_ARGS="--chapter 08"
 make benchmarks-cormen CORMEN_ARGS="--chapter 05"
+make exercism-compatibility
 ```
 
 ### 3. Compare com Clojure/JVM
@@ -332,12 +339,30 @@ Guia completo: [`cormen/README.md`](cormen/README.md) · checksums:
 | [`04-rabin-karp.clj`](cormen/06-number-theory-and-string-matching/04-rabin-karp.clj) | busca Rabin–Karp |
 | [`05-knuth-morris-pratt.clj`](cormen/06-number-theory-and-string-matching/05-knuth-morris-pratt.clj) | busca Knuth–Morris–Pratt |
 
+## Corpus externo Exercism — 101 fontes, 7 benchmarks
+
+Guia completo: [`exercism/README.md`](exercism/README.md) · matriz das 101 soluções:
+[`exercism/results/compilation.tsv`](exercism/results/compilation.tsv) · plano de
+promoção: [`exercism/IMPLEMENTATION_PLAN.md`](exercism/IMPLEMENTATION_PLAN.md).
+
+O snapshot atual compila 7 soluções sem alterar o código upstream e cataloga o primeiro
+bloqueador das outras 94. As sete aprovadas ganharam adaptadores de desempenho com
+checksums, cobrindo closures, busca binária, strings, recursão, mapas, aritmética e
+alocação de vetores.
+
+```bash
+make exercism-compatibility
+make benchmarks-exercism
+make benchmarks-compare-exercism EXERCISM_COMPARE_ARGS="--scale 5"
+```
+
 ## Consulte os resultados
 
 | Suíte | Relatório comentado | CSV comparativo de referência |
 | --- | --- | --- |
 | Cracking | [`cracking/results/README.md`](cracking/results/README.md) | [`cracking/results/extreme.csv`](cracking/results/extreme.csv) |
 | Cormen/CLRS | [`cormen/results/README.md`](cormen/results/README.md) | [`cormen/results/extreme.csv`](cormen/results/extreme.csv) |
+| Exercism | [`exercism/results/README.md`](exercism/results/README.md) | [`exercism/results/extreme.csv`](exercism/results/extreme.csv) |
 
 Para transformar qualquer CSV comparativo no mesmo formato de tabela Markdown usado
 nos relatórios:
@@ -348,15 +373,14 @@ benchmarks/render-benchmark-summary.sh \
 ```
 
 Os relatórios e a página do projeto também incorporam gráficos SVG de tempo, CPU e
-memória. Para regenerar os seis gráficos de cada destino a partir dos CSVs de
-referência:
+memória. Para regenerar os três gráficos de cada destino a partir dos CSVs de referência:
 
 ```bash
 make benchmarks-charts
 ```
 
-O alvo atualiza `benchmarks/*/results/charts/` e
-`docs/assets/benchmarks/`. O programa Rust
+O alvo atualiza `benchmarks/*/results/charts/`; as suítes exibidas na página também
+atualizam `docs/assets/benchmarks/`. O programa Rust
 [`render-benchmark-charts.rs`](render-benchmark-charts.rs) usa somente a biblioteca
 padrão e aceita um CSV, um diretório de saída e um título, permitindo visualizar
 resultados experimentais sem substituir os gráficos oficiais. O `Makefile` recompila o

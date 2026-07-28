@@ -59,8 +59,13 @@ arquivo.
 O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
 fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
 7,77 s nativos contra 24,96 s na JVM; Cormen acumula 29,45 s contra 16,91 s de parede,
-mas 29,30 s contra 32,61 s de CPU. Os 90 checksums são equivalentes. A metodologia,
-ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study.md) e em
+mas 29,30 s contra 32,61 s de CPU. Os 90 checksums internos são equivalentes. O corpus
+externo Exercism audita 101 soluções públicas: 7 compilam e formam benchmarks com
+checksums nativo/JVM equivalentes; 94 registram o primeiro bloqueador. A varredura
+literal do checkout cobre 493 arquivos Clojure, dos quais 116 compilam isoladamente.
+A metodologia,
+ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study.md), em
+[`benchmarks/exercism/`](../benchmarks/exercism) e em
 [`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
 
 ## Limites atuais

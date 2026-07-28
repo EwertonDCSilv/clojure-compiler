@@ -69,7 +69,7 @@ make install BINDIR=/opt/clojure-native/bin
 | `make quality` | formato, lints Rust/Clojure e testes do workspace |
 | `make coverage` | gates globais e por arquivo |
 | `make compatibility` | matriz de conformidade A–E |
-| `make benchmarks` | 60 casos Cracking e 30 Cormen |
+| `make benchmarks` | 60 casos Cracking, 30 Cormen e 7 Exercism |
 | `make benchmarks-compare` | comparação nativo × Clojure/JVM AOT |
 | `make all` | qualidade, cobertura, compatibilidade e benchmarks completos |
 | `make ci` | mesmos comandos dos jobs do GitHub Actions |
@@ -87,11 +87,13 @@ Alvos auxiliares:
 | `make test-runtime-sanitize` | runtime C com ASan e UBSan |
 | `make compatibility-list` | inventário filtrável sem executar a matriz |
 | `make compatibility-oracle` | comparação manual com Clojure/JVM |
-| `make benchmarks-list` | lista os casos das duas suítes |
+| `make benchmarks-list` | lista os casos das três suítes |
 | `make benchmarks-ci` | recorte de checksums usado na CI |
 | `make benchmarks-charts` | regenera os SVGs dos relatórios e da página do projeto |
 | `make benchmarks-compare-cracking` | comparação JVM somente da suíte Cracking |
 | `make benchmarks-compare-cormen` | comparação JVM somente da suíte Cormen |
+| `make benchmarks-compare-exercism` | comparação JVM do subconjunto Exercism promovido |
+| `make exercism-compatibility` | compila as 101 referências e os 493 arquivos do checkout externo |
 
 Variáveis frequentes:
 
@@ -100,8 +102,10 @@ Variáveis frequentes:
 | `CONFORMANCE_ARGS` | `--level A --status active` |
 | `CRACKING_ARGS` | `--chapter 08 --scale 10` |
 | `CORMEN_ARGS` | `--chapter 05` |
+| `EXERCISM_ARGS` | `--scale 5` |
 | `CRACKING_COMPARE_ARGS` | `--chapter 01 --scale 25` |
 | `CORMEN_COMPARE_ARGS` | `--chapter 06 --scale 25` |
+| `EXERCISM_COMPARE_ARGS` | `--scale 5` |
 | `COVERAGE_ARGS` | `--html` |
 | `PREFIX`, `BINDIR`, `DESTDIR` | destino da instalação |
 

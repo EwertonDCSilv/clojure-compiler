@@ -74,13 +74,18 @@ O inventário também cobre o gate proposto de I/O, mas essa superfície permane
 [`specs/IO_SPEC.md`](../specs/IO_SPEC.md).
 
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
-[`benchmarks/cormen/`](../benchmarks/cormen). Ambas exportam CSV com tempo de parede,
-CPU e pico de memória para o nativo e para Clojure/JVM.
+[`benchmarks/cormen/`](../benchmarks/cormen). O corpus público adicional fica em
+[`benchmarks/exercism/`](../benchmarks/exercism): ele audita 101 fontes upstream,
+mede os sete atualmente compiláveis e varre 493 arquivos do checkout. As três suítes
+exportam CSV com tempo de parede, CPU e pico de memória para o nativo e para
+Clojure/JVM.
 
 No snapshot de referência, Cracking acumula 7,77 s nativos contra 24,96 s na JVM. Cormen
 acumula 29,45 s nativos contra 16,91 s de parede na JVM, mas usa 29,30 s de CPU contra
-32,61 s da JVM. Os 90 checksums são equivalentes; ambiente, repetições e valores por
-caso estão em [SNAPSHOT.md](SNAPSHOT.md).
+32,61 s da JVM. Os 90 checksums internos são equivalentes. No Exercism em escala 5×,
+os sete checksums também coincidem; o nativo soma 5,63 s de parede e 5,61 s de CPU,
+contra 3,77 s e 7,26 s na JVM. Ambiente, repetições e valores por caso estão nos
+relatórios das suítes.
 
 Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 
@@ -88,7 +93,8 @@ Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 make quality        # formato, lints e testes
 make coverage       # cobertura global e por arquivo
 make compatibility  # matriz executável A–E
-make benchmarks     # 90 casos nativos com checksum
+make benchmarks     # 97 casos nativos com checksum
+make exercism-compatibility  # audita 101 referências e 493 arquivos públicos
 ```
 
 `make all` executa o conjunto local completo. A comparação com Clojure/JVM é separada

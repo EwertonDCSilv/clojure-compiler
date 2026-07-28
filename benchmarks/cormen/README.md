@@ -1,6 +1,6 @@
 # CLRS-style algorithm benchmark suite
 
-[Catálogo dos 90 benchmarks](../README.md) ·
+[Catálogo central de benchmarks](../README.md) ·
 [Suíte Cracking](../cracking/README.md) ·
 [README do projeto](../../README.pt-BR.md)
 
@@ -52,7 +52,7 @@ benchmarks/refresh-native-comparison.sh --suite cormen
 benchmarks/render-benchmark-summary.sh \
   benchmarks/cormen/results/extreme.csv
 
-# Regenerar os gráficos de tempo, CPU e memória das duas suítes
+# Regenerar os gráficos de tempo, CPU e memória das suítes
 make benchmarks-charts
 
 # Repetir a comparação com um nível Cranelift explícito

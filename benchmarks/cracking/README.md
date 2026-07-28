@@ -1,6 +1,6 @@
 # Cracking-style benchmark suite
 
-[Catálogo dos 90 benchmarks](../README.md) ·
+[Catálogo central de benchmarks](../README.md) ·
 [Suíte Cormen/CLRS](../cormen/README.md) ·
 [README do projeto](../../README.pt-BR.md)
 
@@ -76,7 +76,7 @@ benchmarks/refresh-native-comparison.sh --suite cracking
 benchmarks/render-benchmark-summary.sh \
   benchmarks/cracking/results/extreme.csv
 
-# Regenerar os gráficos de tempo, CPU e memória das duas suítes
+# Regenerar os gráficos de tempo, CPU e memória das suítes
 make benchmarks-charts
 
 # Escolher outro multiplicador de carga

@@ -37,7 +37,7 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 | [`docs/architecture.md`](docs/architecture.md) | Crates, pipeline AOT, runtime e GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | HEAD auditado, commit medido e resultados atuais |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Contrato executável de compatibilidade A–E |
-| [`benchmarks/README.md`](benchmarks/README.md) | Catálogo e metodologia dos 90 benchmarks |
+| [`benchmarks/README.md`](benchmarks/README.md) | Catálogo dos 97 benchmarks e auditoria dos 101 fontes Exercism |
 
 ## Recursos atuais
 
@@ -190,11 +190,11 @@ checksums, relatórios e o oracle manual opcional com Clojure/JVM 1.12.5.
 
 ## Benchmarks
 
-As duas suítes têm um runner nativo e um runner de comparação. Seus CSVs registram
+As três suítes têm um runner nativo e um runner de comparação. Seus CSVs registram
 tempo de parede, tempo de CPU e pico de memória:
 
 Comece pelo [catálogo central de benchmarks](benchmarks/README.md) para consultar a
-metodologia, as métricas, os relatórios e os links diretos para os 90 casos.
+metodologia, as métricas, os relatórios e os links diretos para os 97 casos de desempenho.
 
 ```bash
 make benchmarks
@@ -209,17 +209,23 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   capítulo, inspirados em *Cracking the Coding Interview*.
 - [`benchmarks/cormen`](benchmarks/cormen/README.md): 30 casos de algoritmos no estilo
   CLRS, com validação por checksum.
+- [`benchmarks/exercism`](benchmarks/exercism/README.md): auditoria das 101 soluções
+  públicas e benchmark Native × JVM das sete que compilam atualmente.
 
-Snapshot de referência (`HEAD 476aefd`, compilador nativo `1ca1d79`, escala 25×):
+Os snapshots ficam fixados no relatório de cada suíte. Cracking e Cormen usam o
+compilador nativo `1ca1d79` em escala 25×; Exercism usa o checkout `7607bef`, upstream
+`4a4c4fd` e escala 5×:
 
 | Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
 | --- | ---: | ---: | ---: |
 | Cracking | 7,77 / 24,96 s | 7,61 / 53,88 s | 4,7 / 117,5 MiB |
 | Cormen/CLRS | 29,45 / 16,91 s | 29,30 / 32,61 s | 13,4 / 271,1 MiB |
+| Exercism (escala 5×) | 5,63 / 3,77 s | 5,61 / 7,26 s | valores por caso no relatório externo |
 
-Os 90 casos possuem checksums nativo/JVM equivalentes. No Cormen, o nativo passou a
-usar 10,1% menos CPU acumulada que a referência JVM preservada, embora o tempo de parede
-agregado ainda seja maior.
+Os 97 casos de benchmark possuem checksums nativo/JVM equivalentes. No Cormen, o nativo
+passou a usar 10,1% menos CPU acumulada que a referência JVM preservada, embora o tempo de parede
+agregado ainda seja maior. No corpus externo, 7 dos 101 fontes upstream sem alterações
+compilam; os outros 94 possuem classificação versionada do primeiro bloqueador.
 
 ## Estrutura do projeto
 

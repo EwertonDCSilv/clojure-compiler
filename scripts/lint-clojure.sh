@@ -39,3 +39,13 @@ lint_scope \
   benchmarks/cracking \
   benchmarks/cormen \
   tests/conformance/oracle/runner.clj
+
+# The pinned Exercism reference solution for two-fer intentionally names its
+# parameter `name`. Preserve the external source and scope that one upstream
+# shadowing convention away without weakening the project's own Clojure lint.
+"${clj_kondo}" \
+  --lint benchmarks/exercism/01-practice \
+  --cache false \
+  --config-dir "${repo_root}/.clj-kondo" \
+  --config '{:linters {:shadowed-var {:level :off}}}' \
+  --fail-level warning
