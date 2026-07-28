@@ -201,6 +201,25 @@ fn builtin_stdlib_bundle_resolves_cljn_namespaces() {
 }
 
 #[test]
+fn namespaced_keywords_and_type_predicates() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 §7/§9: namespaced keywords and general type predicates, needed by
+    // categorized error maps and request/response validation.
+    let src = r#"(ns t.core)
+(defn -main []
+  (println :cljn.error/domain (= :a/b :a/b) (= :a/b :a/c))
+  (println (get {:cljn.error/domain :http} :cljn.error/domain))
+  (println (string? "x") (string? 1) (int? 5) (int? "x"))
+  (println (keyword? :k) (keyword? "k") (map? {:a 1}) (map? [1]) (vector? [1 2])))
+(-main)"#;
+    let expected =
+        ":cljn.error/domain true false\n:http\ntrue false true false\ntrue false true false true\n";
+    assert_eq!(build_and_run("ns_kw_preds", src), expected);
+}
+
+#[test]
 fn native_connector_test_request_shared_dispatch() {
     if !have_cc() {
         return;

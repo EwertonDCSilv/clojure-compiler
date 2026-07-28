@@ -307,6 +307,16 @@ pub enum Prim {
     FloatP,
     /// Coerce a number to a boxed double.
     DoubleOf,
+    /// Test whether a value is a string.
+    StringP,
+    /// Test whether a value is a fixnum integer.
+    IntP,
+    /// Test whether a value is a keyword.
+    KeywordP,
+    /// Test whether a value is a vector.
+    VectorP,
+    /// Test whether a value is a map.
+    MapP,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -680,6 +690,16 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     Some((name, methods))
 }
 
+/// Full keyword text including any namespace, e.g. `cljn.error/domain`. The
+/// runtime stores keywords as interned strings, so a namespaced keyword is simply
+/// one whose name contains a slash.
+fn keyword_text(n: &clojure_syntax::Name) -> String {
+    match &n.ns {
+        Some(ns) => format!("{ns}/{}", n.name),
+        None => n.name.clone(),
+    }
+}
+
 /// Recognizes `(def name value)` (top-level data). Returns the name and the
 /// initializer form. A docstring between name and value is ignored.
 fn match_def(f: &SForm) -> Option<(String, SForm)> {
@@ -1035,15 +1055,9 @@ impl<'a> Analyzer<'a> {
                 callee: Callee::Prim(Prim::CharOf),
                 args: vec![Ast::Int(*c as u32 as i64)],
             }),
-            Form::Keyword(n) => {
-                if n.ns.is_some() {
-                    return Err(unsupported(
-                        "keyword qualificada ainda não é compilável",
-                        f.span,
-                    ));
-                }
-                Ok(Ast::Keyword(n.name.clone()))
-            }
+            // A namespaced keyword is a keyword whose name contains a slash, e.g.
+            // `:cljn.error/domain` -> keyword text `cljn.error/domain` (ADR-0013 §7).
+            Form::Keyword(n) => Ok(Ast::Keyword(keyword_text(n))),
             Form::Symbol(n) => self.analyze_symbol_value(&n.ns, &n.name, f.span),
             Form::Vector(items) => Ok(Ast::VecLit(
                 items
@@ -1154,13 +1168,13 @@ impl<'a> Analyzer<'a> {
             return Err(unsupported("lista vazia não é compilável", span));
         };
 
-        // `(:kw coll)` → (get coll :kw).
+        // `(:kw coll)` → (get coll :kw); supports namespaced keywords too.
         if let Form::Keyword(n) = head.node.strip_meta() {
-            if n.ns.is_none() && args.len() == 1 {
+            if args.len() == 1 {
                 let coll = self.analyze(&args[0], false)?;
                 return Ok(Ast::Call {
                     callee: Callee::Prim(Prim::Get),
-                    args: vec![coll, Ast::Keyword(n.name.clone())],
+                    args: vec![coll, Ast::Keyword(keyword_text(n))],
                 });
             }
         }
@@ -2184,6 +2198,12 @@ fn prim_of(name: &str) -> Option<Prim> {
         "/" => Prim::Div,
         "float?" => Prim::FloatP,
         "double" => Prim::DoubleOf,
+        "string?" => Prim::StringP,
+        "int?" => Prim::IntP,
+        "integer?" => Prim::IntP,
+        "keyword?" => Prim::KeywordP,
+        "vector?" => Prim::VectorP,
+        "map?" => Prim::MapP,
         _ => return None,
     })
 }
@@ -2230,6 +2250,11 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::FileModified
         | Prim::FloatP
         | Prim::DoubleOf
+        | Prim::StringP
+        | Prim::IntP
+        | Prim::KeywordP
+        | Prim::VectorP
+        | Prim::MapP
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -2317,6 +2342,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ReadChar => n == 0,
         Prim::StringReader => n == 1,
         Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
+        Prim::StringP | Prim::IntP | Prim::KeywordP | Prim::VectorP | Prim::MapP => n == 1,
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,

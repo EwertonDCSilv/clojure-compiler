@@ -265,6 +265,11 @@ struct Runtime {
     div: FuncId,              // (a,b)->fixnum|float
     floatp: FuncId,           // (x)->bool
     double_of: FuncId,        // (x)->float
+    stringp: FuncId,          // (x)->bool
+    intp: FuncId,             // (x)->bool
+    keywordp: FuncId,         // (x)->bool
+    vectorp: FuncId,          // (x)->bool
+    mapp: FuncId,             // (x)->bool
     float_from_bits: FuncId,  // (raw_i64)->float (literais)
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
@@ -665,6 +670,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         div: bin(m, "cljn_div"),
         floatp: una(m, "cljn_floatp"),
         double_of: una(m, "cljn_double"),
+        stringp: una(m, "cljn_stringp"),
+        intp: una(m, "cljn_intp"),
+        keywordp: una(m, "cljn_keywordp"),
+        vectorp: una(m, "cljn_vectorp"),
+        mapp: una(m, "cljn_mapp"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -759,6 +769,11 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::FileSize
             | Prim::FileModified
             | Prim::FloatP
+            | Prim::StringP
+            | Prim::IntP
+            | Prim::KeywordP
+            | Prim::VectorP
+            | Prim::MapP
     )
 }
 
@@ -2471,6 +2486,11 @@ impl<'a> FnGen<'a> {
             Prim::Div => self.bin(self.rt.div, args),
             Prim::FloatP => self.una(self.rt.floatp, args),
             Prim::DoubleOf => self.una(self.rt.double_of, args),
+            Prim::StringP => self.una(self.rt.stringp, args),
+            Prim::IntP => self.una(self.rt.intp, args),
+            Prim::KeywordP => self.una(self.rt.keywordp, args),
+            Prim::VectorP => self.una(self.rt.vectorp, args),
+            Prim::MapP => self.una(self.rt.mapp, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),
