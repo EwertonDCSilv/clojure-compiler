@@ -59,7 +59,9 @@ fn run() -> Result<(), String> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     if arguments.len() < 2 {
         return Err(
-            "uso: analyze-ir-ab RAW.csv REPORT.md --repetitions N --scale N [--partial]"
+            "uso: analyze-ir-ab RAW.csv REPORT.md --repetitions N --scale N \
+             [--partial] [--control-profile ID] [--candidate-profile ID] \
+             [--control-label TEXT] [--candidate-label TEXT]"
                 .to_string(),
         );
     }
@@ -68,6 +70,10 @@ fn run() -> Result<(), String> {
     let mut repetitions = None;
     let mut scale = None;
     let mut partial = false;
+    let mut control_profile = "none".to_string();
+    let mut candidate_profile = "safe".to_string();
+    let mut control_label = "--ir-opt none --opt-level none".to_string();
+    let mut candidate_label = "--ir-opt safe --opt-level none".to_string();
     let mut index = 2;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -83,14 +89,37 @@ fn run() -> Result<(), String> {
                 partial = true;
                 index += 1;
             }
+            "--control-profile" => {
+                control_profile = parse_string(arguments.get(index + 1), "--control-profile")?;
+                index += 2;
+            }
+            "--candidate-profile" => {
+                candidate_profile = parse_string(arguments.get(index + 1), "--candidate-profile")?;
+                index += 2;
+            }
+            "--control-label" => {
+                control_label = parse_string(arguments.get(index + 1), "--control-label")?;
+                index += 2;
+            }
+            "--candidate-label" => {
+                candidate_label = parse_string(arguments.get(index + 1), "--candidate-label")?;
+                index += 2;
+            }
             option => return Err(format!("opção desconhecida: {option}")),
         }
     }
     let repetitions = repetitions.ok_or_else(|| "--repetitions ausente".to_string())?;
     let scale = scale.ok_or_else(|| "--scale ausente".to_string())?;
     let samples = parse_samples(raw)?;
-    let pairs = pair_samples(&samples, repetitions)?;
-    let markdown = render_report(&pairs, repetitions, scale, partial);
+    let pairs = pair_samples(&samples, repetitions, &control_profile, &candidate_profile)?;
+    let markdown = render_report(
+        &pairs,
+        repetitions,
+        scale,
+        partial,
+        &control_label,
+        &candidate_label,
+    );
     if let Some(parent) = Path::new(report).parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("não foi possível criar {}: {error}", parent.display()))?;
@@ -107,6 +136,13 @@ fn run() -> Result<(), String> {
             "o perfil ainda não satisfaz o gate da ADR-0014; consulte {report}"
         ))
     }
+}
+
+fn parse_string(value: Option<&String>, option: &str) -> Result<String, String> {
+    value
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .ok_or_else(|| format!("{option} requer um valor"))
 }
 
 fn parse_usize(value: Option<&String>, option: &str) -> Result<usize, String> {
@@ -167,6 +203,8 @@ fn parse_f64(value: &str, path: &str, zero_based_line: usize) -> Result<f64, Str
 fn pair_samples(
     samples: &[Sample],
     expected_repetitions: usize,
+    control_profile: &str,
+    candidate_profile: &str,
 ) -> Result<BTreeMap<String, Vec<Pair>>, String> {
     let mut grouped = BTreeMap::<(String, usize), BTreeMap<String, &Sample>>::new();
     for sample in samples {
@@ -190,10 +228,10 @@ fn pair_samples(
     let mut result = BTreeMap::<String, Vec<Pair>>::new();
     for ((benchmark, repetition), profiles) in grouped {
         let control = profiles
-            .get("none")
+            .get(control_profile)
             .ok_or_else(|| format!("{benchmark} repetição {repetition}: controle ausente"))?;
         let candidate = profiles
-            .get("safe")
+            .get(candidate_profile)
             .ok_or_else(|| format!("{benchmark} repetição {repetition}: candidato ausente"))?;
         if control.checksum != candidate.checksum {
             return Err(format!(
@@ -397,6 +435,8 @@ fn render_report(
     repetitions: usize,
     scale: usize,
     partial: bool,
+    control_label: &str,
+    candidate_label: &str,
 ) -> String {
     let mut output = String::new();
     let chapters = chapter_pairs(pairs);
@@ -418,8 +458,8 @@ fn render_report(
     let gate = evaluate_gate(pairs, repetitions, scale, partial);
     output.push_str("# Cormen native IR A/B\n\n");
     output.push_str(&format!(
-        "- Control: `--ir-opt none --opt-level none`\n\
-         - Candidate: `--ir-opt safe --opt-level none`\n\
+        "- Control: `{control_label}`\n\
+         - Candidate: `{candidate_label}`\n\
          - Repetitions: {repetitions} paired and alternating\n\
          - Scale: {scale}\n\
          - Cases: {}\n\
@@ -463,7 +503,7 @@ fn render_report(
     }
     output.push_str("\n## Cases\n\n");
     output.push_str(
-        "| Benchmark | Wall candidate/control | Wall 95% CI | CPU candidate/control | CPU 95% CI | RSS none KiB | RSS safe KiB |\n\
+        "| Benchmark | Wall candidate/control | Wall 95% CI | CPU candidate/control | CPU 95% CI | RSS control KiB | RSS candidate KiB |\n\
          | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n",
     );
     for (benchmark, values) in pairs {
@@ -536,7 +576,7 @@ mod tests {
             Sample {
                 benchmark: "case".to_string(),
                 repetition: 1,
-                profile: "none".to_string(),
+                profile: "control".to_string(),
                 wall: 1.0,
                 cpu: 1.0,
                 rss: 1,
@@ -546,7 +586,7 @@ mod tests {
             Sample {
                 benchmark: "case".to_string(),
                 repetition: 1,
-                profile: "safe".to_string(),
+                profile: "candidate".to_string(),
                 wall: 0.9,
                 cpu: 0.9,
                 rss: 1,
@@ -554,7 +594,8 @@ mod tests {
                 status: "OK".to_string(),
             },
         ];
-        let error = pair_samples(&samples, 1).expect_err("checksum mismatch");
+        let error =
+            pair_samples(&samples, 1, "control", "candidate").expect_err("checksum mismatch");
         assert!(error.contains("checksums divergem"));
     }
 

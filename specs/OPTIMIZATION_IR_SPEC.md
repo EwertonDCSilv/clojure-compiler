@@ -8,7 +8,8 @@
   [ADR-0002](adr/0002-memory-management.md),
   [ADR-0006](adr/0006-codegen-optimization.md),
   [ADR-0009](adr/0009-benchmark-performance-study.md),
-  [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md), and
+  [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md),
+  [ADR-0015](adr/0015-internal-value-root-and-abi-specialization.md), and
   [optimization plan](optime.md)
 
 ## 1. Purpose
@@ -120,6 +121,8 @@ separate decisions.
 
 ```text
 --ir-opt none|safe
+--ir-experiment none|adr15
+--ir-stats PATH
 ```
 
 `none` is the default and retains the direct Analyzer-AST-to-Cranelift path. `safe`
@@ -134,7 +137,14 @@ clojure-native build app.clj -o app --ir-opt none
 
 # Optional optimization IR
 clojure-native build app.clj -o app-opt --ir-opt safe
+
+# Isolated ADR-0015 candidate plus deterministic structural metrics
+clojure-native build app.clj -o app-adr15 \
+  --ir-opt safe --ir-experiment adr15 --ir-stats target/app-adr15.stats.json
 ```
+
+`adr15` requires `--ir-opt safe` and is not part of the admitted `safe` manifest. Its
+first blocking Cormen run did not satisfy the promotion gate.
 
 The existing Cranelift option remains independent:
 

@@ -76,6 +76,23 @@ foram preservados e não houve regressão confirmada por caso ou capítulo. Isso
 evidência do perfil opt-in; não altera o padrão `--ir-opt none`. Consulte o
 [relatório A/B](results/ir-ab-report.md) para as amostras e os intervalos.
 
+Para comparar um bundle ainda não admitido com o `safe` atual sem reescrever as
+medições JVM:
+
+```bash
+benchmarks/cormen/compare-ir.sh \
+  --control-ir-opt safe \
+  --candidate-ir-opt safe \
+  --candidate-experiment adr15 \
+  --repetitions 7 --scale 25 \
+  --raw target/adr15-ir-ab-raw.csv \
+  --report target/adr15-ir-ab-report.md
+```
+
+O primeiro resultado completo da ADR-0015 foi rejeitado: 1,0066 wall e 1,0054 CPU no
+agregado, em vez do ganho mínimo de 3%, e estimativas pontuais medianas acima do teto
+por caso. O experimento não foi incorporado a `safe`.
+
 Os scripts continuam disponíveis como interface de baixo nível. O
 [`Makefile`](../../Makefile) é a entrada recomendada para build, testes, compatibilidade
 e execução conjunta das suítes.

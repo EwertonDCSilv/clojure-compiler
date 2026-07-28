@@ -361,6 +361,23 @@ pub struct FnMethod {
     pub rest: Option<String>,
     /// Analyzed method body.
     pub body: Ast,
+    /// Optimizer-only facts; the analyzer initializes this conservatively.
+    pub optimization: MethodOptimization,
+}
+
+/// Proven method facts consumed only by optional native optimization.
+#[derive(Debug, Clone, Default)]
+pub struct MethodOptimization {
+    /// Parameters proven fixnums at every non-escaping direct call site.
+    pub proven_fixnum_params: Vec<bool>,
+    /// Whether every normal return from the method is a fixnum.
+    pub proven_fixnum_return: bool,
+    /// Whether the method may use the isolated raw-fixnum direct-call ABI.
+    ///
+    /// The optimizer sets this only when the target does not escape, every
+    /// observed direct call has the same fixed arity and proven fixnum
+    /// arguments, and every normal return is a fixnum.
+    pub specialized_fixnum_abi: bool,
 }
 
 impl FnMethod {
@@ -545,6 +562,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                     params: fields.clone(),
                     rest: None,
                     body: make,
+                    optimization: MethodOptimization::default(),
                 }],
                 local_count: fields.len() as u32,
                 is_lambda: false,
@@ -1244,6 +1262,7 @@ impl<'a> Analyzer<'a> {
                         params,
                         rest: None,
                         body,
+                        optimization: MethodOptimization::default(),
                     }],
                     local_count: arity as u32,
                     is_lambda: true,
@@ -1631,6 +1650,7 @@ impl<'a> Analyzer<'a> {
                     params: params.clone(),
                     rest: rest.clone(),
                     body,
+                    optimization: MethodOptimization::default(),
                 }),
                 Err(d) => {
                     self.frames.pop();

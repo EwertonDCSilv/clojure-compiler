@@ -102,8 +102,8 @@ Ordem sugerida:
 10. [PEDESTAL_NATIVE_CONNECTOR_SPEC.md](PEDESTAL_NATIVE_CONNECTOR_SPEC.md) — **Planejado**:
     connector HTTP nativo e subconjunto de aplicação compatível com Pedestal.
 11. [OPTIMIZATION_IR_SPEC.md](OPTIMIZATION_IR_SPEC.md) — **Partially implemented**:
-    optional verified scalar IR, with whole-function lowering and promotion still
-    blocked by the Cormen gate.
+    optional verified scalar IR; the current scalar profile passed its Cormen gate,
+    while whole-function lowering and root-plan consumption remain open.
 12. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
     `assoc` persistente e `nth` genérico.
 13. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
@@ -124,6 +124,9 @@ Documentos operacionais:
   resultados de otimização.
 - [adr/0014-optional-optimization-ir.md](adr/0014-optional-optimization-ir.md) —
   optional IR decision and its mandatory Cormen performance gate.
+- [adr/0015-internal-value-root-and-abi-specialization.md](adr/0015-internal-value-root-and-abi-specialization.md)
+  — internal value, shadow-stack, and call-boundary specialization with stricter
+  structural and Cormen admission gates.
 
 Para verificar o estado executável sem confundir itens futuros com recursos entregues:
 
@@ -162,6 +165,9 @@ para reproduzir uma medição histórica.
 - [0014](adr/0014-optional-optimization-ir.md) — optional, backend-neutral
   optimization IR that remains disabled by default (accepted; implementation in
   progress).
+- [0015](adr/0015-internal-value-root-and-abi-specialization.md) — internal unboxed
+  representations, virtual roots, specialized direct calls, and classified runtime
+  boundaries (accepted; experimental bundle not admitted to `safe`).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -175,7 +181,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Valor nativo | fixnums tagueados + ponteiros para objetos GC | especialização/unboxing medidos |
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
-| Otimização | fast paths inteiros, stores diretos, auto-transient, hoisting e IR escalar opt-in experimental | whole-function verified IR, safepoint liveness, and passes admitted only by the Cormen gate |
+| Otimização | fast paths inteiros, stores diretos, auto-transient, hoisting e IR escalar `safe` opt-in | whole-function IR, roots virtuais e ABI interna especializada admitidos somente pelos gates Cormen |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
 | Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | output, flush, redirecionamento, texto em arquivo e streams de string | filesystem amplo, binários e reader/EDN completo conforme IO_SPEC |

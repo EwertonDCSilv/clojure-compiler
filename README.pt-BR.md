@@ -147,6 +147,14 @@ conservadores de fixnum por loops e chamadas diretas que não escapam. O gate Co
 sete pares e escala 25 passou, com melhorias medianas de 4,32% em wall e 4,35% em CPU;
 `--ir-opt none` permanece como padrão.
 
+A ADR-0015 possui um candidato diagnóstico adicional:
+`--ir-opt safe --ir-experiment adr15`. Ele adiciona regiões fixnum sem tag, frames de
+roots compactos e entradas especializadas para chamadas diretas. O candidato continua
+fora de `safe`: o primeiro gate completo registrou razões candidato/controle de 1,0066
+em wall e 1,0054 em CPU, em vez do ganho de 3% exigido, e ultrapassou o teto de
+estimativa pontual por caso. `--ir-stats relatorio.json` grava métricas estruturais
+agregadas e determinísticas.
+
 ## Outros comandos da CLI
 
 ```bash

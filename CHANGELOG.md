@@ -23,10 +23,20 @@ tags.
 - Add dual-mode language conformance execution through `--ir-opt`.
 - Add a paired, alternating Cormen native A/B gate with raw samples, environment
   metadata, medians, MAD, and deterministic bootstrap confidence intervals.
+- Add ADR-0015 for internal unboxed values, virtual GC roots, specialized direct-call
+  ABIs, and measured reduction of C runtime boundaries.
+- Add the isolated `--ir-experiment adr15` candidate with compact root frames, raw
+  fixnum locals/loops, checked raw arithmetic, specialized fixed-arity entries, and
+  generic-boundary fallbacks.
+- Add deterministic aggregate lowering metrics through `--ir-stats PATH` and make the
+  paired Cormen runner configurable for `safe`-versus-candidate comparisons.
 
 ### Changed
 
 - Stop tracking the local `.lsp/.cache/` editor cache and ignore future cache files.
+- Keep ADR-0015 outside the admitted `safe` profile after its first full Cormen gate
+  recorded candidate/control ratios of 1.0066 wall and 1.0054 CPU, failed the required
+  3% gain, and exceeded the per-case point-estimate ceiling.
 - Mark ADR-0014 and the optimization IR specification as partially implemented rather
   than describing the complete whole-function pipeline as delivered.
 - Extend benchmark runners and project documentation with the experimental IR profile

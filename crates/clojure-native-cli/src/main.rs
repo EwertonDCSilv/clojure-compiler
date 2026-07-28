@@ -72,7 +72,7 @@ fn print_usage() {
          \x20 clojure-native read  <arquivo.clj>           Lê e imprime as forms (dump determinístico)\n\
          \x20 clojure-native eval  <expr>                  Avalia uma expressão (interpretador)\n\
          \x20 clojure-native run   <arquivo.clj> [--main]  Executa via interpretador (script)\n\
-         \x20 clojure-native build <arquivo.clj> [-o out] [--opt-level nível] [--ir-opt modo]\n\
+         \x20 clojure-native build <arquivo.clj> [-o out] [--opt-level nível] [--ir-opt modo] [--ir-experiment nome] [--ir-stats arquivo]\n\
          \x20                                              Compila para binário nativo\n\
          \n\
          NÍVEIS DE OTIMIZAÇÃO DO BUILD:\n\
@@ -81,7 +81,9 @@ fn print_usage() {
          \n\
          IR DE OTIMIZAÇÃO OPCIONAL:\n\
          \x20 none | safe\n\
-         \x20 Padrão: none; safe executa passes verificados e especialização de fixnum\n",
+         \x20 Padrão: none; safe executa passes verificados e especialização de fixnum\n\
+         \x20 --ir-experiment adr15 ativa o bundle isolado de valores/roots/ABI\n\
+         \x20 --ir-stats ARQUIVO grava métricas estruturais determinísticas\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -288,6 +290,8 @@ fn cmd_build(args: &[String]) -> ExitCode {
     let mut output = None;
     let mut optimization_level = None;
     let mut ir_optimization = None;
+    let mut ir_experiment = None;
+    let mut ir_stats_path = None;
     let mut source_paths: Vec<std::path::PathBuf> = Vec::new();
     let mut i = 0;
     while i < args.len() {
@@ -330,6 +334,28 @@ fn cmd_build(args: &[String]) -> ExitCode {
                         return ExitCode::FAILURE;
                     }
                 }
+                i += 2;
+            }
+            "--ir-experiment" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--ir-experiment requer um valor: none ou adr15");
+                    return ExitCode::FAILURE;
+                };
+                match value.parse::<clojure_codegen::IrExperiment>() {
+                    Ok(experiment) => ir_experiment = Some(experiment),
+                    Err(message) => {
+                        eprintln!("experimento de IR inválido `{value}`; {message}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 2;
+            }
+            "--ir-stats" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--ir-stats requer um caminho de saída");
+                    return ExitCode::FAILURE;
+                };
+                ir_stats_path = Some(std::path::PathBuf::from(value));
                 i += 2;
             }
             option if option.starts_with('-') => {
@@ -417,14 +443,37 @@ fn cmd_build(args: &[String]) -> ExitCode {
     let codegen_options = clojure_codegen::CodegenOptions {
         optimization_level: optimization_level.unwrap_or(clojure_codegen::OptimizationLevel::None),
         ir_optimization: ir_optimization.unwrap_or(clojure_codegen::IrOptimizationMode::None),
+        ir_experiment: ir_experiment.unwrap_or(clojure_codegen::IrExperiment::None),
     };
-    let obj = match clojure_codegen::compile_object_with_options(&program, codegen_options) {
-        Ok(o) => o,
-        Err(d) => {
-            eprintln!("{}", d.render(&sm));
+    let (obj, optimization_stats) =
+        match clojure_codegen::compile_object_with_options_and_stats(&program, codegen_options) {
+            Ok(result) => result,
+            Err(d) => {
+                eprintln!("{}", d.render(&sm));
+                return ExitCode::FAILURE;
+            }
+        };
+    if let Some(path) = ir_stats_path {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                eprintln!(
+                    "erro ao criar diretório do relatório de otimização {}: {error}",
+                    parent.display()
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+        if let Err(error) = std::fs::write(&path, optimization_stats.to_json()) {
+            eprintln!(
+                "erro ao escrever relatório de otimização {}: {error}",
+                path.display()
+            );
             return ExitCode::FAILURE;
         }
-    };
+    }
 
     // Stage 4: materialize the object and amalgamated runtime, then ask the host
     // C compiler driver to link the final executable.

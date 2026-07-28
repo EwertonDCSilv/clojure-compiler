@@ -148,6 +148,13 @@ fixnum facts through loops and non-escaping direct calls. Its seven-pair, scale-
 Cormen gate passed with median wall and CPU improvements of 4.32% and 4.35%;
 `--ir-opt none` remains the default.
 
+ADR-0015 has an additional diagnostic candidate:
+`--ir-opt safe --ir-experiment adr15`. It adds raw fixnum regions, compact root frames,
+and specialized direct-call entries. The candidate remains outside `safe` because its
+first complete gate recorded aggregate candidate/control ratios of 1.0066 wall and
+1.0054 CPU instead of the required 3% gain, and exceeded the per-case point-estimate
+ceiling. `--ir-stats report.json` writes deterministic aggregate lowering metrics.
+
 ## Other CLI commands
 
 ```bash

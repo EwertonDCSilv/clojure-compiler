@@ -244,6 +244,8 @@ pub struct VerifyOptions {
     /// Reader targets do not use the code-generation pipeline and therefore
     /// do not receive this option.
     pub ir_optimization: Option<String>,
+    /// Optional candidate bundle forwarded only to native build targets.
+    pub ir_experiment: Option<String>,
 }
 
 /// Interpreted outcome of one conformance case.
@@ -671,12 +673,13 @@ pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
             let sender = sender.clone();
             let compiler = &options.compiler;
             let ir_optimization = options.ir_optimization.as_deref();
+            let ir_experiment = options.ir_experiment.as_deref();
             scope.spawn(move || loop {
                 let case = queue.lock().expect("case queue poisoned").pop_front();
                 let Some(case) = case else {
                     break;
                 };
-                let report = execute_case(&case, compiler, ir_optimization);
+                let report = execute_case(&case, compiler, ir_optimization, ir_experiment);
                 if sender.send(report).is_err() {
                     break;
                 }
@@ -701,7 +704,12 @@ pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
     Ok(report)
 }
 
-fn execute_case(case: &Case, compiler: &Path, ir_optimization: Option<&str>) -> CaseReport {
+fn execute_case(
+    case: &Case,
+    compiler: &Path,
+    ir_optimization: Option<&str>,
+    ir_experiment: Option<&str>,
+) -> CaseReport {
     let started = Instant::now();
     if case.manifest.status == CaseStatus::Pending {
         return CaseReport {
@@ -731,7 +739,7 @@ fn execute_case(case: &Case, compiler: &Path, ir_optimization: Option<&str>) -> 
         };
     }
 
-    let outcome = execute_target(case, compiler, ir_optimization);
+    let outcome = execute_target(case, compiler, ir_optimization, ir_experiment);
     let (result, message, category) = match (case.manifest.status, outcome) {
         (CaseStatus::Active, MatchResult::Match(message)) => (ResultKind::Pass, message, None),
         (CaseStatus::Active, MatchResult::Mismatch(message, category)) => {
@@ -768,12 +776,21 @@ fn platform_matches(platforms: &[String]) -> bool {
             .any(|platform| platform == std::env::consts::OS)
 }
 
-fn execute_target(case: &Case, compiler: &Path, ir_optimization: Option<&str>) -> MatchResult {
+fn execute_target(
+    case: &Case,
+    compiler: &Path,
+    ir_optimization: Option<&str>,
+    ir_experiment: Option<&str>,
+) -> MatchResult {
     let timeout = Duration::from_millis(case.manifest.timeout_ms);
     match case.manifest.target {
         Target::Reader => execute_reader(case, compiler, timeout),
-        Target::BuildRun => execute_build_run(case, compiler, timeout, ir_optimization),
-        Target::BuildError => execute_build_error(case, compiler, timeout, ir_optimization),
+        Target::BuildRun => {
+            execute_build_run(case, compiler, timeout, ir_optimization, ir_experiment)
+        }
+        Target::BuildError => {
+            execute_build_error(case, compiler, timeout, ir_optimization, ir_experiment)
+        }
         Target::Project => MatchResult::Mismatch(
             "project execution is not implemented".to_string(),
             Some("unsupported".to_string()),
@@ -838,6 +855,7 @@ fn execute_build_run(
     compiler: &Path,
     timeout: Duration,
     ir_optimization: Option<&str>,
+    ir_experiment: Option<&str>,
 ) -> MatchResult {
     let temporary = match TempDir::new() {
         Ok(value) => value,
@@ -854,6 +872,9 @@ fn execute_build_run(
     build.arg("build").arg(&input).arg("-o").arg(&executable);
     if let Some(profile) = ir_optimization {
         build.arg("--ir-opt").arg(profile);
+    }
+    if let Some(experiment) = ir_experiment {
+        build.arg("--ir-experiment").arg(experiment);
     }
     let build_output = match run_process(&mut build, timeout) {
         Ok(output) => output,
@@ -1145,6 +1166,7 @@ fn execute_build_error(
     compiler: &Path,
     timeout: Duration,
     ir_optimization: Option<&str>,
+    ir_experiment: Option<&str>,
 ) -> MatchResult {
     let temporary = match TempDir::new() {
         Ok(value) => value,
@@ -1161,6 +1183,9 @@ fn execute_build_error(
     command.arg("build").arg(&input).arg("-o").arg(&executable);
     if let Some(profile) = ir_optimization {
         command.arg("--ir-opt").arg(profile);
+    }
+    if let Some(experiment) = ir_experiment {
+        command.arg("--ir-experiment").arg(experiment);
     }
     let output = match run_process(&mut command, timeout) {
         Ok(output) => output,
@@ -2383,6 +2408,7 @@ chmod +x "$output"
             jobs: 1,
             filters: Filters::default(),
             ir_optimization: None,
+            ir_experiment: None,
         })
         .expect("verify process fixture");
         assert!(report.success, "{:?}", report.cases);
@@ -2511,6 +2537,7 @@ chmod +x "$output"
             jobs: 2,
             filters: Filters::default(),
             ir_optimization: None,
+            ir_experiment: None,
         })
         .expect("verify");
         assert!(report.success, "{:?}", report.cases);
@@ -2536,7 +2563,7 @@ chmod +x "$output"
 
     #[cfg(unix)]
     #[test]
-    fn verify_forwards_the_optional_ir_profile_only_to_build_targets() {
+    fn verify_forwards_the_optional_ir_profile_and_experiment_to_build_targets() {
         let temp = TempDir::new().expect("temp");
         let root = temp.path().join("suite");
         create_case(
@@ -2574,12 +2601,14 @@ chmod +x "$output"
             jobs: 1,
             filters: Filters::default(),
             ir_optimization: Some("safe".to_string()),
+            ir_experiment: Some("adr15".to_string()),
         })
         .expect("verify safe profile");
 
         assert!(report.success, "{:?}", report.cases);
         let arguments = fs::read_to_string(arguments).expect("compiler arguments");
         assert!(arguments.contains("--ir-opt safe"), "{arguments}");
+        assert!(arguments.contains("--ir-experiment adr15"), "{arguments}");
     }
 
     #[cfg(unix)]
@@ -2606,6 +2635,7 @@ chmod +x "$output"
             jobs: 1,
             filters: Filters::default(),
             ir_optimization: None,
+            ir_experiment: None,
         })
         .expect("verify");
         assert!(!report.success);
