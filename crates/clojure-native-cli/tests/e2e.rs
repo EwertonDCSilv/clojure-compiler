@@ -249,6 +249,35 @@ fn native_connector_test_request_shared_dispatch() {
 }
 
 #[test]
+fn native_connector_validates_request_and_response() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 2 §7/§10: request/response own semantic validation; test-request
+    // validates input and output, throwing categorized error maps on invalid data.
+    let app = r#"(ns app.core
+  (:require [cljn.http.request :as req]
+            [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]))
+(defn good [request]
+  (if (= (req/path request) "/health") (resp/ok "OK") (resp/not-found)))
+(defn bad [request] {:status 999 :headers {} :body nil})
+(defn -main []
+  (let [c (conn/create-connector good)]
+    (println (get (conn/test-request c (req/request :get "/health")) :status))
+    (println (try (conn/test-request c {:method "GET"}) (catch E e (get e :kind))))
+    (println (try (conn/test-request (conn/create-connector bad) (req/request :get "/x"))
+                  (catch E e (get e :kind))))
+    (println (try (conn/create-connector nil) (catch E e (get e :kind))))))
+(-main)"#;
+    let expected = "200\n:invalid-request\n:invalid-response\n:invalid-connector\n";
+    assert_eq!(
+        build_and_run_project("conn_valid", &[("app.clj", app)], "app.clj"),
+        expected
+    );
+}
+
+#[test]
 fn static_module_loader_rejects_dependency_cycle() {
     if !have_cc() {
         return;
