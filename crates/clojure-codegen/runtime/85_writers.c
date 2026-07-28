@@ -10,7 +10,7 @@
  */
 
 /* ABI: built-in dynamic Var IDs shared with the analyzer. */
-enum { VAR_OUT = 0, VAR_ERR = 1, VAR_FLUSH = 2, VAR_IN = 3, NDYNVAR = 4 };
+enum { VAR_OUT = 0, VAR_ERR = 1, VAR_FLUSH = 2, VAR_IN = 3, VAR_ARGS = 4, NDYNVAR = 5 };
 static Value dyn_vars[NDYNVAR];
 static void gc_mark_dynvars(void) {
     for (int i = 0; i < NDYNVAR; i++) gc_mark(dyn_vars[i]);
@@ -113,6 +113,23 @@ Value cljn_writer_to_string(Value w) {
 
 /* Return a built-in dynamic Var selected by tagged fixnum ID. */
 Value cljn_var_get(Value id) { return dynvar_get((int)FIX(id)); }
+
+/*
+ * Capture arguments after argv[0] in the *command-line-args* dynamic Var.
+ *
+ * ABI: called once by generated main with raw argc and argv.
+ * GC: the bounded no-GC region protects the unrooted partial vector; the final
+ * vector becomes reachable from the permanently marked dynamic-Var table.
+ */
+void cljn_set_args(int64_t argc, char **argv) {
+    gc_disabled++;
+    Value v = cljn_vec_empty();
+    for (int64_t i = 1; i < argc; i++) {
+        v = cljn_conj(v, cljn_str_from(argv[i], (long)strlen(argv[i])));
+    }
+    gc_disabled--;
+    dyn_vars[VAR_ARGS] = v;
+}
 
 /* Allocate a Reader positioned at the start of a runtime string. */
 Value cljn_string_reader(Value s) {

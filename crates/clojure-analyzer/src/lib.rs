@@ -291,6 +291,10 @@ pub enum Prim {
     DirectoryP,
     /// Test whether a path names a regular file.
     FileP,
+    /// File size in bytes.
+    FileSize,
+    /// File last-modified time in seconds.
+    FileModified,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -302,6 +306,7 @@ fn dyn_var_id(name: &str) -> Option<i64> {
         "*err*" => Some(1),
         "*flush-on-newline*" => Some(2),
         "*in*" => Some(3),
+        "*command-line-args*" => Some(4),
         _ => None,
     }
 }
@@ -2087,6 +2092,8 @@ fn prim_of(name: &str) -> Option<Prim> {
         "rename" => Prim::Rename,
         "directory?" => Prim::DirectoryP,
         "file?" => Prim::FileP,
+        "file-size" => Prim::FileSize,
+        "file-modified" => Prim::FileModified,
         _ => return None,
     })
 }
@@ -2129,6 +2136,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::DeleteFile
         | Prim::DirectoryP
         | Prim::FileP
+        | Prim::FileSize
+        | Prim::FileModified
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -2226,7 +2235,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::ListDir
         | Prim::DeleteFile
         | Prim::DirectoryP
-        | Prim::FileP => n == 1,
+        | Prim::FileP
+        | Prim::FileSize
+        | Prim::FileModified => n == 1,
         Prim::Rename => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,

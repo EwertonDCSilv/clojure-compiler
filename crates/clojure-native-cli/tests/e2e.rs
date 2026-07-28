@@ -26,6 +26,29 @@ fn build_and_run_env(name: &str, src: &str, env: &[(&str, &str)]) -> String {
     build_and_run_with_options(name, src, &[], env)
 }
 
+/// Igual, mas passando argumentos de linha de comando ao binário (*command-line-args*).
+fn build_and_run_argv(name: &str, src: &str, argv: &[&str]) -> String {
+    let dir = std::env::temp_dir();
+    let clj = dir.join(format!("{name}.clj"));
+    let exe = dir.join(format!("{name}.bin"));
+    std::fs::write(&clj, src).unwrap();
+    let mut build = Command::new(cli());
+    build.arg("build").arg(&clj).arg("-o").arg(&exe);
+    let out = build.output().expect("executa build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut cmd = Command::new(&exe);
+    cmd.args(argv);
+    let run = cmd.output().expect("executa binário nativo");
+    assert!(run.status.success(), "binário retornou erro");
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+    String::from_utf8(run.stdout).unwrap()
+}
+
 fn build_and_run_with_options(
     name: &str,
     src: &str,
@@ -584,6 +607,30 @@ fn file_streams_and_with_open() {
     assert_eq!(
         build_and_run_env("file_streams_gc", src, &[("CLJN_GC_STRESS", "1")]),
         expected
+    );
+}
+
+#[test]
+fn command_line_args_and_file_metadata() {
+    if !have_cc() {
+        return;
+    }
+    // *command-line-args* (args após o nome do programa) + file-size/file-modified.
+    let src = r#"(ns a.core)
+(defn -main []
+  (println (count *command-line-args*) *command-line-args* (first *command-line-args*))
+  (spit "/tmp/cljn_e2e_size.txt" "12345")
+  (println (file-size "/tmp/cljn_e2e_size.txt") (> (file-modified "/tmp/cljn_e2e_size.txt") 0))
+  (delete-file "/tmp/cljn_e2e_size.txt")
+  (println (try (file-size "/nao/existe") (catch E e (get e :kind)))))
+(-main)"#;
+    assert_eq!(
+        build_and_run_argv("cla_args", src, &["alpha", "beta"]),
+        "2 [alpha beta] alpha\n5 true\n:not-found\n"
+    );
+    assert_eq!(
+        build_and_run_argv("cla_none", src, &[]),
+        "0 [] nil\n5 true\n:not-found\n"
     );
 }
 

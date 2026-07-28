@@ -193,6 +193,28 @@ Value cljn_filep(Value path) {
     free(cp);
     return b2v(ok);
 }
+/* Return the file size in bytes; throws structured I/O ex-data if stat fails. */
+Value cljn_file_size(Value path) {
+    if (obj_type(path) != T_STR) die("file-size: path deve ser string");
+    char *cp = io_cstr(path);
+    struct stat st;
+    int r = stat(cp, &st);
+    int e = errno;
+    free(cp);
+    if (r != 0) io_throw(io_kind(e), "file-size", path, e);
+    return MK_FIX((intptr_t)st.st_size);
+}
+/* Return the last-modified time in whole seconds since the epoch. */
+Value cljn_file_modified(Value path) {
+    if (obj_type(path) != T_STR) die("file-modified: path deve ser string");
+    char *cp = io_cstr(path);
+    struct stat st;
+    int r = stat(cp, &st);
+    int e = errno;
+    free(cp);
+    if (r != 0) io_throw(io_kind(e), "file-modified", path, e);
+    return MK_FIX((intptr_t)st.st_mtime);
+}
 
 /* Allocate an immutable byte array and its owned external data buffer. */
 static Value bytes_alloc(int64_t n) {

@@ -245,7 +245,8 @@ struct Runtime {
     bget: FuncId,             // (bytes,i)->fixnum
     slurp_bytes: FuncId,      // (path)->bytes
     spit_bytes: FuncId,       // (path,bytes)->nil
-    read_string: FuncId,      // (string)->valor EDN
+    read_string: FuncId,      // (string) -> parsed EDN value
+    set_args: FuncId,         // (raw argc, raw argv) -> void
     writer_open: FuncId,      // (path) -> file writer.
     reader_open: FuncId,      // (path) -> file reader.
     close: FuncId,            // (closeable) -> nil.
@@ -257,6 +258,8 @@ struct Runtime {
     rename: FuncId,           // (from,to)->nil
     directoryp: FuncId,       // (path)->bool
     filep: FuncId,            // (path)->bool
+    file_size: FuncId,        // (path)->fixnum
+    file_modified: FuncId,    // (path)->fixnum
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -406,6 +409,8 @@ pub fn compile_object_with_options(
 
     {
         let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I32)); // Raw C argc.
+        sig.params.push(AbiParam::new(ptr)); // Raw C argv.
         sig.returns.push(AbiParam::new(types::I32));
         let main_id = module
             .declare_function("main", Linkage::Export, &sig)
@@ -636,6 +641,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
+        set_args: bin_void(m, "cljn_set_args"),
         writer_open: una(m, "cljn_writer"),
         reader_open: una(m, "cljn_reader"),
         close: una(m, "cljn_close"),
@@ -646,6 +652,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         rename: bin(m, "cljn_rename"),
         directoryp: una(m, "cljn_directoryp"),
         filep: una(m, "cljn_filep"),
+        file_size: una(m, "cljn_file_size"),
+        file_modified: una(m, "cljn_file_modified"),
         flush: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -739,6 +747,8 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Rename
             | Prim::DirectoryP
             | Prim::FileP
+            | Prim::FileSize
+            | Prim::FileModified
     )
 }
 
@@ -1231,8 +1241,14 @@ impl<'a> FnGen<'a> {
 
     fn build_main(mut self, body: &[Ast], local_count: u32) -> Result<(), Diagnostic> {
         let entry = self.builder.create_block();
+        self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
+        // Capture argv in *command-line-args* before evaluating user code.
+        let argc = self.builder.block_params(entry)[0];
+        let argv = self.builder.block_params(entry)[1];
+        let argc64 = self.builder.ins().uextend(types::I64, argc);
+        self.call_void(self.rt.set_args, &[argc64, argv]);
         self.enter_frame(local_count);
         for a in body {
             let (_, pushed) = self.operand(a)?;
@@ -2412,6 +2428,8 @@ impl<'a> FnGen<'a> {
             Prim::Rename => self.bin(self.rt.rename, args),
             Prim::DirectoryP => self.una(self.rt.directoryp, args),
             Prim::FileP => self.una(self.rt.filep, args),
+            Prim::FileSize => self.una(self.rt.file_size, args),
+            Prim::FileModified => self.una(self.rt.file_modified, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),
