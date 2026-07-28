@@ -17,3 +17,4 @@
 #include "100_exceptions.c"
 #include "110_multimethods.c"
 #include "120_test_introspection.c"
+#include "130_io.c"

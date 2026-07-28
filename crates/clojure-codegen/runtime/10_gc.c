@@ -35,6 +35,11 @@ static void *xalloc(size_t n) {
     if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
     return p;
 }
+static void *xrealloc(void *old, size_t n) {
+    void *p = realloc(old, n);
+    if (!p) { fprintf(stderr, "erro: sem memória\n"); exit(1); }
+    return p;
+}
 static void die(const char *m) { fprintf(stderr, "erro: %s\n", m); exit(1); }
 static int obj_type(Value v) { return (IS_PTR(v) && v != 0) ? ((Obj *)v)->type : 0; }
 

@@ -355,6 +355,37 @@ fn compiles_transients() {
 }
 
 #[test]
+fn native_io_slurp_spit_getenv() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 (subconjunto): slurp/spit/file-exists?/getenv por primitivas ABI;
+    // erros do SO viram mapas ex-data capturáveis via try/catch.
+    let src = r#"(ns io.core)
+(defn -main []
+  (spit "/tmp/cljn_e2e_io.txt" "abc\ndef\n")
+  (println (file-exists? "/tmp/cljn_e2e_io.txt") (file-exists? "/tmp/cljn_e2e_nope.txt"))
+  (println (count (slurp "/tmp/cljn_e2e_io.txt")))
+  (println (try (slurp "/tmp/cljn_e2e_nope.txt")
+                (catch E e (str (get e :kind) " " (get e :operation) " " (get e :os-code)))))
+  (println (getenv "CLJN_E2E_VAR") (getenv "CLJN_E2E_MISSING")))
+(-main)"#;
+    let expected = "true false\n8\n:not-found :slurp 2\nxyz nil\n";
+    assert_eq!(
+        build_and_run_env("cljn_e2e_io", src, &[("CLJN_E2E_VAR", "xyz")]),
+        expected
+    );
+    assert_eq!(
+        build_and_run_env(
+            "cljn_e2e_io_gc",
+            src,
+            &[("CLJN_E2E_VAR", "xyz"), ("CLJN_GC_STRESS", "1")]
+        ),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

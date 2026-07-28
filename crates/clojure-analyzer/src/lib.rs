@@ -136,6 +136,10 @@ pub enum Prim {
     ConjBang,
     AssocBang,
     DissocBang,
+    Slurp,
+    Spit,
+    FileExists,
+    Getenv,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -1662,6 +1666,10 @@ fn prim_of(name: &str) -> Option<Prim> {
         "conj!" => Prim::ConjBang,
         "assoc!" => Prim::AssocBang,
         "dissoc!" => Prim::DissocBang,
+        "slurp" => Prim::Slurp,
+        "spit" => Prim::Spit,
+        "file-exists?" => Prim::FileExists,
+        "getenv" => Prim::Getenv,
         _ => return None,
     })
 }
@@ -1682,6 +1690,9 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Throw
         | Prim::Transient
         | Prim::PersistentBang
+        | Prim::Slurp
+        | Prim::FileExists
+        | Prim::Getenv
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1701,6 +1712,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Compare
         | Prim::ConjBang
         | Prim::DissocBang
+        | Prim::Spit
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -1727,6 +1739,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Contains
         | Prim::ConjBang
         | Prim::DissocBang
+        | Prim::Spit
         | Prim::Conj => n == 2,
         Prim::Nth => n == 2 || n == 3, // ADR-0008: aridade 2 e 3 (not-found)
         Prim::AssocBang => n == 3,
@@ -1743,6 +1756,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Throw
         | Prim::Transient
         | Prim::PersistentBang
+        | Prim::Slurp
+        | Prim::FileExists
+        | Prim::Getenv
         | Prim::Vals => n == 1,
         Prim::Try => n == 3,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,

@@ -61,6 +61,7 @@ embed_runtime_modules!(
     ("exceptions", "../runtime/100_exceptions.c"),
     ("multimethods", "../runtime/110_multimethods.c"),
     ("test-introspection", "../runtime/120_test_introspection.c"),
+    ("io", "../runtime/130_io.c"),
 );
 
 /// Nível de otimização aplicado pelo Cranelift ao código gerado.
@@ -215,6 +216,10 @@ struct Runtime {
     throw_: FuncId,           // (v)->! (longjmp)
     multi_register: FuncId,   // (mid,dispatch_fn)->void
     multi_call: FuncId,       // (mid,argc,argv)->v
+    slurp: FuncId,            // (path)->string
+    spit: FuncId,             // (path,content)->nil
+    file_exists: FuncId,      // (path)->bool
+    getenv: FuncId,           // (name)->string|nil
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -551,6 +556,10 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         throw_: una(m, "cljn_throw"),
         multi_register: bin_void(m, "cljn_multi_register"),
         multi_call: ternary(m, "cljn_multi_call"),
+        slurp: una(m, "cljn_slurp"),
+        spit: bin(m, "cljn_spit"),
+        file_exists: una(m, "cljn_file_exists"),
+        getenv: una(m, "cljn_getenv"),
         transient: una(m, "cljn_transient"),
         persistent_bang: una(m, "cljn_persistent_bang"),
         conj_bang: bin(m, "cljn_conj_bang"),
@@ -622,6 +631,8 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Println
             | Prim::Print
             | Prim::Throw // diverge; resultado nunca materializa
+            | Prim::Spit // devolve nil
+            | Prim::FileExists // devolve boolean
     )
 }
 
@@ -2245,6 +2256,10 @@ impl<'a> FnGen<'a> {
             Prim::Compare => self.bin(self.rt.compare, args),
             Prim::Throw => self.una(self.rt.throw_, args), // noreturn (longjmp)
             Prim::Try => self.tern(self.rt.try_, args),
+            Prim::Slurp => self.una(self.rt.slurp, args),
+            Prim::Spit => self.bin(self.rt.spit, args),
+            Prim::FileExists => self.una(self.rt.file_exists, args),
+            Prim::Getenv => self.una(self.rt.getenv, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),
