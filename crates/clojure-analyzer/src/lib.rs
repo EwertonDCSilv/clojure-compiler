@@ -162,6 +162,13 @@ pub enum Prim {
     ReaderOpen,
     Close,
     Flush,
+    Mkdir,
+    Mkdirs,
+    ListDir,
+    DeleteFile,
+    Rename,
+    DirectoryP,
+    FileP,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -1870,6 +1877,13 @@ fn prim_of(name: &str) -> Option<Prim> {
         "reader" => Prim::ReaderOpen,
         "close" => Prim::Close,
         "flush" => Prim::Flush,
+        "mkdir" => Prim::Mkdir,
+        "mkdirs" => Prim::Mkdirs,
+        "list-dir" => Prim::ListDir,
+        "delete-file" => Prim::DeleteFile,
+        "rename" => Prim::Rename,
+        "directory?" => Prim::DirectoryP,
+        "file?" => Prim::FileP,
         _ => return None,
     })
 }
@@ -1905,6 +1919,12 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::WriterOpen
         | Prim::ReaderOpen
         | Prim::Close
+        | Prim::Mkdir
+        | Prim::Mkdirs
+        | Prim::ListDir
+        | Prim::DeleteFile
+        | Prim::DirectoryP
+        | Prim::FileP
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1928,6 +1948,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::PathJoin
         | Prim::Bget
         | Prim::SpitBytes
+        | Prim::Rename
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -1996,6 +2017,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::Bget | Prim::SpitBytes => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,
+        Prim::Mkdir | Prim::Mkdirs | Prim::ListDir | Prim::DeleteFile | Prim::DirectoryP
+        | Prim::FileP => n == 1,
+        Prim::Rename => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

@@ -588,6 +588,39 @@ fn file_streams_and_with_open() {
 }
 
 #[test]
+fn filesystem_operations() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-4: mkdir(s)/list-dir/delete-file/rename/directory?/file?.
+    let src = r#"(ns fs.core)
+(defn -main []
+  (let [root "/tmp/cljn_e2e_fs"]
+    (mkdirs (path-join root "a/b"))
+    (println (directory? root) (directory? (path-join root "a/b")) (file? root))
+    (spit (path-join root "x.txt") "c")
+    (spit (path-join root "y.txt") "d")
+    (println (file? (path-join root "x.txt")) (count (list-dir root)))
+    (rename (path-join root "x.txt") (path-join root "z.txt"))
+    (println (file? (path-join root "x.txt")) (file? (path-join root "z.txt")))
+    (delete-file (path-join root "z.txt"))
+    (delete-file (path-join root "y.txt"))
+    (println (count (list-dir root)))
+    (println (try (list-dir "/nao/existe/dir") (catch E e (get e :kind))))
+    (delete-file (path-join root "a/b"))
+    (delete-file (path-join root "a"))
+    (delete-file root)
+    (println (directory? root))))
+(-main)"#;
+    let expected = "true true false\ntrue 3\nfalse true\n1\n:not-found\nfalse\n";
+    assert_eq!(build_and_run("fs_ops", src), expected);
+    assert_eq!(
+        build_and_run_env("fs_ops_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

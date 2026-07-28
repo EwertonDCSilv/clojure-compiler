@@ -244,6 +244,13 @@ struct Runtime {
     reader_open: FuncId,      // (path)->reader de arquivo
     close: FuncId,            // (x)->nil (fecha handle)
     flush: FuncId,            // ()->nil (descarrega *out*)
+    mkdir: FuncId,            // (path)->nil
+    mkdirs: FuncId,           // (path)->nil (recursivo)
+    list_dir: FuncId,         // (path)->vetor de nomes
+    delete_file: FuncId,      // (path)->nil
+    rename: FuncId,           // (from,to)->nil
+    directoryp: FuncId,       // (path)->bool
+    filep: FuncId,            // (path)->bool
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -609,6 +616,13 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         writer_open: una(m, "cljn_writer"),
         reader_open: una(m, "cljn_reader"),
         close: una(m, "cljn_close"),
+        mkdir: una(m, "cljn_mkdir"),
+        mkdirs: una(m, "cljn_mkdirs"),
+        list_dir: una(m, "cljn_list_dir"),
+        delete_file: una(m, "cljn_delete_file"),
+        rename: bin(m, "cljn_rename"),
+        directoryp: una(m, "cljn_directoryp"),
+        filep: una(m, "cljn_filep"),
         flush: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -702,6 +716,12 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::SpitBytes // devolve nil
             | Prim::Close // devolve nil
             | Prim::Flush // devolve nil
+            | Prim::Mkdir // devolve nil
+            | Prim::Mkdirs // devolve nil
+            | Prim::DeleteFile // devolve nil
+            | Prim::Rename // devolve nil
+            | Prim::DirectoryP // devolve boolean
+            | Prim::FileP // devolve boolean
     )
 }
 
@@ -2351,6 +2371,13 @@ impl<'a> FnGen<'a> {
             Prim::ReaderOpen => self.una(self.rt.reader_open, args),
             Prim::Close => self.una(self.rt.close, args),
             Prim::Flush => Ok(self.call0(self.rt.flush)),
+            Prim::Mkdir => self.una(self.rt.mkdir, args),
+            Prim::Mkdirs => self.una(self.rt.mkdirs, args),
+            Prim::ListDir => self.una(self.rt.list_dir, args),
+            Prim::DeleteFile => self.una(self.rt.delete_file, args),
+            Prim::Rename => self.bin(self.rt.rename, args),
+            Prim::DirectoryP => self.una(self.rt.directoryp, args),
+            Prim::FileP => self.una(self.rt.filep, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

@@ -7,6 +7,8 @@
  * bufferizados, handles, filesystem recursivo e reader de runtime ficam para depois. */
 #include <errno.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 /* Copia uma Str para um buffer C NUL-terminado (o chamador libera com free). */
 static char *io_cstr(Value s) {
@@ -99,6 +101,93 @@ Value cljn_getenv(Value name) {
     const char *v = getenv(cn);
     free(cn);
     return v ? cljn_str_from(v, (long)strlen(v)) : NIL;
+}
+
+/* ---------- Filesystem (ADR-0007 / IO-4): dirs, listagem, remoção, rename ----------
+ * `path` é rooteado pelo chamador durante a chamada; io_throw o usa no mapa de erro. */
+Value cljn_mkdir(Value path) {
+    if (obj_type(path) != T_STR) die("mkdir: path deve ser string");
+    char *cp = io_cstr(path);
+    int r = mkdir(cp, 0777);
+    int e = errno;
+    free(cp);
+    if (r != 0) io_throw(io_kind(e), "mkdir", path, e);
+    return NIL;
+}
+/* mkdirs: cria todos os componentes (estilo mkdir -p); idempotente (EEXIST ok). */
+Value cljn_mkdirs(Value path) {
+    if (obj_type(path) != T_STR) die("mkdirs: path deve ser string");
+    char *cp = io_cstr(path);
+    for (char *p = cp + (cp[0] == '/' ? 1 : 0); *p; p++) {
+        if (*p == '/') {
+            *p = 0;
+            if (cp[0] && mkdir(cp, 0777) != 0 && errno != EEXIST) {
+                int e = errno; free(cp); io_throw(io_kind(e), "mkdirs", path, e);
+            }
+            *p = '/';
+        }
+    }
+    if (mkdir(cp, 0777) != 0 && errno != EEXIST) {
+        int e = errno; free(cp); io_throw(io_kind(e), "mkdirs", path, e);
+    }
+    free(cp);
+    return NIL;
+}
+/* (list-dir path) -> vetor com os nomes das entradas (sem "." e ".."). */
+Value cljn_list_dir(Value path) {
+    if (obj_type(path) != T_STR) die("list-dir: path deve ser string");
+    char *cp = io_cstr(path);
+    DIR *d = opendir(cp);
+    free(cp);
+    if (!d) io_throw(io_kind(errno), "list-dir", path, errno);
+    gc_disabled++; /* nº de entradas limitado; sem coleta no meio dispensa rootear */
+    Value v = cljn_vec_empty();
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        v = cljn_conj(v, cljn_str_from(e->d_name, (long)strlen(e->d_name)));
+    }
+    gc_disabled--;
+    closedir(d);
+    return v;
+}
+/* (delete-file path) -> nil. Remove arquivo ou diretório vazio. */
+Value cljn_delete_file(Value path) {
+    if (obj_type(path) != T_STR) die("delete-file: path deve ser string");
+    char *cp = io_cstr(path);
+    int r = remove(cp);
+    int e = errno;
+    free(cp);
+    if (r != 0) io_throw(io_kind(e), "delete-file", path, e);
+    return NIL;
+}
+/* (rename from to) -> nil. */
+Value cljn_rename(Value from, Value to) {
+    if (obj_type(from) != T_STR || obj_type(to) != T_STR) die("rename: esperava strings");
+    char *cf = io_cstr(from);
+    char *ct = io_cstr(to);
+    int r = rename(cf, ct);
+    int e = errno;
+    free(cf); free(ct);
+    if (r != 0) io_throw(io_kind(e), "rename", from, e);
+    return NIL;
+}
+/* (directory? path) / (file? path) -> bool (false se não existe). */
+Value cljn_directoryp(Value path) {
+    if (obj_type(path) != T_STR) die("directory?: path deve ser string");
+    char *cp = io_cstr(path);
+    struct stat st;
+    int ok = (stat(cp, &st) == 0) && S_ISDIR(st.st_mode);
+    free(cp);
+    return b2v(ok);
+}
+Value cljn_filep(Value path) {
+    if (obj_type(path) != T_STR) die("file?: path deve ser string");
+    char *cp = io_cstr(path);
+    struct stat st;
+    int ok = (stat(cp, &st) == 0) && S_ISREG(st.st_mode);
+    free(cp);
+    return b2v(ok);
 }
 
 /* ---------- Bytes (ADR-0007 / IO-1): array binário + I/O binário ---------- */
