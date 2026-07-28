@@ -192,6 +192,38 @@ fn rejects_invalid_cranelift_optimization_level() {
 }
 
 #[test]
+fn interceptor_chain_enter_leave_terminate_recover() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 3: :enter forward, :leave reverse, response termination, and
+    // :error recovery in the synchronous interceptor chain.
+    let app = r#"(ns app.core (:require [cljn.pedestal.chain :as chain]))
+(defn logger [name]
+  {:name name
+   :enter (fn [ctx] (assoc ctx :trace (str (get ctx :trace) "e" name)))
+   :leave (fn [ctx] (assoc ctx :trace (str (get ctx :trace) "l" name)))})
+(defn -main []
+  (let [c (chain/execute {:trace ""} [(logger "1") (logger "2") (logger "3")])]
+    (println (get c :trace)))
+  (let [term {:name "t" :enter (fn [ctx] (assoc ctx :trace (str (get ctx :trace) "t") :response {:status 200}))}
+        c (chain/execute {:trace ""} [(logger "a") term (logger "b")])]
+    (println (get c :trace) (get (get c :response) :status)))
+  (let [boom {:name "boom" :enter (fn [ctx] (throw {:oops 1}))}
+        guard {:name "guard" :error (fn [ctx err] (assoc ctx :response {:status 500} :recovered true))}
+        c (chain/execute {} [guard boom])]
+    (println (get (get c :response) :status) (get c :recovered))))
+(-main)"#;
+    let expected = "e1e2e3l3l2l1\neatla 200\n500 true\n";
+    let files = &[("app.clj", app)][..];
+    assert_eq!(build_and_run_project("chain", files, "app.clj"), expected);
+    assert_eq!(
+        build_and_run_project_env("chain_gc", files, "app.clj", &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn per_namespace_symbols_allow_same_simple_name() {
     if !have_cc() {
         return;
