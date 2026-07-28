@@ -1,7 +1,7 @@
-//! Compila e executa os harnesses C do runtime.
+//! Compiles and executes the native runtime's C harnesses.
 //!
-//! Os testes ficam sob `cargo test` para que o mesmo gate usado pelo workspace
-//! também valide o runtime que é linkado aos executáveis nativos.
+//! Keeping these harnesses under `cargo test` makes the workspace gate validate
+//! the same amalgamated runtime linked into generated native executables.
 
 use std::ffi::OsString;
 use std::fs;
@@ -56,8 +56,8 @@ fn compile(suite: &str, sources: &[&Path]) -> TestBinary {
             "-Wall",
             "-Wextra",
             "-Werror",
-            // O runtime existente tem uma linha compacta intencional que dispara
-            // esse aviso. Os demais avisos continuam promovidos a erro.
+            // One intentional compact runtime line triggers this warning; every
+            // other compiler warning remains promoted to an error.
             "-Wno-misleading-indentation",
         ])
         .args(sources)
@@ -87,8 +87,8 @@ fn run(executable: &Path, args: &[&str], environment: &[(&str, &str)]) -> Output
     command.args(args);
     command.envs(environment.iter().copied());
     if std::env::var_os("CLJN_RUNTIME_C_SANITIZE").is_some() {
-        // Slabs e tabelas globais vivem até o fim do processo por desenho. O
-        // teste sanitizado procura acessos inválidos e UB, não teardown global.
+        // Slabs and global tables intentionally live until process exit. The
+        // sanitizer contract detects invalid access and UB, not global teardown.
         command.env("ASAN_OPTIONS", "detect_leaks=0");
     }
     command.output().expect("executa harness C")

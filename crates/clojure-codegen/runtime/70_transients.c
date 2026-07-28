@@ -1,11 +1,16 @@
 
-/* ---------- transients (mutação em lote) ----------
- * Vetor transiente ESTRUTURAL (estilo Clojure): compartilha a trie do vetor
- * persistente e muta in-place apenas os nós que possui (edit == tv->edit); nós
- * compartilhados são copiados-e-marcados no primeiro write. transient/persistent!
- * são O(1); conj!/assoc! são O(1) amortizado / O(log32 n) SEM alocar um novo
- * wrapper por passo. persistent! invalida o token (edit=NIL) e devolve um PVec
- * que compartilha a trie agora congelada. */
+/*
+ * Batched mutation through transient collections.
+ *
+ * A transient vector shares the persistent trie and mutates only nodes carrying
+ * its unique edit token; other nodes copy on first write. Map/set transients are
+ * mutable boxes around persistent values. persistent! invalidates vector
+ * ownership and returns a wrapper sharing the frozen trie.
+ *
+ * INVARIANT: mutation after vector persistent! is rejected. The analyzer only
+ * threads transient receivers along uniqueness-proven paths.
+ */
+/* Convert a persistent collection to its transient representation. O(1). */
 Value cljn_transient(Value coll) {
     if (obj_type(coll) == T_VEC) {
         PVec *o = (PVec *)coll;
@@ -13,17 +18,17 @@ Value cljn_transient(Value coll) {
         gc_disabled++;
         Value edit = cljn_edit_new();
         TVec *tv = (TVec *)obj_alloc(sizeof(TVec), T_TVEC);
-        o = (PVec *)coll; /* revalida (não-móvel) */
+        o = (PVec *)coll;
         tv->count = o->count;
         tv->shift = o->shift;
-        tv->root = o->root; /* trie compartilhada; nós são copiados no 1º write */
-        tv->tail = (Value)vnode_copy_edit((VNode *)o->tail, edit); /* tail editável */
+        tv->root = o->root;
+        tv->tail = (Value)vnode_copy_edit((VNode *)o->tail, edit);
         tv->tail_len = o->tail_len;
         tv->edit = edit;
         gc_disabled--;
         return (Value)tv;
     }
-    /* mapas/sets: caixa mutável sobre o valor persistente */
+    /* Maps and sets use a mutable box around their persistent value. */
     cljn_gc_push(coll);
     TBox *b = (TBox *)obj_alloc(sizeof(TBox), T_TBOX);
     cljn_gc_popn(1);
@@ -33,6 +38,12 @@ Value cljn_transient(Value coll) {
 static void tv_check(TVec *tv, const char *op) {
     if (tv->edit == NIL) { fprintf(stderr, "erro: %s: transiente já persistido\n", op); exit(1); }
 }
+/*
+ * Mutate transient `t` by adjoining `x` and return the same transient.
+ *
+ * Complexity: amortized O(1) for vectors. Invalid receivers or invalidated
+ * vector tokens terminate through the fatal path.
+ */
 Value cljn_conj_bang(Value t, Value x) {
     if (obj_type(t) == T_TVEC) {
         TVec *tv = (TVec *)t;
@@ -45,7 +56,7 @@ Value cljn_conj_bang(Value t, Value x) {
             tv->tail = (Value)tail;
             tv->tail_len++;
         } else {
-            VNode *tailnode = (VNode *)tv->tail; /* cheio: empurra na trie */
+            VNode *tailnode = (VNode *)tv->tail;
             Value edit = tv->edit;
             VNode *newroot;
             int64_t newshift = tv->shift;
@@ -70,19 +81,21 @@ Value cljn_conj_bang(Value t, Value x) {
     }
     if (obj_type(t) == T_TBOX) {
         TBox *b = (TBox *)t;
-        b->inner = cljn_conj(b->inner, x); /* b rooteado pelo caller; inner idem */
+        b->inner = cljn_conj(b->inner, x);
         return t;
     }
     die("conj!: não é um transient");
     return t;
 }
+/* Mutate one transient association and return the same transient. O(log32 n)
+ * for vectors; boxed collections delegate to persistent association. */
 Value cljn_assoc_bang(Value t, Value k, Value v) {
     if (obj_type(t) == T_TVEC) {
         TVec *tv = (TVec *)t;
         tv_check(tv, "assoc!");
         if (!IS_FIX(k)) die("assoc!: índice de vetor deve ser inteiro");
         int64_t i = FIX(k);
-        if (i == tv->count) return cljn_conj_bang(t, v); /* append */
+        if (i == tv->count) return cljn_conj_bang(t, v);
         if (i < 0 || i > tv->count) die("assoc!: índice fora dos limites");
         maybe_gc();
         gc_disabled++;
@@ -105,6 +118,7 @@ Value cljn_assoc_bang(Value t, Value k, Value v) {
     die("assoc!: não é um transient");
     return t;
 }
+/* Remove a key from a boxed transient map and return the same box. */
 Value cljn_dissoc_bang(Value t, Value k) {
     if (obj_type(t) == T_TBOX) {
         TBox *b = (TBox *)t;
@@ -114,19 +128,25 @@ Value cljn_dissoc_bang(Value t, Value k) {
     die("dissoc!: requer um mapa transiente");
     return t;
 }
+/*
+ * Freeze a transient and return its persistent value.
+ *
+ * Vector freezing is O(1) and invalidates the edit token. Boxed map/set
+ * transients return their inner persistent collection.
+ */
 Value cljn_persistent_bang(Value t) {
     if (obj_type(t) == T_TBOX) return ((TBox *)t)->inner;
     if (obj_type(t) == T_TVEC) {
         TVec *tv = (TVec *)t;
         tv_check(tv, "persistent!");
-        tv->edit = NIL; /* invalida o token: writes futuros veem os nós como imutáveis */
+        tv->edit = NIL;
         maybe_gc();
         gc_disabled++;
         PVec *nv = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
         tv = (TVec *)t;
         nv->count = tv->count;
         nv->shift = tv->shift;
-        nv->root = tv->root; /* trie compartilhada (congelada) */
+        nv->root = tv->root;
         nv->tail = tv->tail;
         nv->tail_len = tv->tail_len;
         gc_disabled--;

@@ -1,11 +1,15 @@
+/*
+ * Dynamic Vars, writers, readers, and UTF-8 stream primitives.
+ *
+ * The single-threaded runtime stores built-in dynamic Vars in a global table.
+ * print/println target the Writer in *out*; read-line/read-char consume *in*.
+ * Rebinding helpers save and restore prior Values, including exceptional exit.
+ *
+ * ABI: DynVar IDs must match dyn_var_id in clojure-analyzer.
+ * GC: initialized dynamic Var values are permanent roots.
+ */
 
-/* ---------- Vars dinâmicas + writers (ADR-0007 / IO_SPEC IO-0) ----------
- * Base para redirecionar a saída: *out* é uma Var dinâmica que guarda um Writer.
- * print/println escrevem no Writer corrente; with-out-str rebinda *out* para um
- * Writer de string e devolve o texto acumulado. Single-thread: as Vars são um
- * vetor global; `binding`/with-out-str salvam e restauram o valor anterior. */
-
-/* Ids das Vars dinâmicas embutidas (devem casar com o analyzer). */
+/* ABI: built-in dynamic Var IDs shared with the analyzer. */
 enum { VAR_OUT = 0, VAR_ERR = 1, VAR_FLUSH = 2, VAR_IN = 3, NDYNVAR = 4 };
 static Value dyn_vars[NDYNVAR];
 static void gc_mark_dynvars(void) {
@@ -21,7 +25,7 @@ static Value mk_std_writer(int kind) {
     w->fp = NULL;
     return (Value)w;
 }
-/* ---------- UTF-8 (para Char e read-line/read-char) ---------- */
+/* UTF-8 helpers for immediate characters and stream decoding. */
 static int utf8_encode(uint32_t cp, char *out) {
     if (cp < 0x80) { out[0] = (char)cp; return 1; }
     if (cp < 0x800) {
@@ -46,12 +50,12 @@ static int utf8_len(unsigned char c) {
     if ((c >> 5) == 0x6) return 2;
     if ((c >> 4) == 0xE) return 3;
     if ((c >> 3) == 0x1E) return 4;
-    return 1; /* byte de continuação/ inválido: trata como 1 */
+    return 1; /* Invalid or continuation byte advances as one byte. */
 }
 static uint32_t utf8_decode(const char *p, int64_t avail, int *nout) {
     unsigned char c0 = (unsigned char)p[0];
     int n = utf8_len(c0);
-    if (n > avail) n = 1; /* truncado */
+    if (n > avail) n = 1;
     uint32_t cp;
     if (n == 1) cp = c0;
     else if (n == 2) cp = ((c0 & 0x1F) << 6) | (p[1] & 0x3F);
@@ -69,7 +73,7 @@ static Value mk_reader(int kind, Value src) {
     r->fp = NULL;
     return (Value)r;
 }
-/* Leitura de Var com init preguiçoso (evita depender de ordem de construtores). */
+/* Read a dynamic Var, lazily constructing standard stream wrappers. */
 static Value dynvar_get(int id) {
     if (dyn_vars[id] == 0) {
         if (id == VAR_OUT) dyn_vars[VAR_OUT] = mk_std_writer(WR_STDOUT);
@@ -81,7 +85,7 @@ static Value dynvar_get(int id) {
     return dyn_vars[id];
 }
 
-/* Escreve n bytes no Writer: stdout/stderr direto; string acumula no buffer. */
+/* Write bytes to a standard stream, file, or growable string buffer. */
 static void writer_write(Value w, const char *p, size_t n) {
     Writer *wr = (Writer *)w;
     if (wr->kind == WR_STDOUT) { fwrite(p, 1, n, stdout); return; }
@@ -97,38 +101,39 @@ static void writer_write(Value w, const char *p, size_t n) {
     wr->len += n;
 }
 
-/* Novo Writer de string (destino de with-out-str). */
+/* Allocate an empty string-capture Writer. */
 Value cljn_string_writer(void) {
     return mk_std_writer(WR_STRING);
 }
-/* Texto acumulado num Writer de string. */
+/* Copy a string Writer's accumulated bytes into a runtime string. */
 Value cljn_writer_to_string(Value w) {
     Writer *wr = (Writer *)w;
     return cljn_str_from(wr->buf ? wr->buf : "", (long)wr->len);
 }
 
-/* Leitura de Var dinâmica como valor (id = fixnum tagged). Ex.: *out* → este writer. */
+/* Return a built-in dynamic Var selected by tagged fixnum ID. */
 Value cljn_var_get(Value id) { return dynvar_get((int)FIX(id)); }
 
-/* Novo Reader sobre uma string (destino de with-in-str; lê a partir do início). */
+/* Allocate a Reader positioned at the start of a runtime string. */
 Value cljn_string_reader(Value s) {
     if (obj_type(s) != T_STR) die("with-in-str: esperava string");
     return mk_reader(RD_STRING, s);
 }
-/* (read-line) — lê uma linha do *in* corrente (sem o '\n'); nil no fim da entrada. */
+/* Read one line from *in* without newline, returning NIL at EOF.
+ * Ownership: temporary FILE buffers are freed after the result is copied. */
 Value cljn_read_line(void) {
-    Value in = dynvar_get(VAR_IN); /* pode alocar (init preguiçoso) */
+    Value in = dynvar_get(VAR_IN);
     Reader *r = (Reader *)in;
     if (r->kind == RD_STRING) {
         Str *s = (Str *)r->src;
-        if (r->pos >= (int64_t)s->len) return NIL; /* fim */
+        if (r->pos >= (int64_t)s->len) return NIL;
         int64_t start = r->pos;
         while (r->pos < (int64_t)s->len && s->data[r->pos] != '\n') r->pos++;
         int64_t linelen = r->pos - start;
-        if (r->pos < (int64_t)s->len) r->pos++; /* consome o '\n' */
-        return cljn_str_from(s->data + start, (long)linelen); /* GC ok: src rooteado */
+        if (r->pos < (int64_t)s->len) r->pos++;
+        return cljn_str_from(s->data + start, (long)linelen);
     }
-    /* stdin/arquivo: lê byte a byte até '\n'/EOF num buffer que cresce */
+    /* Standard/file input grows a temporary buffer until newline or EOF. */
     FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
     if (!fp) return NIL;
     size_t cap = 128, len = 0;
@@ -144,7 +149,7 @@ Value cljn_read_line(void) {
     return v;
 }
 
-/* (read-char) — lê um caractere (codepoint UTF-8) do *in* corrente; nil no fim. */
+/* Decode one UTF-8 character from *in*, returning NIL at EOF. */
 Value cljn_read_char(void) {
     Value in = dynvar_get(VAR_IN);
     Reader *r = (Reader *)in;

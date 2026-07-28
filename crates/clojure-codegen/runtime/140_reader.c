@@ -1,12 +1,15 @@
 
-/* ---------- read-string: leitor EDN em runtime (ADR-0007 / IO-5) ----------
- * Descida recursiva sobre a string de entrada, produzindo Values do runtime.
- * Subconjunto EDN: nil/true/false, inteiros, strings, keywords, chars, vetores,
- * mapas, sets (#{}) e listas. Símbolos e floats/ratios não são suportados.
- * Durante o parse desligamos o GC (gc_disabled): a alocação é limitada pelo
- * tamanho da entrada (já em memória), então não coletamos no meio e evitamos ter
- * de rootear cada estrutura parcial. Erros de sintaxe abortam via die (fatais neste
- * subconjunto). Reusa utf8_decode (85_writers.c). */
+/*
+ * Runtime EDN reader used by read-string.
+ *
+ * Recursive descent produces native Values for nil, booleans, integers,
+ * strings, keywords, characters, vectors, maps, sets, and lists. Symbols,
+ * floats, ratios, and other reader macros are unsupported and terminate through
+ * the fatal diagnostic path.
+ *
+ * GC: parsing runs in a bounded no-GC region because partial structures are not
+ * individually rooted. Allocation is bounded by the already-resident input.
+ */
 
 typedef struct { const char *p; int64_t len; int64_t pos; } RS;
 
@@ -79,7 +82,7 @@ static Value rs_char(RS *r) {
     r->pos++; /* backslash */
     if (r->pos >= r->len) die("read-string: char incompleto");
     int64_t start = r->pos;
-    r->pos++; /* primeiro byte sempre consumido (pode ser espaço em \space? não: nomes) */
+    r->pos++; /* Always consume the first token byte. */
     while (r->pos < r->len && !rs_is_delim((unsigned char)r->p[r->pos])) r->pos++;
     int64_t tl = r->pos - start;
     const char *t = r->p + start;
@@ -102,7 +105,7 @@ static Value rs_char(RS *r) {
     if (tl == 6 && !memcmp(t, "return", 6)) return MK_CHAR('\r');
     if (tl == 8 && !memcmp(t, "formfeed", 8)) return MK_CHAR('\f');
     if (tl == 9 && !memcmp(t, "backspace", 9)) return MK_CHAR('\b');
-    { int n; uint32_t cp = utf8_decode(t, tl, &n); if (n == tl) return MK_CHAR(cp); } /* char multibyte */
+    { int n; uint32_t cp = utf8_decode(t, tl, &n); if (n == tl) return MK_CHAR(cp); }
     die("read-string: char desconhecido");
     return NIL;
 }
@@ -156,7 +159,7 @@ static Value rs_list(RS *r) {
         if (n == cap) { cap *= 2; arr = (Value *)xrealloc(arr, cap * sizeof(Value)); }
         arr[n++] = rs_form(r);
     }
-    Value lst = EMPTY; /* gc desligado: arr guarda Values vivos */
+    Value lst = EMPTY;
     for (int64_t i = (int64_t)n - 1; i >= 0; i--) lst = cljn_cons(arr[i], lst);
     free(arr);
     return lst;
@@ -181,7 +184,7 @@ static Value rs_form(RS *r) {
         r->p[r->pos + 1] >= '0' && r->p[r->pos + 1] <= '9')
         return rs_number(r);
     if (c >= '0' && c <= '9') return rs_number(r);
-    /* token: apenas nil/true/false (símbolos não suportados) */
+    /* Only nil/true/false are accepted as non-numeric bare tokens. */
     int64_t start = r->pos;
     while (r->pos < r->len && !rs_is_delim((unsigned char)r->p[r->pos])) r->pos++;
     int64_t tl = r->pos - start;
@@ -193,12 +196,13 @@ static Value rs_form(RS *r) {
     return NIL;
 }
 
-/* (read-string s) — lê o primeiro valor EDN de s. */
+/* Parse and return the first supported EDN value in runtime string `sv`.
+ * Syntax and unsupported-form errors are fatal in the current subset. */
 Value cljn_read_string(Value sv) {
     if (obj_type(sv) != T_STR) die("read-string: esperava string");
     Str *s = (Str *)sv;
     RS r = { s->data, (int64_t)s->len, 0 };
-    gc_disabled++; /* entrada limitada; sem coleta no meio evita rootear parciais */
+    gc_disabled++;
     Value v = rs_form(&r);
     gc_disabled--;
     return v;

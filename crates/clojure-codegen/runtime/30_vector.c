@@ -1,22 +1,28 @@
-
-/* ---------- vetor persistente (bitmapped trie 32-way) ---------- */
+/*
+ * Persistent and transient 32-way bitmapped vector tries.
+ *
+ * Persistent updates path-copy O(log32 n) nodes and share the remainder.
+ * Transient helpers mutate nodes carrying the caller's unique edit token.
+ * GC: compound operations enter bounded no-GC regions because intermediate
+ * nodes are not individually rooted.
+ */
 static VNode *vnode_new(void) {
     VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
-    n->edit = NIL; /* nó persistente (imutável) */
+    n->edit = NIL;
     for (int i = 0; i < VWIDTH; i++) n->slots[i] = NIL;
     return n;
 }
 static VNode *vnode_copy(VNode *src) {
     VNode *n = (VNode *)obj_alloc(sizeof(VNode), T_VNODE);
-    n->edit = NIL; /* cópia persistente (imutável) */
+    n->edit = NIL;
     memcpy(n->slots, src->slots, sizeof(n->slots));
     return n;
 }
-/* --- helpers de transiente estrutural (edit-token) --- */
+/* Allocate a unique transient ownership token. */
 Value cljn_edit_new(void) { return (Value)obj_alloc(sizeof(Edit), T_EDIT); }
 static VNode *vnode_new_edit(Value edit) { VNode *n = vnode_new(); n->edit = edit; return n; }
 static VNode *vnode_copy_edit(VNode *src, Value edit) { VNode *n = vnode_copy(src); n->edit = edit; return n; }
-/* garante que `node` é editável pelo transiente `edit`; senão copia-e-marca */
+/* Return an owned node or copy it and attach the requested edit token. */
 static VNode *vnode_editable(VNode *node, Value edit) {
     return (node->edit == edit) ? node : vnode_copy_edit(node, edit);
 }
@@ -51,9 +57,15 @@ static VNode *tv_do_assoc(int64_t level, VNode *node, int64_t i, Value x, Value 
     }
     return ret;
 }
+/*
+ * Allocate an empty persistent vector.
+ *
+ * GC: performs one safepoint before allocating the wrapper, root, and tail in a
+ * bounded no-GC region. Complexity: O(1).
+ */
 Value cljn_vec_empty(void) {
-    maybe_gc();    /* ponto seguro antes de desabilitar (mantém o trigger de coleta) */
-    gc_disabled++; /* aloca 3 objetos; sem coleta no meio */
+    maybe_gc();
+    gc_disabled++;
     PVec *v = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
     v->count = 0;
     v->shift = VBITS;
@@ -92,9 +104,10 @@ static VNode *push_tail(int64_t level, VNode *parent, VNode *tailnode, int64_t c
     ret->slots[subidx] = (Value)insert;
     return ret;
 }
-/* Zona sem-GC: conj aloca O(log32 n) nós; entradas rooteadas pelo chamador. */
+/* Return `vec` with `x` appended using structural sharing.
+ * GC: vec and x are rooted by the caller. Complexity: amortized O(1). */
 Value cljn_vec_conj(Value vec, Value x) {
-    maybe_gc(); /* ponto seguro: vec/x rooteados pelo chamador */
+    maybe_gc();
     gc_disabled++;
     PVec *o = (PVec *)vec;
     PVec *nv = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
@@ -138,12 +151,18 @@ static VNode *do_assoc(int64_t level, VNode *node, int64_t i, Value x) {
     }
     return ret;
 }
+/*
+ * Return `vec` with tagged fixnum `idx` associated to `x`.
+ *
+ * An index equal to count appends; other out-of-range indices are fatal.
+ * GC: vec and x are rooted by the caller. Complexity: O(log32 n).
+ */
 Value cljn_vec_assoc(Value vec, Value idx, Value x) {
     PVec *o = (PVec *)vec;
     int64_t i = IS_FIX(idx) ? FIX(idx) : -1;
     if (i < 0 || i > o->count) die("assoc: índice fora dos limites do vetor");
     if (i == o->count) return cljn_vec_conj(vec, x);
-    maybe_gc(); /* ponto seguro: vec/x rooteados pelo chamador */
+    maybe_gc();
     gc_disabled++;
     PVec *nv = (PVec *)obj_alloc(sizeof(PVec), T_VEC);
     nv->count = o->count;
@@ -161,4 +180,5 @@ Value cljn_vec_assoc(Value vec, Value idx, Value x) {
     gc_disabled--;
     return (Value)nv;
 }
+/* Return the vector count as an untagged integer; does not allocate. */
 int64_t cljn_vec_count_raw(Value v) { return ((PVec *)v)->count; }

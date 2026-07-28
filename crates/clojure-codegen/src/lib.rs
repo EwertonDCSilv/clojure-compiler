@@ -1,15 +1,15 @@
-//! Codegen nativo (Fase 4/5 slice): `Program` (AST) → objeto nativo via Cranelift.
+//! Native object generation from an analyzed compiler program.
 //!
-//! Representação de valor **tagged** em `i64` (ADR-0003, variante compilada):
-//! fixnum `(n<<1)|1`; ponteiro (baixo3=000) para string/cons; imediatos
-//! `NIL/TRUE/FALSE/EMPTY`. Toda operação semântica (aritmética, comparação, seq,
-//! print, str) é uma **chamada ao runtime** (`runtime.c`, ABI C — ver
-//! specs/ARCHITECTURE.md §Runtime ABI). Isso centraliza a semântica e mantém o
-//! codegen simples.
+//! [`compile_object`] lowers a [`Program`] through Cranelift into a relocatable
+//! object for the host target. Generated code and the embedded C runtime share a
+//! tagged 64-bit `Value` representation: fixnums use `(n << 1) | 1`, heap
+//! pointers have low bits `000`, and several scalar values are immediate.
 //!
-//! Suporta: `defn` (aridade fixa), `if`, `do`, `let`, recursão direta; literais
-//! int/bool/nil/string; primitivas `+ - * quot mod inc dec = < <= > >= not nil?
-//! empty? cons first rest count list str println print`.
+//! All callable entries use the uniform ABI `(self, argc, argv) -> Value`.
+//! Heap-capable values live in a generated shadow stack across allocation
+//! safepoints. Semantic slow paths, allocation, collections, exceptions,
+//! dispatch, and I/O are provided by [`RUNTIME_C`]; selected fixnum and vector
+//! operations have guarded inline fast paths.
 
 use clojure_analyzer::{Ast, Callee, Dispatch, FnMethod, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
@@ -26,12 +26,12 @@ use target_lexicon::Triple;
 
 macro_rules! embed_runtime_modules {
     ($(($name:literal, $path:literal)),+ $(,)?) => {
-        /// Fonte C amalgamada do runtime, compilada junto ao objeto no passo de link.
+        /// Amalgamated C runtime source compiled during the native link step.
         ///
-        /// Os módulos permanecem em arquivos separados para revisão e testes, mas são
-        /// concatenados na ordem original. O compilador C continua recebendo uma única
-        /// unidade de tradução, preservando visibilidade interna, ABI e oportunidades
-        /// de otimização entre subsistemas.
+        /// Runtime fragments remain separate for review and subsystem tests but
+        /// are concatenated in the declared order. The C compiler receives one
+        /// translation unit, preserving internal visibility and cross-subsystem
+        /// optimization.
         pub const RUNTIME_C: &str = concat!($(include_str!($path)),+);
 
         #[cfg(test)]
@@ -66,11 +66,14 @@ embed_runtime_modules!(
     ("reader", "../runtime/140_reader.c"),
 );
 
-/// Nível de otimização aplicado pelo Cranelift ao código gerado.
+/// Cranelift optimization level for generated functions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OptimizationLevel {
+    /// Disable optimization passes beyond required legalization.
     None,
+    /// Optimize for execution speed.
     Speed,
+    /// Balance execution speed and generated code size.
     SpeedAndSize,
 }
 
@@ -97,19 +100,22 @@ impl FromStr for OptimizationLevel {
     }
 }
 
-/// Opções do backend independentes do perfil usado para compilar o runtime.
+/// Backend options independent of the C runtime compilation profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CodegenOptions {
+    /// Cranelift optimization level.
     pub optimization_level: OptimizationLevel,
 }
 
 impl CodegenOptions {
+    /// Creates the conservative unoptimized configuration.
     pub const fn unoptimized() -> Self {
         Self {
             optimization_level: OptimizationLevel::None,
         }
     }
 
+    /// Creates a configuration optimized for execution speed.
     pub const fn optimized_for_speed() -> Self {
         Self {
             optimization_level: OptimizationLevel::Speed,
@@ -119,32 +125,32 @@ impl CodegenOptions {
 
 impl Default for CodegenOptions {
     fn default() -> Self {
-        // `speed` permanece opt-in: o baseline Cormen de 2026-07-26 mostrou
-        // regressão em 25/30 casos por aumento de spills e do tamanho dos frames.
+        // Speed remains opt-in: the 2026-07-26 Cormen baseline regressed in
+        // 25/30 cases due to additional spills and larger frames.
         Self::unoptimized()
     }
 }
 
-// Constantes de valor tagged (devem casar com runtime.c).
+// ABI: tagged constants must match runtime/00_types.c.
 const NIL: i64 = 2;
 const FALSEV: i64 = 6;
 const TRUEV: i64 = 10;
-const T_VEC: i64 = 5; // tag de PersistentVector (deve casar com runtime.c)
-const CONST_CACHE_MAX: usize = 8192; // deve casar com CONST_MAX no runtime
-                      // Offsets dos campos de PVec/VNode (Obj = 16 B). Devem casar com runtime.c.
+const T_VEC: i64 = 5;
+const CONST_CACHE_MAX: usize = 8192; // ABI: matches CONST_MAX in runtime/10_gc.c.
+                                     // ABI: PVec/VNode offsets assume a 16-byte Obj and match runtime/00_types.c.
 const PV_COUNT: i32 = 16;
 const PV_SHIFT: i32 = 24;
 const PV_ROOT: i32 = 32;
 const PV_TAIL: i32 = 40;
 const PV_TAILLEN: i32 = 48;
-const VNODE_SLOTS: i32 = 24; // Obj(16) + edit(8); slots começam em 24
-// Intervalo de fixnum (deve casar com FIXNUM_MIN/MAX em runtime.c).
+const VNODE_SLOTS: i32 = 24; // Obj(16) followed by the 8-byte edit token.
+                             // ABI: fixnum range must match FIXNUM_MIN/MAX in runtime/00_types.c.
 const FIX_MIN: i64 = -(1 << 62);
 const FIX_MAX: i64 = (1 << 62) - 1;
 
-/// FuncIds das funções de runtime importadas.
+/// Cranelift imports for the C runtime ABI.
 struct Runtime {
-    // binárias (i64,i64)->i64
+    // Binary (Value, Value) -> Value operations.
     add: FuncId,
     sub: FuncId,
     mul: FuncId,
@@ -157,7 +163,7 @@ struct Runtime {
     eq: FuncId,
     cons: FuncId,
     str_concat: FuncId,
-    // unárias (i64)->i64
+    // Unary Value -> Value operations.
     inc: FuncId,
     dec: FuncId,
     not_: FuncId,
@@ -167,33 +173,33 @@ struct Runtime {
     rest: FuncId,
     count: FuncId,
     to_str: FuncId,
-    // outras
+    // Constructors, predicates, and output.
     empty: FuncId,       // ()->i64
     str_from: FuncId,    // (ptr,i64)->i64
     truthy: FuncId,      // (i64)->i32
     print: FuncId,       // (i64)->void
     print_space: FuncId, // ()->void
     print_newline: FuncId,
-    // GC / shadow-stack de roots
-    gc_enter: FuncId, // (i64)->i64  reserva slots; devolve base
-    gc_leave: FuncId, // (i64)->void restaura sp=base
-    // ADR-0006 Fase 3: push/popn/set viram stores diretos nestes globais.
-    gc_stack_data: DataId, // Value gc_stack[]
-    gc_sp_data: DataId,    // int64_t gc_sp
+    // GC shadow-stack frame operations.
+    gc_enter: FuncId, // (slot_count) -> base.
+    gc_leave: FuncId, // (base) -> void.
+    // GC: push/pop/set lower to direct stores in these exported globals.
+    gc_stack_data: DataId,    // Value gc_stack[]
+    gc_sp_data: DataId,       // int64_t gc_sp
     const_cache_data: DataId, // Value cljn_const_cache[]
     const_register: FuncId,   // (id,v)->void
-    // Funções de primeira classe
+    // First-class function objects.
     make_fn: FuncId,  // (code,arity,nfree)->fn
     set_free: FuncId, // (fn,i,v)->void
     fn_free: FuncId,  // (fn,i)->v
     fn_code: FuncId,  // (fn)->code
     check_fn: FuncId, // (fn)->void  (é função?)
-    // convenção de chamada (self, argc, argv)
+    // ABI: uniform entry convention is (self, argc, argv).
     argv: FuncId,         // (argc)->ptr (topo do shadow-stack)
     check_arity: FuncId,  // (argc,expected)->void
     collect_rest: FuncId, // (argc,argv,nfixed)->list
     spread_args: FuncId,  // (fixed_argc,coll)->argc_total
-    // coleções
+    // Collections and runtime facilities.
     kw: FuncId,               // (ptr,len)->kw
     vec_empty: FuncId,        // ()->vec
     vec_conj: FuncId,         // (vec,x)->vec
@@ -223,10 +229,10 @@ struct Runtime {
     file_exists: FuncId,      // (path)->bool
     getenv: FuncId,           // (name)->string|nil
     with_out_str: FuncId,     // (thunk)->string
-    var_get: FuncId,          // (id)->valor da Var dinâmica
-    with_binding: FuncId,     // (id,nv,thunk)->valor do corpo
-    read_line: FuncId,        // ()->string|nil (lê linha de *in*)
-    string_reader: FuncId,    // (string)->reader
+    var_get: FuncId,          // (id) -> dynamic Var value.
+    with_binding: FuncId,     // (id, value, thunk) -> body result.
+    read_line: FuncId,        // () -> string|nil from *in*.
+    string_reader: FuncId,    // (string) -> reader.
     char_of: FuncId,          // (int|char)->char
     int_of: FuncId,           // (char|int)->int
     charp: FuncId,            // (x)->bool
@@ -240,13 +246,13 @@ struct Runtime {
     slurp_bytes: FuncId,      // (path)->bytes
     spit_bytes: FuncId,       // (path,bytes)->nil
     read_string: FuncId,      // (string)->valor EDN
-    writer_open: FuncId,      // (path)->writer de arquivo
-    reader_open: FuncId,      // (path)->reader de arquivo
-    close: FuncId,            // (x)->nil (fecha handle)
-    flush: FuncId,            // ()->nil (descarrega *out*)
+    writer_open: FuncId,      // (path) -> file writer.
+    reader_open: FuncId,      // (path) -> file reader.
+    close: FuncId,            // (closeable) -> nil.
+    flush: FuncId,            // () -> nil; flushes *out*.
     mkdir: FuncId,            // (path)->nil
-    mkdirs: FuncId,           // (path)->nil (recursivo)
-    list_dir: FuncId,         // (path)->vetor de nomes
+    mkdirs: FuncId,           // (path) -> nil, recursively.
+    list_dir: FuncId,         // (path) -> vector of names.
     delete_file: FuncId,      // (path)->nil
     rename: FuncId,           // (from,to)->nil
     directoryp: FuncId,       // (path)->bool
@@ -257,19 +263,36 @@ struct Runtime {
     assoc_bang: FuncId,       // (t,k,v)->t
     dissoc_bang: FuncId,      // (t,k)->t
     make_record: FuncId,      // (type_name,map)->record
-    // protocols
+    // Protocol and capability dispatch.
     type_key: FuncId,        // (v)->key
     register_method: FuncId, // (mid,key,impl)->void
     lookup_method: FuncId,   // (mid,key)->impl|NIL
     no_method: FuncId,       // (mid)->void
 }
 
-/// Compila o programa para bytes de um objeto nativo da plataforma host.
+/// Compiles `program` into a relocatable object for the host target.
+///
+/// Uses [`CodegenOptions::default`].
+///
+/// # Errors
+///
+/// Returns diagnostics when the host ISA, Cranelift configuration, symbol
+/// declaration, lowering, verification, or object emission fails.
 pub fn compile_object(program: &Program) -> Result<Vec<u8>, Diagnostics> {
     compile_object_with_options(program, CodegenOptions::default())
 }
 
-/// Compila o programa usando uma configuração explícita do backend.
+/// Compiles `program` with explicit backend options.
+///
+/// Output contains generated program functions and external references to the C
+/// runtime ABI; the CLI is responsible for compiling [`RUNTIME_C`] and linking
+/// both objects into an executable.
+///
+/// # Errors
+///
+/// Returns diagnostics when the target or Cranelift setup fails, an analyzed AST
+/// violates a lowering invariant, generated IR fails verification, or the object
+/// cannot be emitted.
 pub fn compile_object_with_options(
     program: &Program,
     options: CodegenOptions,
@@ -292,7 +315,7 @@ pub fn compile_object_with_options(
     let ptr = module.target_config().pointer_type();
     let runtime = declare_runtime(&mut module, ptr);
 
-    // Dados: strings únicas do programa.
+    // Materialize unique string bytes as local object data.
     let mut strings: Vec<String> = Vec::new();
     for f in &program.functions {
         for m in &f.methods {
@@ -311,7 +334,7 @@ pub fn compile_object_with_options(
             .declare_data(&format!("str{i}"), Linkage::Local, false, false)
             .map_err(|e| single(format!("declare_data: {e}")))?;
         let mut d = DataDescription::new();
-        // Bytes crus (o comprimento é passado à parte; sem NUL).
+        // Raw bytes are length-delimited rather than NUL-terminated.
         let bytes = if s.is_empty() {
             vec![0u8]
         } else {
@@ -324,9 +347,9 @@ pub fn compile_object_with_options(
         str_data.insert(s.clone(), (id, s.len()));
     }
 
-    // Declara funções do usuário (para recursão/forward-ref).
-    // Convenção uniforme: entry(self, argc, argv) -> valor. `self` = a closure
-    // (NIL em chamadas estáticas). `argv` aponta para os args no shadow-stack.
+    // Declare all functions before definitions for recursion and forward refs.
+    // ABI: entry(self, argc, argv) -> Value. Static calls pass NIL as `self`;
+    // argv points to arguments rooted in the shadow stack.
     let entry_sig = |m: &mut ObjectModule| {
         let mut sig = m.make_signature();
         sig.params.push(AbiParam::new(types::I64)); // self
@@ -341,7 +364,7 @@ pub fn compile_object_with_options(
         let id = module
             .declare_function(&f.name, Linkage::Local, &sig)
             .map_err(|e| single(format!("declare_function {}: {e}", f.name)))?;
-        // usize = aridade informativa (primeira aridade) para FnRef.
+        // Store the first arity for zero-capture FnRef construction.
         let arity0 = f.methods.first().map(|m| m.params.len()).unwrap_or(0);
         fn_ids.insert(f.name.clone(), (id, arity0));
     }
@@ -648,22 +671,18 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
     }
 }
 
-/// Resultado de compilar uma expressão: produz um valor (fall-through) ou
-/// diverge (o bloco já foi terminado por `recur`/`return`).
+/// Lowering result: a fall-through Value or already-terminated control flow.
 #[derive(Clone, Copy)]
 enum Flow {
     Val(CValue),
     Diverged,
 }
 
-/// Classificação estática de valor para rooting em safepoints (ADR-0006 Fases 4-5).
-/// `Imm` = comprovadamente fixnum/imediato (nunca é ponteiro heap → nunca precisa de
-/// root). `Heap` = pode ser ponteiro heap; mantém o rooting eager atual.
+/// Static classification used to elide roots at allocation safepoints.
 ///
-/// A elisão é **sã por construção**: só deixamos de rootear valores que jamais são
-/// ponteiros. Todo valor `Heap` continua sendo rooteado exatamente como antes, então a
-/// precisão do coletor é preservada. Slots de frame não escritos permanecem `NIL`
-/// (imediato) via `cljn_gc_enter`, então locais `Imm` sem store são seguros.
+/// `Imm` proves that a Value cannot be a heap pointer; `Heap` conservatively
+/// retains eager rooting. GC: elision is sound because only proven immediates
+/// omit roots. Unwritten frame slots remain NIL after `cljn_gc_enter`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum VKind {
     Imm,
@@ -679,9 +698,7 @@ impl VKind {
     }
 }
 
-/// Uma primitiva cujo resultado é sempre imediato (fixnum, boolean ou nil), qualquer
-/// que seja o caminho (fast path ou slow path do runtime). Aritmética/comparação
-/// devolvem fixnum/boolean; `println`/`print` devolvem nil.
+/// Tests whether every path of a primitive returns an immediate Value.
 fn prim_imm_result(p: Prim) -> bool {
     matches!(
         p,
@@ -705,27 +722,27 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Compare
             | Prim::Println
             | Prim::Print
-            | Prim::Throw // diverge; resultado nunca materializa
-            | Prim::Spit // devolve nil
-            | Prim::FileExists // devolve boolean
-            | Prim::CharOf // devolve char (imediato)
-            | Prim::IntOf // devolve fixnum
-            | Prim::CharP // devolve boolean
-            | Prim::ReadChar // devolve char ou nil (imediatos)
-            | Prim::Bget // devolve fixnum (0..255)
-            | Prim::SpitBytes // devolve nil
-            | Prim::Close // devolve nil
-            | Prim::Flush // devolve nil
-            | Prim::Mkdir // devolve nil
-            | Prim::Mkdirs // devolve nil
-            | Prim::DeleteFile // devolve nil
-            | Prim::Rename // devolve nil
-            | Prim::DirectoryP // devolve boolean
-            | Prim::FileP // devolve boolean
+            | Prim::Throw
+            | Prim::Spit
+            | Prim::FileExists
+            | Prim::CharOf
+            | Prim::IntOf
+            | Prim::CharP
+            | Prim::ReadChar
+            | Prim::Bget
+            | Prim::SpitBytes
+            | Prim::Close
+            | Prim::Flush
+            | Prim::Mkdir
+            | Prim::Mkdirs
+            | Prim::DeleteFile
+            | Prim::Rename
+            | Prim::DirectoryP
+            | Prim::FileP
     )
 }
 
-/// Alvo de `recur`: bloco-cabeçalho de um loop/fn + variáveis e slots a religar.
+/// Recur target containing a loop header and slots to rebind.
 #[derive(Clone)]
 struct RecurTarget {
     header: Block,
@@ -740,14 +757,14 @@ struct FnGen<'a> {
     fn_ids: &'a HashMap<String, (FuncId, usize)>,
     str_data: &'a HashMap<String, (DataId, usize)>,
     vars: HashMap<u32, Variable>,
-    /// Kind estático de cada slot de local em escopo (ADR-0006 Fases 4-5).
+    /// Static Value kind for each in-scope local slot.
     kinds: HashMap<u32, VKind>,
     recur_targets: Vec<RecurTarget>,
-    /// Base do frame no shadow-stack (i64), definida na entrada da função.
+    /// Raw shadow-stack frame base established at function entry.
     frame_base: Option<Variable>,
-    /// `self` (a closure) da função atual — usado para ler capturas.
+    /// Current closure `self`, used to read capture slots.
     self_var: Option<Variable>,
-    /// Contador global de sites de vetor literal constante (hoisting, ADR-0009).
+    /// Program-wide constant-vector site counter.
     next_const: &'a std::cell::Cell<u32>,
 }
 
@@ -785,7 +802,7 @@ impl<'a> FnGen<'a> {
         v
     }
 
-    // -- análise de kind estático (ADR-0006 Fases 4-5) ---------------------
+    // -- Static Value-kind analysis (ADR-0006) ----------------------------
     fn slot_kind(&self, slot: u32, extra: &HashMap<u32, VKind>) -> VKind {
         extra
             .get(&slot)
@@ -794,8 +811,7 @@ impl<'a> FnGen<'a> {
             .unwrap_or(VKind::Heap)
     }
 
-    /// Kind estático de uma expressão. `extra` sobrepõe `self.kinds` com slots
-    /// introduzidos por `let`/`loop` ainda não vinculados no codegen.
+    /// Classifies an expression, with `extra` overriding not-yet-bound slots.
     fn kind_of(&self, ast: &Ast, extra: &HashMap<u32, VKind>) -> VKind {
         use VKind::{Heap, Imm};
         match ast {
@@ -824,18 +840,20 @@ impl<'a> FnGen<'a> {
                 let e = self.loop_slot_kinds(slots, body, extra);
                 self.kind_of(body, &e)
             }
-            Ast::Recur(_) => Imm, // diverge; não produz valor
+            Ast::Recur(_) => Imm, // Diverges and never materializes a Value.
             Ast::Call { callee, .. } => match callee {
                 Callee::Prim(p) if prim_imm_result(*p) => Imm,
                 _ => Heap,
             },
             Ast::CallValue { .. } | Ast::Apply { .. } => Heap,
-            Ast::RegisterMethod { .. } | Ast::RegisterMulti { .. } => Imm, // devolve nil
+            Ast::RegisterMethod { .. } | Ast::RegisterMulti { .. } => Imm,
         }
     }
 
-    /// Ponto fixo dos kinds dos slots de um `loop`: um slot é `Imm` só se o init e
-    /// todo argumento de `recur` naquela posição forem `Imm`. Monótono (Imm→Heap).
+    /// Computes loop-slot kinds to a monotone `Imm -> Heap` fixed point.
+    ///
+    /// A slot remains immediate only when its initializer and every matching
+    /// recur argument are immediate.
     fn loop_slot_kinds(
         &self,
         slots: &[(u32, Ast)],
@@ -871,9 +889,11 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Junta os kinds dos argumentos de cada `recur` que mira o loop atual (não
-    /// desce em loops aninhados). `recur` só ocorre em cauda: basta varrer ramos
-    /// de `if`, corpo de `let` e statements de `do`.
+    /// Joins argument kinds from every `recur` targeting the current loop.
+    ///
+    /// Nested loops own their recurs. Because `recur` occurs only in tail
+    /// position, traversal needs only conditional branches, let bodies, and do
+    /// statements.
     fn collect_recur_kinds(
         &self,
         ast: &Ast,
@@ -890,7 +910,7 @@ impl<'a> FnGen<'a> {
                     }
                 }
             }
-            Ast::Loop { .. } => {} // recurs internos pertencem ao loop aninhado
+            Ast::Loop { .. } => {} // Nested recurs belong to the nested loop.
             Ast::If(_, t, e) => {
                 self.collect_recur_kinds(t, env, rec, seen);
                 self.collect_recur_kinds(e, env, rec, seen);
@@ -905,11 +925,11 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Se `expr(ast)` deixa um temporário no shadow-stack. É `kind==Heap` para a
-    /// maioria dos nós, **exceto**:
-    /// - `Local`: nunca empurra — imediato não é ponteiro; Local Heap já está
-    ///   rooteado no seu slot de frame (estável enquanto o valor lido é usado);
-    /// - `Do`/`Let`/`Loop`: delegam ao sub-expr que produz o valor.
+    /// Returns whether evaluating `ast` leaves a temporary shadow-stack root.
+    ///
+    /// Heap expressions normally push. A local does not because either it is
+    /// immediate or its frame slot already roots it. `Do`, `Let`, and `Loop`
+    /// delegate the decision to the expression that produces their result.
     fn expr_pushes(&self, ast: &Ast, extra: &HashMap<u32, VKind>) -> bool {
         match ast {
             Ast::Local(_)
@@ -935,17 +955,17 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Avalia um operando, deixando-o no shadow-stack só se `expr_pushes`. Retorna
-    /// o valor e se foi empurrado (para o consumidor desempilhar 1).
+    /// Evaluates an operand and reports whether it left a shadow-stack root.
     fn operand(&mut self, ast: &Ast) -> Result<(CValue, bool), Diagnostic> {
         let pushed = self.expr_pushes(ast, &HashMap::new());
         let v = self.expr_val(ast)?;
         Ok((v, pushed))
     }
 
-    /// Avalia um argumento de chamada, garantindo que fique no shadow-stack (os
-    /// args de funções são passados por `argv`, um ponteiro para o topo da pilha;
-    /// imediatos precisam ser derramados para manter a região contígua).
+    /// Evaluates a call argument and guarantees a contiguous shadow-stack slot.
+    ///
+    /// Even immediate arguments are spilled because `argv` points directly into
+    /// the root stack.
     fn spill_arg(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
         let (v, pushed) = self.operand(ast)?;
         if !pushed {
@@ -954,7 +974,7 @@ impl<'a> FnGen<'a> {
         Ok(v)
     }
 
-    // -- shadow-stack de roots (stores diretos, ADR-0006 Fase 3) ----------
+    // -- Direct shadow-stack root stores (ADR-0006 phase 3) ---------------
     fn addr_gc_sp(&mut self) -> CValue {
         let gv = self
             .module
@@ -967,13 +987,13 @@ impl<'a> FnGen<'a> {
             .declare_data_in_func(self.rt.gc_stack_data, self.builder.func);
         self.builder.ins().symbol_value(self.ptr, gv)
     }
-    /// Endereço de `gc_stack[idx]`.
+    /// Computes the address of `gc_stack[idx]`.
     fn slot_addr(&mut self, idx: CValue) -> CValue {
         let stack = self.addr_gc_stack();
         let off = self.builder.ins().imul_imm(idx, 8);
         self.builder.ins().iadd(stack, off)
     }
-    /// Empurra um root: `gc_stack[gc_sp++] = v` (store direto).
+    /// Pushes one root with the direct store `gc_stack[gc_sp++] = v`.
     fn gc_push_val(&mut self, v: CValue) {
         let sp_addr = self.addr_gc_sp();
         let sp = self
@@ -1000,7 +1020,7 @@ impl<'a> FnGen<'a> {
                 .store(MemFlags::trusted(), sp2, sp_addr, 0);
         }
     }
-    /// Retira uma quantidade calculada em runtime.
+    /// Pops a root count computed at runtime.
     fn gc_popn_val(&mut self, n: CValue) {
         let sp_addr = self.addr_gc_sp();
         let sp = self
@@ -1012,7 +1032,7 @@ impl<'a> FnGen<'a> {
             .ins()
             .store(MemFlags::trusted(), sp2, sp_addr, 0);
     }
-    /// Escreve o slot de root de um local: `gc_stack[base + slot] = v`.
+    /// Writes a local root slot as `gc_stack[base + slot] = v`.
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
         let base_var = self.frame_base.expect("frame_base definido");
         let base = self.builder.use_var(base_var);
@@ -1020,13 +1040,15 @@ impl<'a> FnGen<'a> {
         let elem = self.slot_addr(idx);
         self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
     }
-    /// Vincula um local Heap (params): define a variável e espelha no slot de root.
+    /// Binds a heap-capable local and mirrors it into its root slot.
     fn bind_local(&mut self, slot: u32, v: CValue) {
         self.bind_local_kind(slot, v, VKind::Heap);
     }
 
-    /// Vincula um local com kind conhecido. `Imm` só atualiza a variável Cranelift
-    /// (o slot de frame permanece `NIL`, imediato seguro — sem store de root).
+    /// Binds a local whose static value kind is known.
+    ///
+    /// An immediate updates only the Cranelift variable; its frame slot safely
+    /// remains NIL.
     fn bind_local_kind(&mut self, slot: u32, v: CValue, kind: VKind) {
         let var = match self.vars.get(&slot) {
             Some(v) => *v,
@@ -1039,7 +1061,7 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Entra num frame de GC reservando `local_count` slots; guarda a base.
+    /// Enters a GC frame with `local_count` slots and records its raw base.
     fn enter_frame(&mut self, local_count: u32) {
         let k = self.builder.ins().iconst(types::I64, local_count as i64);
         let base = self.call1(self.rt.gc_enter, k);
@@ -1063,7 +1085,7 @@ impl<'a> FnGen<'a> {
         self.builder.append_block_params_for_function_params(entry);
         self.builder.switch_to_block(entry);
         self.builder.seal_block(entry);
-        // Convenção: block params = [self, argc, argv].
+        // ABI: function block parameters are [self, argc, argv].
         let block_vals: Vec<CValue> = self.builder.block_params(entry).to_vec();
         let self_v = self.builder.declare_var(types::I64);
         self.builder.def_var(self_v, block_vals[0]);
@@ -1071,7 +1093,7 @@ impl<'a> FnGen<'a> {
         let argc_v = block_vals[1];
         let argv_v = block_vals[2];
 
-        // Função-despacho (protocolo por tipo, ou multimethod por dispatch-fn).
+        // Dispatch stubs select either protocol type or multimethod dispatch.
         match dispatch {
             Dispatch::Protocol(mid) => {
                 self.gen_dispatch(mid, argc_v, argv_v);
@@ -1090,7 +1112,7 @@ impl<'a> FnGen<'a> {
 
         self.enter_frame(local_count);
 
-        // Dispatch por aridade: cadeia de checagens argc.
+        // Arity dispatch is a chain of argc checks.
         for m in methods {
             let k = m.params.len();
             let cond = if m.rest.is_some() {
@@ -1111,7 +1133,7 @@ impl<'a> FnGen<'a> {
             self.builder.switch_to_block(next);
             self.builder.seal_block(next);
         }
-        // Nenhuma aridade correspondeu.
+        // No declared arity matched.
         let bad = self.builder.ins().iconst(types::I64, -1);
         self.call_void(self.rt.check_arity, &[argc_v, bad]); // sempre falha (exit)
         let z = self.konst(NIL);
@@ -1121,7 +1143,9 @@ impl<'a> FnGen<'a> {
         Ok(())
     }
 
-    /// Função-despacho: `impl = lookup(mid, type_key(argv[0]))`; encaminha argc/argv.
+    /// Resolves a protocol implementation and forwards the original arguments.
+    ///
+    /// The lookup is `lookup(mid, type_key(argv[0]))`.
     fn gen_dispatch(&mut self, mid: i64, argc_v: CValue, argv_v: CValue) {
         let arg0 = self
             .builder
@@ -1158,8 +1182,9 @@ impl<'a> FnGen<'a> {
         self.builder.ins().return_(&[r]);
     }
 
-    /// Vincula os parâmetros (fixos + rest) e compila o corpo de uma aridade.
-    /// O bloco atual já é o "matched"; termina com return (Val) ou recur (Diverged).
+    /// Binds fixed/rest parameters and compiles one matched arity body.
+    ///
+    /// The body ends in either a returned value or diverged `recur` control flow.
     fn gen_method_body(
         &mut self,
         m: &FnMethod,
@@ -1212,7 +1237,7 @@ impl<'a> FnGen<'a> {
         for a in body {
             let (_, pushed) = self.operand(a)?;
             if pushed {
-                self.gc_popn(1); // descarta resultado de topo (se Heap)
+                self.gc_popn(1); // Discard the top-level heap result.
             }
         }
         self.leave_frame();
@@ -1254,7 +1279,7 @@ impl<'a> FnGen<'a> {
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c, d]);
     }
-    /// Endereço (ponteiro de código) de uma função declarada.
+    /// Materializes the code address of a declared function.
     fn func_addr(&mut self, id: FuncId) -> CValue {
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().func_addr(self.ptr, r)
@@ -1264,8 +1289,9 @@ impl<'a> FnGen<'a> {
         self.builder.ins().call(r, args);
     }
 
-    /// Avalia uma expressão em posição de operando (nunca diverge — o analyzer
-    /// garante que `recur` só ocorre em posição de cauda).
+    /// Evaluates an expression in a non-diverging operand position.
+    ///
+    /// The analyzer guarantees that `recur` occurs only in tail position.
     fn expr_val(&mut self, ast: &Ast) -> Result<CValue, Diagnostic> {
         match self.expr(ast)? {
             Flow::Val(v) => Ok(v),
@@ -1276,15 +1302,16 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Invariante de rooting (ADR-0006 Fases 4-5): na saída `Flow::Val(v)`, `v`
-    /// está no topo do shadow-stack **se e somente se** `expr_pushes(ast)` — isto
-    /// é, valores `Heap` que não sejam um `Local` já rooteado. Imediatos e leituras
-    /// de `Local` não vão à pilha (nunca precisam de novo root). Consumidores usam
-    /// `operand`/`spill_arg`, que sabem se houve push. `Flow::Diverged` já terminou
-    /// o bloco (recur/return) deixando o shadow-stack consistente para o alvo.
+    /// Lowers an expression while preserving the root-stack invariant.
+    ///
+    /// INVARIANT: on `Flow::Val(v)`, `v` is at the shadow-stack top exactly when
+    /// `expr_pushes(ast)` is true. Heap values other than an already rooted local
+    /// push; immediates and local reads do not. Consumers use `operand` or
+    /// `spill_arg` to reconcile that state. `Flow::Diverged` has already
+    /// terminated its block with the target's expected root depth.
     fn expr(&mut self, ast: &Ast) -> Result<Flow, Diagnostic> {
         Ok(match ast {
-            // Imediatos (Fase 4): nunca são ponteiros → não vão ao shadow-stack.
+            // Immediates can never be heap pointers and therefore need no root.
             Ast::Int(n) => {
                 let tagged = (*n as i128) << 1 | 1;
                 Flow::Val(self.konst(tagged as i64))
@@ -1304,11 +1331,9 @@ impl<'a> FnGen<'a> {
                 let var = *self.vars.get(slot).ok_or_else(|| {
                     Diagnostic::error("E0111", format!("local {slot} não vinculado (bug)"))
                 })?;
-                // Local nunca precisa de novo root: imediato não é ponteiro, e Local
-                // Heap já está rooteado no seu slot de frame (base+slot), estável
-                // enquanto o valor lido é usado (rebind só em let-init/recur, nunca
-                // no meio de um operando). Consumidores que precisam dele na pilha
-                // (args por argv, coleções) usam `spill_arg`.
+                // A local needs no additional root: an immediate is not a pointer,
+                // while a heap local remains in its stable frame slot. Consumers
+                // that require contiguous stack storage call `spill_arg`.
                 Flow::Val(self.builder.use_var(var))
             }
             Ast::Do(stmts) => {
@@ -1317,7 +1342,7 @@ impl<'a> FnGen<'a> {
                 }
                 let last = stmts.len() - 1;
                 for s in &stmts[..last] {
-                    let (_, pushed) = self.operand(s)?; // descarta valor
+                    let (_, pushed) = self.operand(s)?; // Discard intermediate value.
                     if pushed {
                         self.gc_popn(1);
                     }
@@ -1328,9 +1353,9 @@ impl<'a> FnGen<'a> {
                 for (slot, init) in slots {
                     let (val, pushed) = self.operand(init)?;
                     let kind = self.kind_of(init, &HashMap::new());
-                    self.bind_local_kind(*slot, val, kind); // escreve slot só se Heap
+                    self.bind_local_kind(*slot, val, kind); // Root only heap values.
                     if pushed {
-                        self.gc_popn(1); // remove o temp (já está no slot, se Heap)
+                        self.gc_popn(1); // The frame slot now owns the heap root.
                     }
                 }
                 self.expr(body)?
@@ -1339,8 +1364,8 @@ impl<'a> FnGen<'a> {
             Ast::Loop { slots, body } => self.gen_loop(slots, body)?,
             Ast::Recur(args) => self.gen_recur(args)?,
             Ast::Call { callee, args } => {
-                let v = self.gen_call(callee, args)?; // net-0; resultado não empurrado
-                                                      // Resultado imediato (aritmética/comparação/nil) não precisa de root.
+                let v = self.gen_call(callee, args)?; // Net-zero; result is not pushed.
+                                                      // Immediate results need no root.
                 if self.kind_of(ast, &HashMap::new()) == VKind::Heap {
                     self.gc_push_val(v);
                 }
@@ -1431,11 +1456,12 @@ impl<'a> FnGen<'a> {
         })
     }
 
-    /// Constrói um vetor persistente por `conj` sucessivos (net-0), rooteando o
-    /// acumulador durante as alocações do trie.
+    /// Builds a persistent vector through successive net-zero `conj` calls.
+    ///
+    /// GC: the accumulator remains rooted during trie allocation.
     fn gen_vec(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
-        // ADR-0009: hoisting de literal constante — se todos os elementos são
-        // imediatos (Int/Bool/Nil), o vetor é imutável: constrói uma vez e cacheia.
+        // ADR-0009: an all-immediate immutable literal is constructed once and
+        // cached by site.
         let all_const = !items.is_empty()
             && items
                 .iter()
@@ -1449,8 +1475,10 @@ impl<'a> FnGen<'a> {
         }
         self.gen_vec_build(items)
     }
-    /// Vetor literal constante cacheado: `cache[id]` se já construído, senão
-    /// constrói, registra (raiz de GC) e devolve. Não empurra (contrato de gen_vec).
+    /// Loads or initializes an immediate-only vector literal cache site.
+    ///
+    /// A newly constructed vector becomes a permanent GC root. The function
+    /// does not push its result, matching `gen_vec`.
     fn gen_const_vec(&mut self, id: u32, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let gv = self
             .module
@@ -1494,8 +1522,9 @@ impl<'a> FnGen<'a> {
         Ok(acc)
     }
 
-    /// sorted-set: parte do vazio e `conj` (genérico, dispatcha p/ árvore) cada
-    /// item, rooteando o acumulador durante as alocações da LLRB.
+    /// Builds a sorted set by conjoining each item into an empty tree.
+    ///
+    /// GC: the accumulator remains rooted during LLRB allocation.
     fn gen_sorted_set(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(items.len());
         for it in items {
@@ -1512,7 +1541,7 @@ impl<'a> FnGen<'a> {
         Ok(acc)
     }
 
-    /// sorted-map: parte do vazio e `assoc` cada par (k v), rooteando o acumulador.
+    /// Builds a sorted map by associating each pair into a rooted empty tree.
     fn gen_sorted_map(&mut self, pairs: &[(Ast, Ast)]) -> Result<CValue, Diagnostic> {
         let mut kvs = Vec::with_capacity(pairs.len());
         for (k, v) in pairs {
@@ -1562,10 +1591,11 @@ impl<'a> FnGen<'a> {
         Ok(m)
     }
 
-    /// Fast path inline de `(nth vec i)` (aridade 2): se `coll` for T_VEC e `i`
-    /// um fixnum em [0,count), lê o tail/trie inline (sem chamada nem dispatch).
-    /// Qualquer outra situação cai em `cljn_nth`, que preserva toda a semântica
-    /// da ADR-0008 (nil, capability, sequência, erros). Não aloca → sem safepoint.
+    /// Emits the inline fast path for two-argument `(nth vector index)`.
+    ///
+    /// A `T_VEC` with an in-range fixnum index reads its tail or trie without
+    /// dispatch. Every other case calls `cljn_nth` for nil, capability,
+    /// sequential, and error semantics from ADR-0008. Neither path allocates.
     fn gen_nth_fast(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let (coll, coll_pushed) = self.operand(&args[0])?;
         let (idx, idx_pushed) = self.operand(&args[1])?;
@@ -1583,7 +1613,7 @@ impl<'a> FnGen<'a> {
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64); // resultado
 
-        // guard-1: coll é ponteiro alinhado não-nulo E idx é fixnum
+        // Guard that coll is an aligned non-null pointer and index is a fixnum.
         let low3 = self.builder.ins().band_imm(coll, 7);
         let aligned = self.builder.ins().icmp_imm(IntCC::Equal, low3, 0);
         let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, coll, 0);
@@ -1593,7 +1623,7 @@ impl<'a> FnGen<'a> {
         let pre = self.builder.ins().band(ptr_ok, idx_fix);
         self.builder.ins().brif(pre, type_b, &[], slow_b, &[]);
 
-        // type_b: só aqui é seguro ler o byte de tipo (coll é ponteiro)
+        // Reading the type byte is safe only after the pointer guard.
         self.builder.switch_to_block(type_b);
         self.builder.seal_block(type_b);
         let ty = self
@@ -1603,7 +1633,7 @@ impl<'a> FnGen<'a> {
         let is_vec = self.builder.ins().icmp_imm(IntCC::Equal, ty, T_VEC);
         self.builder.ins().brif(is_vec, vec_b, &[], slow_b, &[]);
 
-        // vec_b: desempacota i e checa limites (fora → slow, que lança p/ aridade 2)
+        // Unbox and bounds-check; the slow arity-2 path throws out of bounds.
         self.builder.switch_to_block(vec_b);
         self.builder.seal_block(vec_b);
         let i = self.builder.ins().sshr_imm(idx, 1);
@@ -1619,7 +1649,7 @@ impl<'a> FnGen<'a> {
         let oob = self.builder.ins().bor(neg, ge);
         self.builder.ins().brif(oob, slow_b, &[], inb_b, &[]);
 
-        // inb_b: tail vs trie
+        // In-bounds path selects tail or trie storage.
         self.builder.switch_to_block(inb_b);
         self.builder.seal_block(inb_b);
         let tail_len = self
@@ -1633,7 +1663,7 @@ impl<'a> FnGen<'a> {
             .icmp(IntCC::SignedGreaterThanOrEqual, i, tailoff);
         self.builder.ins().brif(in_tail, tail_b, &[], trie_b, &[]);
 
-        // tail_b: tail->slots[i - tailoff]
+        // Tail fast path: tail->slots[i - tailoff].
         self.builder.switch_to_block(tail_b);
         self.builder.seal_block(tail_b);
         let tail = self
@@ -1649,7 +1679,7 @@ impl<'a> FnGen<'a> {
             .load(types::I64, MemFlags::trusted(), taddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[tres.into()]);
 
-        // trie_b: node=root, level=shift
+        // Trie path begins at root and shift.
         self.builder.switch_to_block(trie_b);
         self.builder.seal_block(trie_b);
         let root = self
@@ -1664,7 +1694,7 @@ impl<'a> FnGen<'a> {
             .ins()
             .jump(loop_b, &[root.into(), shift.into()]);
 
-        // loop_b(node, level): level>0 ? descend : leaf
+        // Walk internal nodes until the leaf level.
         self.builder.switch_to_block(loop_b);
         let node = self.builder.block_params(loop_b)[0];
         let level = self.builder.block_params(loop_b)[1];
@@ -1674,7 +1704,7 @@ impl<'a> FnGen<'a> {
             .icmp_imm(IntCC::SignedGreaterThan, level, 0);
         self.builder.ins().brif(more, descend_b, &[], leaf_b, &[]);
 
-        // descend_b: node = node->slots[(i>>level)&31]; level -= 5
+        // Select five index bits per trie level.
         self.builder.switch_to_block(descend_b);
         self.builder.seal_block(descend_b);
         let sh = self.builder.ins().sshr(i, level);
@@ -1691,7 +1721,7 @@ impl<'a> FnGen<'a> {
             .jump(loop_b, &[child.into(), level2.into()]);
         self.builder.seal_block(loop_b); // preds: trie_b, descend_b
 
-        // leaf_b: node->slots[i&31]
+        // Read the leaf slot.
         self.builder.switch_to_block(leaf_b);
         self.builder.seal_block(leaf_b);
         let slot = self.builder.ins().band_imm(i, 31);
@@ -1703,13 +1733,13 @@ impl<'a> FnGen<'a> {
             .load(types::I64, MemFlags::trusted(), laddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[lres.into()]);
 
-        // slow_b: delega ao runtime (semântica completa e erros)
+        // Slow path owns complete type/bounds semantics and diagnostics.
         self.builder.switch_to_block(slow_b);
         self.builder.seal_block(slow_b);
         let sres = self.call2(self.rt.p_nth, coll, idx);
         self.builder.ins().jump(merge, &[sres.into()]);
 
-        // merge
+        // Merge the fast and slow Values.
         self.builder.switch_to_block(merge);
         self.builder.seal_block(merge);
         let res = self.builder.block_params(merge)[0];
@@ -1717,14 +1747,12 @@ impl<'a> FnGen<'a> {
         Ok(res)
     }
 
-    /// `assoc` variádico (ADR-0008): avalia TODOS os args antes da dobra e então
-    /// dobra os pares da esquerda p/ direita sobre AssocOne (`cljn_assoc`),
-    /// mantendo o acumulador rooteado a cada passo. args = [coll, k, v, k, v...].
+    /// Lowers variadic assoc by evaluating all operands before a left fold.
+    ///
+    /// GC: heap operands and the current accumulator stay rooted across every
+    /// `cljn_assoc` allocation.
     fn gen_assoc(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        // Avalia todos os args antes da dobra; só operandos Heap vão à shadow
-        // stack (imediatos — índice fixnum, `false` etc. — nunca precisam de root).
-        // Pares Heap ainda não consumidos permanecem rooteados durante os passos
-        // anteriores. O acumulador tem seu próprio root, atualizado a cada passo.
+        // Unconsumed heap operands retain roots; immediates never need them.
         let mut vals = Vec::with_capacity(args.len());
         let mut pushed = 0usize;
         for a in args {
@@ -1733,20 +1761,20 @@ impl<'a> FnGen<'a> {
             vals.push(v);
         }
         let mut acc = vals[0];
-        self.gc_push_val(acc); // root do acumulador (topo)
+        self.gc_push_val(acc);
         let mut i = 1;
         while i + 1 < vals.len() {
             acc = self.call3(self.rt.p_assoc, acc, vals[i], vals[i + 1]);
-            self.gc_popn(1); // remove acc antigo
-            self.gc_push_val(acc); // novo acc
+            self.gc_popn(1);
+            self.gc_push_val(acc);
             i += 2;
         }
-        self.gc_popn(1); // acc
-        self.gc_popn(pushed); // operandos Heap
+        self.gc_popn(1);
+        self.gc_popn(pushed);
         Ok(acc)
     }
 
-    /// Materializa uma keyword a partir do blob de string (sem empurrar).
+    /// Materializes a keyword from object data without pushing the result.
     fn make_kw_value(&mut self, name: &str) -> CValue {
         let (data_id, len) = self.str_data[name];
         let gv = self.module.declare_data_in_func(data_id, self.builder.func);
@@ -1755,7 +1783,7 @@ impl<'a> FnGen<'a> {
         self.call2(self.rt.kw, p, len_v)
     }
 
-    /// Constrói um record (net-0): mapa dos campos + nome de tipo → cljn_make_record.
+    /// Builds a record with net-zero shadow-stack depth.
     fn gen_make_record(
         &mut self,
         type_name: &str,
@@ -1765,8 +1793,8 @@ impl<'a> FnGen<'a> {
             .iter()
             .map(|(fname, val)| (Ast::Keyword(fname.clone()), val.clone()))
             .collect();
-        let map_val = self.gen_map(&pairs)?; // net-0
-        self.gc_push_val(map_val); // rooteia o mapa durante o alloc do keyword/record
+        let map_val = self.gen_map(&pairs)?;
+        self.gc_push_val(map_val);
         let tn = self.make_kw_value(type_name);
         self.gc_push_val(tn);
         let rec = self.call2(self.rt.make_record, tn, map_val);
@@ -1774,7 +1802,7 @@ impl<'a> FnGen<'a> {
         Ok(rec)
     }
 
-    /// Cria uma closure: avalia capturas, aloca o Fn e preenche `freev`.
+    /// Evaluates captures, allocates a function object, and fills `freev`.
     fn gen_make_fn(
         &mut self,
         lambda: &str,
@@ -1783,16 +1811,16 @@ impl<'a> FnGen<'a> {
     ) -> Result<Flow, Diagnostic> {
         let mut cap_vals = Vec::with_capacity(captures.len());
         for c in captures {
-            cap_vals.push(self.spill_arg(c)?); // +1 cada (rooteados durante o alloc)
+            cap_vals.push(self.spill_arg(c)?);
         }
         let (id, _) = self.fn_ids[lambda];
         let code = self.func_addr(id);
         let ar = self.builder.ins().iconst(types::I64, arity as i64);
         let nfree = self.builder.ins().iconst(types::I64, captures.len() as i64);
         let fnv = self.call3(self.rt.make_fn, code, ar, nfree);
-        // Capturas já estão dentro do Fn a partir de agora (set_free não aloca):
-        self.gc_popn(captures.len()); // remove os temps de captura
-        self.gc_push_val(fnv); // rooteia o Fn
+        // set_free does not allocate; the function owns captures after filling.
+        self.gc_popn(captures.len());
+        self.gc_push_val(fnv);
         for (i, cv) in cap_vals.iter().enumerate() {
             let idx = self.builder.ins().iconst(types::I64, i as i64);
             self.call_void3(self.rt.set_free, fnv, idx, *cv);
@@ -1800,17 +1828,17 @@ impl<'a> FnGen<'a> {
         Ok(Flow::Val(fnv))
     }
 
-    /// Chamada indireta de um valor-função (net-0 no shadow-stack).
+    /// Emits an indirect callable invocation with net-zero shadow-stack depth.
     fn gen_call_value(&mut self, f: &Ast, args: &[Ast]) -> Result<CValue, Diagnostic> {
-        let f_val = self.spill_arg(f)?; // +1 (f fica abaixo dos args)
+        let f_val = self.spill_arg(f)?;
         for a in args {
-            self.spill_arg(a)?; // +1 cada (args por argv → sempre na pilha)
+            self.spill_arg(a)?;
         }
         self.call_void(self.rt.check_fn, &[f_val]);
         let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
-        let argv_ptr = self.call1(self.rt.argv, argc_v); // topo = os args (f está abaixo)
+        let argv_ptr = self.call1(self.rt.argv, argc_v);
         let code = self.call1(self.rt.fn_code, f_val);
-        // Assinatura uniforme da entrada: (self, argc, argv) -> i64.
+        // ABI: every entry uses (self, argc, argv) -> Value.
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(types::I64)); // self
         sig.params.push(AbiParam::new(types::I64)); // argc
@@ -1822,11 +1850,11 @@ impl<'a> FnGen<'a> {
             .ins()
             .call_indirect(sig_ref, code, &[f_val, argc_v, argv_ptr]);
         let r = self.builder.inst_results(call)[0];
-        self.gc_popn(1 + args.len()); // f + args
+        self.gc_popn(1 + args.len());
         Ok(r)
     }
 
-    /// `(apply f fixed... coll)`: net-0. Empilha f, os fixos, e espalha `coll`.
+    /// Lowers apply by rooting callable/fixed args and spreading the collection.
     fn gen_apply(&mut self, f: &Ast, fixed: &[Ast], coll: &Ast) -> Result<CValue, Diagnostic> {
         let f_val = self.spill_arg(f)?; // shadow: [f]
         for a in fixed {
@@ -1835,7 +1863,7 @@ impl<'a> FnGen<'a> {
         let coll_val = self.spill_arg(coll)?; // [f, fixed.., coll]
         self.gc_popn(1); // remove o temp de coll (spread não aloca; coll SSA segue válido)
         let n_fixed = self.builder.ins().iconst(types::I64, fixed.len() as i64);
-        // Empurra os elementos de coll no topo; devolve argc total (fixos + extras).
+        // Spread collection elements on top and compute fixed plus extra argc.
         let total = self.call2(self.rt.spread_args, n_fixed, coll_val);
         self.call_void(self.rt.check_fn, &[f_val]);
         let argv_ptr = self.call1(self.rt.argv, total); // topo `total` = fixos + elementos
@@ -1851,7 +1879,7 @@ impl<'a> FnGen<'a> {
             .ins()
             .call_indirect(sig_ref, code, &[f_val, total, argv_ptr]);
         let r = self.builder.inst_results(call)[0];
-        // Limpa: f (1) + total (fixos + elementos).
+        // Pop callable, fixed arguments, and spread elements.
         let one = self.builder.ins().iconst(types::I64, 1);
         let cleanup = self.builder.ins().iadd(total, one);
         self.gc_popn_val(cleanup);
@@ -1870,7 +1898,7 @@ impl<'a> FnGen<'a> {
             self.gc_popn(1); // consome o temp do teste
             self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0)
         } else {
-            // Teste imediato: falsy só se FALSEV ou NIL → compara inline (sem call).
+            // Only FALSEV and NIL are falsey, so the test is an inline comparison.
             let nf = self
                 .builder
                 .ins()
@@ -1883,14 +1911,14 @@ impl<'a> FnGen<'a> {
         let else_b = self.builder.create_block();
         self.builder.ins().brif(cond, then_b, &[], else_b, &[]);
 
-        // Merge criado sob demanda (apenas se algum ramo alcança fall-through).
+        // Create the merge lazily only when a branch reaches fall-through.
         let mut merge: Option<Block> = None;
 
         self.builder.switch_to_block(then_b);
         self.builder.seal_block(then_b);
         if let Flow::Val(tv) = self.expr(then)? {
-            // Reconcilia a profundidade da pilha: se o merge é Heap mas este ramo
-            // não empurrou (imediato ou Local), derrama para igualar os ramos.
+            // If the merged value is heap-capable but this branch did not push,
+            // spill it so every predecessor reaches the same root depth.
             if merge_kind == VKind::Heap && !then_pushes {
                 self.gc_push_val(tv);
             }
@@ -1927,14 +1955,14 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_loop(&mut self, slots: &[(u32, Ast)], body: &Ast) -> Result<Flow, Diagnostic> {
-        // Kinds dos slots por ponto fixo: um slot é Imm só se init e todo recur-arg
-        // naquela posição forem Imm. Slots Imm não escrevem root (var apenas).
+        // A slot is immediate only when its initializer and every recur argument
+        // at that position are immediate; immediate slots omit root stores.
         let slot_kinds = self.loop_slot_kinds(slots, body, &HashMap::new());
         let mut slot_ids = Vec::with_capacity(slots.len());
         for (slot, init) in slots {
             let (v0, pushed) = self.operand(init)?;
             let k = *slot_kinds.get(slot).unwrap_or(&VKind::Heap);
-            self.bind_local_kind(*slot, v0, k); // escreve slot só se Heap
+            self.bind_local_kind(*slot, v0, k); // Root only heap-capable slots.
             if pushed {
                 self.gc_popn(1);
             }
@@ -1960,7 +1988,7 @@ impl<'a> FnGen<'a> {
             .last()
             .cloned()
             .ok_or_else(|| Diagnostic::error("E0113", "recur sem alvo (bug)"))?;
-        // Avalia todos os argumentos antes de religar (evita clobber). Heap → +1.
+        // Evaluate every argument before rebinding to avoid clobbering locals.
         let mut vals = Vec::with_capacity(args.len());
         let mut pushed = 0usize;
         for a in args {
@@ -1969,30 +1997,32 @@ impl<'a> FnGen<'a> {
             vals.push(v);
         }
         for (slot, val) in target.slots.iter().zip(vals) {
-            // Kind do slot fixado pelo loop; um slot Imm nunca recebe arg Heap.
+            // Loop fixed point guarantees an immediate slot never receives heap.
             let k = *self.kinds.get(slot).unwrap_or(&VKind::Heap);
             self.bind_local_kind(*slot, val, k);
         }
-        self.gc_popn(pushed); // remove só os temps Heap
+        self.gc_popn(pushed); // Only heap temporaries were pushed.
         self.builder.ins().jump(target.header, &[]);
         Ok(Flow::Diverged)
     }
 
-    /// Chamada de função ou primitiva: avalia args (empurra temps), chama,
-    /// retira os temps e devolve o resultado **sem** empurrá-lo (quem chama, em
-    /// `expr`, empurra). Net-0 no shadow-stack.
+    /// Calls a function or primitive with net-zero shadow-stack effect.
+    ///
+    /// Arguments are evaluated and temporarily rooted before the call. This
+    /// function removes those roots and returns an unpushed result; `expr`
+    /// decides whether the result itself needs a root.
     fn gen_call(&mut self, callee: &Callee, args: &[Ast]) -> Result<CValue, Diagnostic> {
         match callee {
             Callee::Prim(p) => self.gen_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
-                // Empilha os args no shadow-stack; argv aponta para eles (imediatos derramados).
+                // `argv` points into roots for every argument, including spills.
                 for a in args {
-                    self.spill_arg(a)?; // +1 cada
+                    self.spill_arg(a)?; // One contiguous slot per argument.
                 }
                 let argc_v = self.builder.ins().iconst(types::I64, args.len() as i64);
                 let argv_ptr = self.call1(self.rt.argv, argc_v);
-                let nil = self.konst(NIL); // self = NIL (fn de topo ignora capturas)
+                let nil = self.konst(NIL); // Top-level functions have no captures.
                 let fref = self.module.declare_func_in_func(id, self.builder.func);
                 let call = self.builder.ins().call(fref, &[nil, argc_v, argv_ptr]);
                 let r = self.builder.inst_results(call)[0];
@@ -2002,8 +2032,8 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    // -- fast paths de fixnum (ADR-0006) ---------------------------------
-    /// Guarda "ambos são fixnum": `(a & b & 1) != 0`.
+    // -- Fixnum fast paths (ADR-0006) ------------------------------------
+    /// Tests whether both operands are fixnums with `(a & b & 1) != 0`.
     fn fix_both_guard(&mut self, a: CValue, b: CValue) -> CValue {
         let ab = self.builder.ins().band(a, b);
         let m = self.builder.ins().band_imm(ab, 1);
@@ -2017,7 +2047,7 @@ impl<'a> FnGen<'a> {
         let sh = self.builder.ins().ishl_imm(raw, 1);
         self.builder.ins().bor_imm(sh, 1)
     }
-    /// `raw` está em [FIX_MIN, FIX_MAX]?
+    /// Tests whether `raw` is in the representable fixnum range.
     fn fix_in_range(&mut self, raw: CValue) -> CValue {
         let lo = self
             .builder
@@ -2030,7 +2060,7 @@ impl<'a> FnGen<'a> {
         self.builder.ins().band(lo, hi)
     }
 
-    /// `+`/`-` inline com guard + range-check + retag; slow path = runtime.
+    /// Emits guarded inline addition/subtraction with runtime fallback.
     fn gen_fix_arith(&mut self, a: CValue, b: CValue, add: bool, slow: FuncId) -> CValue {
         let both = self.fix_both_guard(a, b);
         let fast_b = self.builder.create_block();
@@ -2066,8 +2096,10 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
-    /// `*` inline: guard, unbox, imul + smulhi p/ detectar overflow de i64,
-    /// range-check de fixnum, retag; slow path = runtime.
+    /// Emits guarded inline multiplication with runtime fallback.
+    ///
+    /// The fast path uses low/high signed products to detect i64 overflow,
+    /// checks the narrower fixnum range, and retags the result.
     fn gen_fix_mul(&mut self, a: CValue, b: CValue, slow: FuncId) -> CValue {
         let both = self.fix_both_guard(a, b);
         let fast_b = self.builder.create_block();
@@ -2103,7 +2135,7 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
-    /// `inc`/`dec` inline (`delta` = +1/-1); slow path = runtime.
+    /// Emits guarded inline increment/decrement with runtime fallback.
     fn gen_fix_unop(&mut self, a: CValue, delta: i64, slow: FuncId) -> CValue {
         let g = self.fix_guard(a);
         let fast_b = self.builder.create_block();
@@ -2134,9 +2166,11 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
-    /// `quot`/`mod` inline. Guard de tag + divisor≠0 desviam ao slow path (que
-    /// preserva "divisão por zero"). `quot`: range-check p/ o caso `-2^62 / -1`.
-    /// `mod`: ajuste de sinal (mod floored de Clojure), resultado sempre em range.
+    /// Emits guarded inline quotient or floored modulus with runtime fallback.
+    ///
+    /// Zero divisors use the slow path for the user-facing error. Quotient also
+    /// guards the minimum-fixnum divided by -1 overflow case. Modulus adjusts a
+    /// non-zero C remainder when operand signs differ.
     fn gen_fix_div(&mut self, a: CValue, b: CValue, is_quot: bool, slow: FuncId) -> CValue {
         let both = self.fix_both_guard(a, b);
         let fast_b = self.builder.create_block();
@@ -2151,7 +2185,7 @@ impl<'a> FnGen<'a> {
         let br = self.builder.ins().sshr_imm(b, 1);
         let bz = self.builder.ins().icmp_imm(IntCC::Equal, br, 0);
         let cont_b = self.builder.create_block();
-        self.builder.ins().brif(bz, slow_b, &[], cont_b, &[]); // divisor 0 → slow
+        self.builder.ins().brif(bz, slow_b, &[], cont_b, &[]); // Zero uses slow path.
         self.builder.switch_to_block(cont_b);
         self.builder.seal_block(cont_b);
         if is_quot {
@@ -2165,7 +2199,7 @@ impl<'a> FnGen<'a> {
             self.builder.ins().jump(merge, &[tagged.into()]);
         } else {
             let r = self.builder.ins().srem(ar, br);
-            // ajuste floored: se r!=0 && sinal(r)!=sinal(br) então r+br
+            // Floored adjustment: non-zero remainder with differing signs adds b.
             let rnz = self.builder.ins().icmp_imm(IntCC::NotEqual, r, 0);
             let xr = self.builder.ins().bxor(r, br);
             let diff = self.builder.ins().icmp_imm(IntCC::SignedLessThan, xr, 0);
@@ -2186,7 +2220,7 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
-    /// `< <= > >=` inline: guard, unbox, icmp, select(TRUE/FALSE); slow = runtime.
+    /// Emits guarded inline numeric comparison with runtime fallback.
     fn gen_fix_cmp(&mut self, a: CValue, b: CValue, cc: IntCC, slow: FuncId) -> CValue {
         let both = self.fix_both_guard(a, b);
         let fast_b = self.builder.create_block();
@@ -2215,7 +2249,7 @@ impl<'a> FnGen<'a> {
         self.builder.block_params(merge)[0]
     }
 
-    /// Fold de `+`/`-` com fast path por par.
+    /// Folds addition or subtraction through the pairwise fast path.
     fn fold_fix(&mut self, args: &[Ast], add: bool, slow: FuncId) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         let mut pushed = 0usize;
@@ -2250,12 +2284,12 @@ impl<'a> FnGen<'a> {
             Prim::Println | Prim::Print => self.gen_print(prim, args),
             Prim::Str => self.gen_str(args),
             Prim::List => self.gen_list(args),
-            // aritmética com fast path de fixnum (ADR-0006)
+            // Arithmetic with fixnum fast paths (ADR-0006).
             Prim::Add => self.fold_fix(args, true, self.rt.add),
             Prim::Sub => {
                 if args.len() == 1 {
                     let (v, pv) = self.operand(&args[0])?;
-                    let zero = self.konst(1); // MK_FIX(0) == 1 (imediato, sem root)
+                    let zero = self.konst(1); // MK_FIX(0) is immediate and unrooted.
                     let r = self.call2(self.rt.sub, zero, v);
                     self.gc_popn(pv as usize);
                     Ok(r)
@@ -2278,12 +2312,12 @@ impl<'a> FnGen<'a> {
                 self.gc_popn(pushed);
                 Ok(acc)
             }
-            // comparações com fast path de fixnum
+            // Comparisons with fixnum fast paths.
             Prim::Lt => self.fix_cmp2(args, IntCC::SignedLessThan, self.rt.lt),
             Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le),
             Prim::Gt => self.fix_cmp2(args, IntCC::SignedGreaterThan, self.rt.gt),
             Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge),
-            // divisão inteira com fast path de fixnum
+            // Integer division with fixnum fast paths.
             Prim::Quot => {
                 let (a, pa) = self.operand(&args[0])?;
                 let (b, pb) = self.operand(&args[1])?;
@@ -2300,7 +2334,7 @@ impl<'a> FnGen<'a> {
             }
             Prim::Eq => self.bin(self.rt.eq, args),
             Prim::Cons => self.bin(self.rt.cons, args),
-            // unárias
+            // Unary operations.
             Prim::Inc => self.fix_una(args, 1, self.rt.inc),
             Prim::Dec => self.fix_una(args, -1, self.rt.dec),
             Prim::Not => self.una(self.rt.not_, args),
@@ -2309,13 +2343,13 @@ impl<'a> FnGen<'a> {
             Prim::First => self.una(self.rt.first, args),
             Prim::Rest => self.una(self.rt.rest, args),
             Prim::Count => self.una(self.rt.count, args),
-            // coleções
+            // Collection operations.
             Prim::Get => self.bin(self.rt.p_get, args),
             Prim::Nth => {
                 if args.len() == 2 {
-                    self.gen_nth_fast(args) // fast path inline p/ vetor (ADR-0006/0008)
+                    self.gen_nth_fast(args) // Inline vector fast path (ADR-0006/0008).
                 } else {
-                    self.tern(self.rt.p_nth_or, args) // aridade 3: not-found
+                    self.tern(self.rt.p_nth_or, args) // Arity 3 supplies not-found.
                 }
             }
             Prim::Assoc => self.gen_assoc(args),
@@ -2327,7 +2361,7 @@ impl<'a> FnGen<'a> {
             Prim::Vector => self.gen_vec(args),
             Prim::HashSet => self.gen_set(args),
             Prim::HashMap => {
-                // (hash-map k v k v ...) → pares
+                // Convert alternating hash-map operands to key/value pairs.
                 let pairs: Vec<(Ast, Ast)> = args
                     .chunks_exact(2)
                     .map(|c| (c[0].clone(), c[1].clone()))
@@ -2386,7 +2420,9 @@ impl<'a> FnGen<'a> {
         }
     }
 
-    /// Primitiva ternária (net-0). Só operandos Heap são rooteados/retirados.
+    /// Calls a ternary primitive with net-zero root-stack effect.
+    ///
+    /// Only heap-capable operands are rooted and subsequently removed.
     fn tern(&mut self, id: FuncId, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let (a, pa) = self.operand(&args[0])?;
         let (b, pb) = self.operand(&args[1])?;
@@ -2415,7 +2451,7 @@ impl<'a> FnGen<'a> {
             if i > 0 {
                 self.call_void(self.rt.print_space, &[]);
             }
-            let v = self.spill_arg(a)?; // +1 (imediatos derramados; rooteado no print)
+            let v = self.spill_arg(a)?; // Spill immediates and root during print.
             self.call_void(self.rt.print, &[v]);
         }
         self.gc_popn(args.len());
@@ -2432,34 +2468,34 @@ impl<'a> FnGen<'a> {
         }
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            vals.push(self.spill_arg(a)?); // n temps (imediatos derramados)
+            vals.push(self.spill_arg(a)?); // One rooted temporary per argument.
         }
         let mut acc = self.call1(self.rt.to_str, vals[0]);
-        self.gc_push_val(acc); // acc temp
+        self.gc_push_val(acc); // Root the accumulator.
         for v in &vals[1..] {
             let s = self.call1(self.rt.to_str, *v);
-            self.gc_push_val(s); // s temp
+            self.gc_push_val(s); // Root the converted string.
             acc = self.call2(self.rt.str_concat, acc, s);
-            self.gc_popn(2); // remove s e acc antigo
-            self.gc_push_val(acc); // novo acc
+            self.gc_popn(2); // Remove string and previous accumulator.
+            self.gc_push_val(acc); // Root the new accumulator.
         }
-        self.gc_popn(args.len() + 1); // remove args + acc
+        self.gc_popn(args.len() + 1); // Remove arguments and accumulator.
         Ok(acc)
     }
 
     fn gen_list(&mut self, args: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            vals.push(self.spill_arg(a)?); // n temps (imediatos derramados)
+            vals.push(self.spill_arg(a)?); // One rooted temporary per argument.
         }
         let mut acc = self.call0(self.rt.empty);
-        self.gc_push_val(acc); // acc temp
+        self.gc_push_val(acc); // Root the accumulator.
         for v in vals.iter().rev() {
-            acc = self.call2(self.rt.cons, *v, acc); // v e acc rooteados
-            self.gc_popn(1); // remove acc antigo
-            self.gc_push_val(acc); // novo acc
+            acc = self.call2(self.rt.cons, *v, acc); // Both inputs are rooted.
+            self.gc_popn(1); // Remove the previous accumulator.
+            self.gc_push_val(acc); // Root the new accumulator.
         }
-        self.gc_popn(args.len() + 1); // remove args + acc
+        self.gc_popn(args.len() + 1); // Remove arguments and accumulator.
         Ok(acc)
     }
 }

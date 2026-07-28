@@ -1,11 +1,17 @@
 
-/* ---------- multimethods (defmulti/defmethod) ----------
- * Reusa a method_table (chave = valor de dispatch, casada por cljn_equal_raw).
- * A função de dispatch de cada multimethod fica num registro próprio por mid. */
+/*
+ * Multimethod registration and invocation.
+ *
+ * Dispatch functions are process-lifetime entries keyed by raw method ID.
+ * Implementations reuse the protocol method table with structural dispatch
+ * values, falling back to the cached :default keyword.
+ * GC: dispatch functions and :default are permanent roots.
+ */
 typedef struct MultiEntry { int64_t mid; Value fn; struct MultiEntry *next; } MultiEntry;
 static MultiEntry *multi_table = NULL;
-static Value cljn_default_kw = 0; /* keyword :default cacheada (root) */
+static Value cljn_default_kw = 0;
 
+/* Register a dispatch closure for raw multimethod ID `mid`. */
 void cljn_multi_register(Value mid, Value fn) {
     MultiEntry *e = xalloc(sizeof(MultiEntry));
     e->mid = (int64_t)mid; e->fn = fn; e->next = multi_table; multi_table = e;
@@ -14,13 +20,19 @@ static Value multi_dispatch_fn(int64_t mid) {
     for (MultiEntry *e = multi_table; e; e = e->next) if (e->mid == mid) return e->fn;
     return NIL;
 }
+/*
+ * Dispatch and invoke a multimethod with raw argc and rooted argv pointer.
+ *
+ * Missing dispatch functions or implementations terminate with Portuguese
+ * diagnostics. The dispatch value is rooted across lookup/default allocation.
+ */
 Value cljn_multi_call(Value mid, Value argc, Value argv_) {
     int64_t n = (int64_t)argc;
     Value *argv = (Value *)argv_;
     Value df = multi_dispatch_fn((int64_t)mid);
     if (obj_type(df) != T_FN) { fprintf(stderr, "erro: multimethod sem função de dispatch\n"); exit(1); }
     Value dv = ((FnCode)((Fn *)df)->code)(df, n, argv);
-    gc_stack[gc_sp++] = dv; /* rooteia dv durante lookup e alloc de :default */
+    gc_stack[gc_sp++] = dv;
     Value impl = cljn_lookup_method(mid, dv);
     if (impl == NIL) {
         if (cljn_default_kw == 0) cljn_default_kw = cljn_kw("default", 7);

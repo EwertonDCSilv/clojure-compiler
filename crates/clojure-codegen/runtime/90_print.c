@@ -1,5 +1,11 @@
 
-/* ---------- impressão / str ---------- */
+/*
+ * Deterministic Value formatting and output.
+ *
+ * Formatting first builds an owned temporary byte buffer. print writes through
+ * the current *out* Writer; string conversion copies the bytes into a GC object.
+ * Ownership: every temporary SB buffer is freed by its caller.
+ */
 typedef struct { char *p; size_t len, cap; } SB;
 static void sb_init(SB *b) { b->cap = 32; b->len = 0; b->p = xalloc(b->cap); }
 static void sb_putc(SB *b, char c) {
@@ -58,7 +64,7 @@ static void sb_write_hset(SB *b, Value node, int for_str, int *first) {
         }
     }
 }
-/* percurso in-order da árvore ordenada para impressão (crescente). */
+/* In-order traversal prints sorted collections in ascending order. */
 static void sb_write_tree(SB *b, Value node, int is_map, int for_str, int *first) {
     if (node == NIL) return;
     TNode *h = (TNode *)node;
@@ -71,8 +77,7 @@ static void sb_write_tree(SB *b, Value node, int is_map, int for_str, int *first
 }
 static void write_val(SB *b, Value v, int for_str) {
     if (IS_FIX(v)) { char t[32]; int n=snprintf(t,sizeof t,"%ld",(long)FIX(v)); sb_write(b,t,(size_t)n); return; }
-    /* Char: imprime o próprio caractere (UTF-8), como str; consistente com strings
-     * não-quotadas neste runtime (sem forma pr \x). */
+    /* Characters emit their UTF-8 bytes; this runtime has no separate pr form. */
     if (IS_CHAR(v)) { char t[4]; int n=utf8_encode(CHAR_CP(v),t); sb_write(b,t,(size_t)n); return; }
     if (v == NIL) { if (!for_str) sb_str(b,"nil"); return; }
     if (v == TRUEV) { sb_str(b,"true"); return; }
@@ -130,30 +135,33 @@ static void write_val(SB *b, Value v, int for_str) {
     }
 }
 
-/* print/println escrevem no Writer corrente (*out*), permitindo captura via
- * with-out-str; por padrão *out* é o Writer de stdout. */
+/* Format `v` for print and write it to current *out*. Returns no Value. */
 void cljn_print(Value v) {
     SB b; sb_init(&b); write_val(&b,v,0);
-    Value out = dynvar_get(VAR_OUT); /* pode alocar (init preguiçoso); v está rooteado */
+    Value out = dynvar_get(VAR_OUT);
     writer_write(out, b.p, b.len);
     free(b.p);
 }
+/* Allocate a runtime string containing str-style formatting of `v`. */
 Value cljn_to_str(Value v) {
     SB b; sb_init(&b); write_val(&b,v,1);
-    Value r = cljn_str_from(b.p, (long)b.len); /* pode coletar; v está rooteado */
+    Value r = cljn_str_from(b.p, (long)b.len);
     free(b.p); return r;
 }
+/* Concatenate two runtime strings into a newly allocated string. O(a+b). */
 Value cljn_str_concat(Value a, Value b) {
     if (obj_type(a)!=T_STR || obj_type(b)!=T_STR) die("str_concat: esperava strings");
     Str *x=(Str*)a,*y=(Str*)b;
     size_t total = x->len + y->len;
-    /* aloca o objeto (pode coletar; a,b rooteados) e depois o buffer. */
+    /* GC: a and b are rooted by generated code across obj_alloc. */
     Str *s=(Str*)obj_alloc(sizeof(Str),T_STR);
     s->len=total; s->data=xalloc(total?total:1);
-    x=(Str*)a; y=(Str*)b; /* revalida após possível GC (não-móvel: iguais) */
+    x=(Str*)a; y=(Str*)b;
     memcpy(s->data,x->data,x->len);
     memcpy(s->data+x->len,y->data,y->len);
     return (Value)s;
 }
+/* Write one ASCII space to current *out*; may lazily allocate the Writer. */
 void cljn_print_space(void) { writer_write(dynvar_get(VAR_OUT), " ", 1); }
+/* Write one newline to current *out*; may lazily allocate the Writer. */
 void cljn_print_newline(void) { writer_write(dynvar_get(VAR_OUT), "\n", 1); }

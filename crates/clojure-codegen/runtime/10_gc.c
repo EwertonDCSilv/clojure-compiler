@@ -1,11 +1,25 @@
 
-/* ---------- shadow-stack de roots ---------- */
-/* Exportados: o código gerado (ADR-0006 Fase 3) escreve/lê diretamente, sem call.
- * `gc_sp` é um índice (contagem de slots vivos). Single-thread. */
+/*
+ * Garbage collector and generated-code shadow stack.
+ *
+ * The collector is a precise, non-moving, single-threaded mark/sweep collector.
+ * Generated code reserves local slots and spills heap-capable temporaries into
+ * `gc_stack`; the collector never scans the native machine stack.
+ *
+ * ABI: generated code also accesses `gc_stack` and `gc_sp` directly.
+ * GC: every heap-capable Value live across allocation must occupy a live slot.
+ */
 #define GC_STACK_CAP (1u << 22) /* 4M slots */
 Value gc_stack[GC_STACK_CAP];
 int64_t gc_sp = 0;
 
+/*
+ * Reserve and clear `nslots` root slots, returning their untagged base index.
+ *
+ * ABI: `nslots` and the return value are raw counts carried in Value-sized
+ * registers, not tagged fixnums. Exits fatally on shadow-stack overflow.
+ * GC: clearing to NIL prevents stale pointers from becoming conservative roots.
+ */
 Value cljn_gc_enter(Value nslots) {
     size_t base = gc_sp;
     size_t n = (size_t)nslots;
@@ -14,12 +28,16 @@ Value cljn_gc_enter(Value nslots) {
     gc_sp = base + n;
     return (Value)base;
 }
+/* Restore `gc_sp` to an untagged base previously returned by cljn_gc_enter. */
 void cljn_gc_leave(Value base) { gc_sp = (size_t)base; }
+/* Push one tagged Value root; exits fatally if the fixed stack is full. */
 void cljn_gc_push(Value v) {
     if (gc_sp >= GC_STACK_CAP) { fprintf(stderr, "erro: overflow do shadow-stack de GC\n"); exit(1); }
     gc_stack[gc_sp++] = v;
 }
+/* Remove an untagged number of temporary roots pushed by generated code. */
 void cljn_gc_popn(Value n) { gc_sp -= (size_t)n; }
+/* Store a tagged Value in an absolute untagged shadow-stack slot. */
 void cljn_gc_set(Value idx, Value v) { gc_stack[(size_t)idx] = v; }
 
 /* ---------- heap + coletor ---------- */
@@ -44,16 +62,13 @@ static void die(const char *m) { fprintf(stderr, "erro: %s\n", m); exit(1); }
 static int obj_type(Value v) { return (IS_PTR(v) && v != 0) ? ((Obj *)v)->type : 0; }
 
 static int gc_off = -1;
-/* Zona sem-GC: ops de runtime que alocam múltiplos objetos intermediários
- * (ex.: vector trie) incrementam isto para não coletar no meio (alocação
- * limitada; as entradas já estão rooteadas pelo chamador). */
+/* A bounded no-GC region protects unrooted intermediate objects in compound
+ * runtime operations. Inputs remain rooted by generated callers. */
 static int gc_disabled = 0;
 
-/* Alocador não-móvel: slabs (bump) + free-lists por classe de tamanho de 16 B.
- * O sweep recicla objetos mortos para o free-list em vez de `free()`, evitando
- * malloc/free por objeto e mantendo o working-set pequeno e cache-quente. Como
- * nada se move, a shadow stack e o rooting da ADR-0006 permanecem válidos.
- * Objetos > SZC_MAX usam malloc/free direto (szc==0). */
+/* Non-moving allocator: bump slabs plus free lists in 16-byte size classes.
+ * Sweep recycles small dead objects; objects larger than SZC_MAX use direct
+ * malloc/free and have szc == 0. */
 #define SZC_GRAN 16
 #define SZC_MAX 512
 #define NSZC (SZC_MAX / SZC_GRAN + 1)
@@ -84,7 +99,7 @@ static void maybe_gc(void) {
 }
 
 static Obj *obj_alloc(size_t size, int type) {
-    /* safepoint inline (barato no caso comum; sem chamada quando em zona sem-GC) */
+    /* Allocation is a safepoint unless a bounded no-GC region is active. */
     if (gc_stress < 0) gc_init_env();
     if (!gc_disabled && !gc_off && (gc_stress || alloc_since_gc >= gc_threshold)) gc_collect();
     size_t asz = (size + (SZC_GRAN - 1)) & ~(size_t)(SZC_GRAN - 1);
@@ -92,16 +107,16 @@ static Obj *obj_alloc(size_t size, int type) {
     Obj *o;
     if (c < NSZC && freelist[c]) {
         o = freelist[c];
-        freelist[c] = o->next_all; /* recicla do free-list */
+        freelist[c] = o->next_all; /* Reuse one same-size object. */
     } else if (c < NSZC) {
         o = (Obj *)slab_bump(asz);
     } else {
-        o = (Obj *)xalloc(size); /* grande: malloc direto */
+        o = (Obj *)xalloc(size); /* Large object: direct allocation. */
         c = 0;
     }
     o->type = (uint8_t)type;
     o->mark = 0;
-    o->szc = (uint16_t)c; /* 0 = malloc'd (não reciclado) */
+    o->szc = (uint16_t)c; /* Zero denotes a direct allocation. */
     o->next_all = all_objs;
     all_objs = o;
     alloc_since_gc++;
@@ -115,7 +130,7 @@ static void gc_mark(Value v) {
         o->mark = 1;
         if (o->type == T_CONS) {
             gc_mark(((Cons *)v)->head);
-            v = ((Cons *)v)->tail; /* itera a cauda (não recursa) */
+            v = ((Cons *)v)->tail; /* Iterate the tail to bound recursion. */
         } else if (o->type == T_FN) {
             Fn *f = (Fn *)v;
             for (int64_t i = 0; i < f->nfree; i++) gc_mark(f->freev[i]);
@@ -126,7 +141,7 @@ static void gc_mark(Value v) {
             return;
         } else if (o->type == T_VNODE) {
             VNode *nd = (VNode *)v;
-            gc_mark(nd->edit); /* token de transiente (mantém vivo p/ evitar ABA) */
+            gc_mark(nd->edit); /* Keep the transient ownership token alive. */
             for (int i = 0; i < VWIDTH; i++) gc_mark(nd->slots[i]);
             return;
         } else if (o->type == T_VEC) {
@@ -145,20 +160,20 @@ static void gc_mark(Value v) {
             gc_mark(((Sorted *)v)->root);
             return;
         } else if (o->type == T_TVEC) {
-            TVec *tv = (TVec *)v; /* transiente estrutural: raiz/tail/edit */
+            TVec *tv = (TVec *)v;
             gc_mark(tv->root);
             gc_mark(tv->edit);
-            v = tv->tail; /* itera o tail */
+            v = tv->tail; /* Iterate the tail. */
         } else if (o->type == T_TBOX) {
-            v = ((TBox *)v)->inner; /* itera o valor interno */
+            v = ((TBox *)v)->inner;
         } else if (o->type == T_READER) {
-            v = ((Reader *)v)->src; /* itera a fonte (string ou NIL) */
+            v = ((Reader *)v)->src;
         } else if (o->type == T_TNODE) {
             TNode *nd = (TNode *)v;
             gc_mark(nd->key);
             gc_mark(nd->val);
             gc_mark(nd->left);
-            v = nd->right; /* itera o filho direito */
+            v = nd->right; /* Iterate the right child. */
         } else if (o->type == T_MNODE) {
             MNode *nd = (MNode *)v;
             int slots = 2 * __builtin_popcount(nd->bitmap);
@@ -174,7 +189,7 @@ static void gc_mark(Value v) {
             gc_mark(r->map);
             return;
         } else {
-            return; /* string/keyword: folha */
+            return; /* Remaining object types are leaves. */
         }
     }
 }
@@ -192,7 +207,7 @@ static void gc_sweep(void) {
             if (o->type == T_WRITER) {
                 Writer *w = (Writer *)o;
                 free(w->buf);
-                if (w->kind == WR_FILE && w->fp) fclose((FILE *)w->fp); /* handle vazado */
+                if (w->kind == WR_FILE && w->fp) fclose((FILE *)w->fp);
             }
             if (o->type == T_READER) {
                 Reader *r = (Reader *)o;
@@ -200,21 +215,26 @@ static void gc_sweep(void) {
             }
             if (o->type == T_BYTES) free(((Bytes *)o)->data);
             if (o->szc == 0) {
-                free(o); /* grande: malloc'd */
+                free(o); /* Directly allocated large object. */
             } else {
-                o->next_all = freelist[o->szc]; /* recicla */
+                o->next_all = freelist[o->szc];
                 freelist[o->szc] = o;
             }
         }
     }
 }
 
-/* Cache de vetores literais constantes (ADR-0009): um literal cujos elementos são
- * todos imediatos é imutável — construído uma vez no 1º uso e reusado, em vez de
- * reconstruído a cada avaliação. São raízes permanentes (marcados pelo GC). */
+/* Immediate-only vector literals are cached after first construction.
+ * GC: registered constants are permanent roots. */
 #define CONST_MAX 8192
 Value cljn_const_cache[CONST_MAX];
 static int64_t const_hi = 0;
+/*
+ * Store `v` in the permanent constant cache at raw index `id`.
+ *
+ * ABI: CONST_MAX must match CONST_CACHE_MAX in clojure-codegen/src/lib.rs.
+ * GC: does not allocate; the value becomes a root at the next collection.
+ */
 void cljn_const_register(Value id, Value v) {
     int64_t i = (int64_t)id;
     cljn_const_cache[i] = v;
@@ -230,11 +250,11 @@ static void gc_mark_multi(void);        /* fwd */
 static void gc_mark_dynvars(void);      /* fwd */
 static void gc_collect(void) {
     for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
-    gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
-    gc_mark_exceptions();   /* valor de exceção em voo */
-    gc_mark_multi();        /* funções de dispatch de multimethods + :default */
-    gc_mark_consts();       /* vetores literais constantes cacheados */
-    gc_mark_dynvars();      /* Vars dinâmicas (*out* etc.) */
+    gc_mark_method_table(); /* Permanent protocol keys and implementations. */
+    gc_mark_exceptions();   /* Exception value currently in flight. */
+    gc_mark_multi();        /* Multimethod dispatch functions and :default. */
+    gc_mark_consts();       /* Cached constant vector literals. */
+    gc_mark_dynvars();      /* Built-in dynamic Vars. */
     gc_sweep();
     alloc_since_gc = 0;
 }

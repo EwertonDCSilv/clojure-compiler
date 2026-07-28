@@ -1,9 +1,18 @@
-
-/* ---------- sets (imutáveis) ---------- */
+/*
+ * Hash sets and maps.
+ *
+ * Small collections use insertion-ordered flat arrays. Maps and sets promote
+ * after MAP_ARRAY_MAX entries to a persistent bitmap-indexed HAMT with explicit
+ * collision nodes. Updates path-copy affected nodes.
+ *
+ * GC: callers root input Values; multi-allocation updates use bounded no-GC
+ * regions or keep the current accumulator at the shadow-stack top.
+ */
+/* Allocate flat set storage with raw capacity `n`; construction-only. */
 Value cljn_set_alloc(Value n) {
     int64_t k = (int64_t)n;
     Vec *s = (Vec *)obj_alloc(sizeof(Vec) + (size_t)k * sizeof(Value), T_SET);
-    s->len = 0; /* cresce durante a construção; capacidade k */
+    s->len = 0;
     for (int64_t i = 0; i < k; i++) s->items[i] = NIL;
     return (Value)s;
 }
@@ -11,6 +20,7 @@ static int set_member(Vec *s, Value x) {
     for (int64_t i = 0; i < s->len; i++) if (cljn_equal_raw(s->items[i], x)) return 1;
     return 0;
 }
+/* Add `x` to construction-time flat set storage; does not allocate. */
 void cljn_set_add(Value set, Value x) { /* construção */
     Vec *s = (Vec *)set;
     if (!set_member(s, x)) s->items[s->len++] = x;
@@ -21,6 +31,7 @@ static Value hset_node_assoc(Value root, int64_t count, Value x, int64_t *out_co
     *out_count = count + added;
     return nr;
 }
+/* Return a persistent set containing `x`, promoting to HAMT as needed. */
 Value cljn_set_conj(Value set, Value x) {
     maybe_gc();
     gc_disabled++;
@@ -37,7 +48,7 @@ Value cljn_set_conj(Value set, Value x) {
         if (set_member(o, x)) {
             result = set;
         } else if (o->len + 1 > MAP_ARRAY_MAX) {
-            /* promove array-set → HAMT-set (valor = chave) */
+            /* Promote flat set to HAMT set, storing value == key. */
             MNode *root = mnode_alloc(0); root->bitmap = 0;
             HMap *hs = (HMap *)obj_alloc(sizeof(HMap), T_HSET); hs->count = 0; hs->root = (Value)root;
             cljn_gc_push((Value)hs);
@@ -67,17 +78,23 @@ Value cljn_set_conj(Value set, Value x) {
     gc_disabled--;
     return result;
 }
+/* Return tagged boolean membership. Expected O(1), worst-case O(n) collisions. */
 Value cljn_set_contains(Value set, Value x) {
     if (obj_type(set) == T_HSET) return b2v(node_get(((HMap *)set)->root, 0, cljn_hash(x), x) != MNOTFOUND);
     return b2v(set_member((Vec *)set, x));
 }
 
-/* ---------- hash (consistente com igualdade) ---------- */
+/* Hash one Value consistently with cljn_equal_raw; does not allocate. */
 static uint32_t hash_bytes(const char *p, size_t n) {
     uint32_t h = 2166136261u;
     for (size_t i = 0; i < n; i++) { h ^= (unsigned char)p[i]; h *= 16777619u; }
     return h;
 }
+/*
+ * Return the 32-bit structural hash used by HAMT navigation.
+ *
+ * Composite keys currently share a fallback hash; equality resolves collisions.
+ */
 uint32_t cljn_hash(Value v) {
     if (IS_FIX(v)) {
         uint64_t x = (uint64_t)(intptr_t)FIX(v);
@@ -92,11 +109,11 @@ uint32_t cljn_hash(Value v) {
     switch (obj_type(v)) {
         case T_STR: { Str *s = (Str *)v; return hash_bytes(s->data, s->len); }
         case T_KW:  { Str *s = (Str *)v; return hash_bytes(s->data, s->len) ^ 0x9e3779b9u; }
-        default: return 7; /* chaves compostas: colisões raras; igualdade resolve */
+        default: return 7;
     }
 }
 
-/* ---------- HAMT (nós) ---------- */
+/* HAMT node lookup descends five hash bits per level. */
 static MNode *mnode_alloc(int slots) { return (MNode *)obj_alloc(sizeof(MNode) + (size_t)slots * sizeof(Value), T_MNODE); }
 static Value node_get(Value node, uint32_t shift, uint32_t hash, Value key) {
     if (obj_type(node) == T_MCOLL) {
@@ -179,7 +196,7 @@ static Value node_assoc(Value node, uint32_t shift, uint32_t hash, Value key, Va
     for (int i = 2 * idx; i < 2 * cnt; i++) nn->arr[i + 2] = nd->arr[i];
     return (Value)nn;
 }
-/* Cons cada (chave|valor) do HAMT em `gc_stack[gc_sp-1]` (acc rooteado). */
+/* Cons every HAMT key or value into the rooted accumulator at gc_sp - 1. */
 static void hmap_cons_walk(Value node, int mode /*0=keys 1=vals*/) {
     if (obj_type(node) == T_MCOLL) {
         MColl *c = (MColl *)node;
@@ -201,7 +218,7 @@ static void hmap_cons_walk(Value node, int mode /*0=keys 1=vals*/) {
     }
 }
 
-/* Verdadeiro se toda chave da HAMT pertence a `other` (set em qualquer repr). */
+/* Test whether every HAMT key belongs to `other`. */
 static int hnode_all_in(Value node, Value other) {
     if (obj_type(node) == T_MCOLL) {
         MColl *c = (MColl *)node;
@@ -219,7 +236,7 @@ static int hnode_all_in(Value node, Value other) {
     return 1;
 }
 
-/* Empurra cada chave da HAMT no gc_stack (para apply/spread sobre T_HSET). */
+/* Push every HAMT key for apply/spread and return the number pushed. */
 static int64_t hnode_push_keys(Value node) {
     int64_t extra = 0;
     if (obj_type(node) == T_MCOLL) {
@@ -237,7 +254,7 @@ static int64_t hnode_push_keys(Value node) {
     return extra;
 }
 
-/* ---------- mapas: array-map (<=8, ordenado) + HAMT (grande) ---------- */
+/* Allocate a flat map with raw pair count `n`; fields are filled separately. */
 Value cljn_map_alloc(Value n) {
     int64_t k = (int64_t)n;
     Map *m = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * k) * sizeof(Value), T_MAP);
@@ -245,6 +262,7 @@ Value cljn_map_alloc(Value n) {
     for (int64_t i = 0; i < 2 * k; i++) m->kv[i] = NIL;
     return (Value)m;
 }
+/* Set construction-time pair `i`; does not allocate or validate bounds. */
 void cljn_map_set(Value map, Value i, Value k, Value v) {
     Map *m = (Map *)map;
     int64_t idx = (int64_t)i;
@@ -256,7 +274,7 @@ static int64_t map_index(Map *m, Value k) {
     return -1;
 }
 static Value hmap_from_arraymap(Map *o, Value k, Value v) {
-    /* promove: array-map + (k,v) → HAMT. o/k/v rooteados pelo chamador. */
+    /* Promote array-map plus (k,v) to HAMT; inputs are caller-rooted. */
     MNode *root = mnode_alloc(0); root->bitmap = 0;
     HMap *m = (HMap *)obj_alloc(sizeof(HMap), T_HMAP);
     m->count = 0; m->root = (Value)root;
@@ -279,6 +297,7 @@ static Value hmap_from_arraymap(Map *o, Value k, Value v) {
     cljn_gc_popn(1);
     return r;
 }
+/* Look up key `k`, returning NIL when absent; does not allocate. */
 Value cljn_map_get(Value map, Value k) {
     if (obj_type(map) == T_HMAP) {
         Value r = node_get(((HMap *)map)->root, 0, cljn_hash(k), k);
@@ -290,11 +309,18 @@ Value cljn_map_get(Value map, Value k) {
     int64_t i = map_index(m, k);
     return (i >= 0) ? m->kv[2 * i + 1] : NIL;
 }
+/* Return a tagged boolean indicating whether key `k` is present. */
 Value cljn_map_contains(Value map, Value k) {
     if (obj_type(map) == T_HMAP) return b2v(node_get(((HMap *)map)->root, 0, cljn_hash(k), k) != MNOTFOUND);
     if (obj_type(map) == T_SMAP) return cljn_sorted_contains(map, k);
     return b2v(obj_type(map) == T_MAP && map_index((Map *)map, k) >= 0);
 }
+/*
+ * Return a persistent map associating `k` with `v`.
+ *
+ * Promotes a flat map to HAMT past MAP_ARRAY_MAX. Expected O(1); flat-map and
+ * collision paths are O(n). GC: all inputs are rooted by the caller.
+ */
 Value cljn_map_assoc(Value map, Value k, Value v) {
     maybe_gc();
     gc_disabled++;
@@ -311,7 +337,7 @@ Value cljn_map_assoc(Value map, Value k, Value v) {
         int64_t at = map_index(o, k);
         int64_t n = o->n;
         if (at < 0 && n + 1 > MAP_ARRAY_MAX) {
-            result = hmap_from_arraymap(o, k, v); /* promove */
+            result = hmap_from_arraymap(o, k, v);
         } else {
             int64_t nn = (at >= 0) ? n : n + 1;
             Map *nm = (Map *)obj_alloc(sizeof(Map) + (size_t)(2 * nn) * sizeof(Value), T_MAP);
@@ -325,19 +351,22 @@ Value cljn_map_assoc(Value map, Value k, Value v) {
     gc_disabled--;
     return result;
 }
+/*
+ * Return a persistent map without key `k`.
+ *
+ * HAMT removal currently rebuilds through association. Missing keys return the
+ * original map. GC: rebuild keeps its accumulator rooted.
+ */
 Value cljn_map_dissoc(Value map, Value k) {
     if (obj_type(map) == T_SMAP) return cljn_sorted_dissoc(map, k);
     if (obj_type(map) == T_HMAP) {
         HMap *m = (HMap *)map;
         if (node_get(m->root, 0, cljn_hash(k), k) == MNOTFOUND) return map;
-        /* rebuild: reassoc todas as entradas exceto k (auto-dimensiona/demote). */
+        /* Rebuild every entry except k, allowing representation selection. */
         maybe_gc();
         Value acc = cljn_map_alloc(0);
         cljn_gc_push(acc);
-        /* itera entradas via walk que reassocia em gc_stack[sp-1] */
-        /* usa uma segunda pilha lógica: acc no topo; reusa hmap_cons_walk? não — precisamos assoc */
-        /* walk manual */
-        /* pilha de nós simples via recursão inline: */
+        /* The recursive walk updates the rooted accumulator at gc_sp - 1. */
         extern void hmap_dissoc_walk(Value node, Value skip);
         hmap_dissoc_walk(m->root, k);
         Value r = gc_stack[gc_sp - 1];
@@ -360,6 +389,7 @@ Value cljn_map_dissoc(Value map, Value k) {
     }
     return (Value)nm;
 }
+/* Reassociate all HAMT entries except `skip` into the rooted accumulator. */
 void hmap_dissoc_walk(Value node, Value skip) {
     if (obj_type(node) == T_MCOLL) {
         MColl *c = (MColl *)node;
@@ -380,6 +410,7 @@ void hmap_dissoc_walk(Value node, Value skip) {
         }
     }
 }
+/* Materialize map or record keys as a list. O(n), allocates n cons cells. */
 Value cljn_map_keys(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
     if (obj_type(map) == T_SMAP) return sorted_seq(map, 0);
@@ -395,7 +426,7 @@ Value cljn_map_keys(Value map) {
     cljn_gc_popn(1);
     return r;
 }
-/* Toda entrada do nó HAMT está presente e igual em `other` (mapa qualquer)? */
+/* Test whether every HAMT entry is present and equal in `other`. */
 static int hmap_node_subset(Value node, Value other) {
     if (obj_type(node) == T_MCOLL) {
         MColl *c = (MColl *)node;
@@ -414,6 +445,7 @@ static int hmap_node_subset(Value node, Value other) {
     }
     return 1;
 }
+/* Materialize map or record values as a list. O(n), allocates n cons cells. */
 Value cljn_map_vals(Value map) {
     if (obj_type(map) == T_RECORD) map = ((Record *)map)->map;
     if (obj_type(map) == T_SMAP) return sorted_seq(map, 1);

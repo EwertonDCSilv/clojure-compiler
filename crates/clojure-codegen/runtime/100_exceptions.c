@@ -1,9 +1,13 @@
 
-/* ---------- exceções: try/catch/finally + throw ----------
- * setjmp/longjmp ficam INTEIRAMENTE dentro de cljn_try (função C): nenhum código
- * gerado pelo Cranelift atravessa o setjmp. As closures corpo/catch/finally são
- * invocadas pela ABI uniforme. `throw` desenrola até o handler mais próximo,
- * restaurando shadow-stack e gc_disabled (evita corrupção/leak em unwind). */
+/*
+ * Native throw and try/catch/finally control flow.
+ *
+ * setjmp/longjmp remain entirely inside cljn_try; generated Cranelift frames do
+ * not contain setjmp state. Throw unwinds to the nearest Handler, which restores
+ * both shadow-stack depth and no-GC nesting before invoking user handlers.
+ *
+ * ABI: body, catch, and finally are closures using (self, argc, argv).
+ */
 typedef Value (*FnCode)(Value, int64_t, Value *);
 static Value call_fn0(Value f) {
     return ((FnCode)((Fn *)f)->code)(f, 0, &gc_stack[gc_sp]);
@@ -35,6 +39,12 @@ typedef struct Handler {
 static Handler *handler_top = NULL;
 static Value exception_value = NIL;
 
+/*
+ * Throw tagged Value `v` to the nearest active handler.
+ *
+ * Never returns normally when a handler exists. Without a handler, prints the
+ * value and terminates. GC: exception_value is a permanent in-flight root.
+ */
 Value cljn_throw(Value v) {
     exception_value = v;
     if (handler_top == NULL) {
@@ -47,6 +57,13 @@ Value cljn_throw(Value v) {
     longjmp(handler_top->env, 1);
 }
 
+/*
+ * Invoke body with optional catch and finally closures.
+ *
+ * Catch receives the thrown Value. Finally runs after normal or caught exit;
+ * when no catch exists it runs before rethrow. Restores GC bookkeeping on
+ * longjmp and returns the body/catch result.
+ */
 Value cljn_try(Value body, Value catch, Value finally) {
     Handler h;
     h.prev = handler_top;
@@ -56,20 +73,20 @@ Value cljn_try(Value body, Value catch, Value finally) {
     if (setjmp(h.env) == 0) {
         handler_top = &h;
         result = call_fn0(body);
-        handler_top = h.prev; /* caminho normal: desempilha o handler */
+        handler_top = h.prev;
     } else {
-        handler_top = h.prev;           /* exceções em catch/finally vão ao externo */
-        gc_sp = h.saved_sp;             /* desenrola temporários do corpo */
+        handler_top = h.prev;
+        gc_sp = h.saved_sp;
         gc_disabled = h.saved_gc_disabled;
         Value ex = exception_value;
         if (catch == NIL) {
             if (finally != NIL) call_fn0(finally);
-            return cljn_throw(ex);      /* sem catch: roda finally e repropaga */
+            return cljn_throw(ex);
         }
-        result = call_fn1(catch, ex);   /* catch pode lançar → handler externo */
+        result = call_fn1(catch, ex);
     }
     if (finally != NIL) {
-        gc_stack[gc_sp++] = result;     /* rooteia o resultado durante o finally */
+        gc_stack[gc_sp++] = result;
         call_fn0(finally);
         gc_sp--;
     }

@@ -1,31 +1,47 @@
-
-/* ---------- aritmética ---------- */
+/*
+ * Core arithmetic, equality, predicates, and sequence operations.
+ *
+ * Numeric operations accept tagged fixnums only and terminate with Portuguese
+ * diagnostics on type, divide-by-zero, or range errors. Equality is structural
+ * across compatible collection representations and does not allocate.
+ */
 static intptr_t need_fix(Value v, const char *op) {
     if (!IS_FIX(v)) { fprintf(stderr, "erro: argumento não-numérico em %s\n", op); exit(1); }
     return FIX(v);
 }
-/* Valida o intervalo de fixnum ANTES do retag (i64 tem 63 bits, fixnum 62). */
+/* Validate the fixnum range before retagging a raw machine integer. */
 static Value mk_fix_checked(intptr_t r, const char *op) {
     if (r < FIXNUM_MIN || r > FIXNUM_MAX) { fprintf(stderr, "erro: overflow em %s\n", op); exit(1); }
     return MK_FIX(r);
 }
+/* Add two fixnums; exits fatally on type or overflow. */
 Value cljn_add(Value a, Value b) { intptr_t r; if (__builtin_add_overflow(need_fix(a,"+"),need_fix(b,"+"),&r)) die("overflow em +"); return mk_fix_checked(r,"+"); }
+/* Subtract two fixnums; exits fatally on type or overflow. */
 Value cljn_sub(Value a, Value b) { intptr_t r; if (__builtin_sub_overflow(need_fix(a,"-"),need_fix(b,"-"),&r)) die("overflow em -"); return mk_fix_checked(r,"-"); }
+/* Multiply two fixnums; exits fatally on type or overflow. */
 Value cljn_mul(Value a, Value b) { intptr_t r; if (__builtin_mul_overflow(need_fix(a,"*"),need_fix(b,"*"),&r)) die("overflow em *"); return mk_fix_checked(r,"*"); }
+/* Return truncating fixnum quotient; divide-by-zero and overflow are fatal. */
 Value cljn_quot(Value a, Value b) { intptr_t y=need_fix(b,"quot"); if(y==0) die("divisão por zero"); intptr_t x=need_fix(a,"quot"); if(x==FIXNUM_MIN&&y==-1) die("overflow em quot"); return mk_fix_checked(x/y,"quot"); }
+/* Return floored-modulus fixnum; divide-by-zero and type errors are fatal. */
 Value cljn_mod(Value a, Value b) {
     intptr_t y=need_fix(b,"mod"); if(y==0) die("divisão por zero");
     intptr_t x=need_fix(a,"mod"), r=x%y;
     if (r!=0 && ((r<0)!=(y<0))) r+=y;
     return mk_fix_checked(r,"mod");
 }
+/* Increment a fixnum; exits fatally on type or overflow. */
 Value cljn_inc(Value a) { intptr_t r; if(__builtin_add_overflow(need_fix(a,"inc"),(intptr_t)1,&r)) die("overflow em inc"); return mk_fix_checked(r,"inc"); }
+/* Decrement a fixnum; exits fatally on type or overflow. */
 Value cljn_dec(Value a) { intptr_t r; if(__builtin_sub_overflow(need_fix(a,"dec"),(intptr_t)1,&r)) die("overflow em dec"); return mk_fix_checked(r,"dec"); }
 
 static Value b2v(int b) { return b ? TRUEV : FALSEV; }
+/* Return tagged boolean `a < b`; both operands must be fixnums. */
 Value cljn_lt(Value a, Value b) { return b2v(need_fix(a,"<")<need_fix(b,"<")); }
+/* Return tagged boolean `a <= b`; both operands must be fixnums. */
 Value cljn_le(Value a, Value b) { return b2v(need_fix(a,"<=")<=need_fix(b,"<=")); }
+/* Return tagged boolean `a > b`; both operands must be fixnums. */
 Value cljn_gt(Value a, Value b) { return b2v(need_fix(a,">")>need_fix(b,">")); }
+/* Return tagged boolean `a >= b`; both operands must be fixnums. */
 Value cljn_ge(Value a, Value b) { return b2v(need_fix(a,">=")>=need_fix(b,">=")); }
 
 static int is_seq(int t) { return t == T_CONS || t == T_VEC; }
@@ -42,6 +58,13 @@ static int64_t seq_len(Value coll, int t) {
     while (obj_type(c) == T_CONS) { n++; c = ((Cons *)c)->tail; }
     return n;
 }
+/*
+ * Return raw structural equality for two Values.
+ *
+ * Lists and vectors compare sequentially; map and set representations compare
+ * across implementations without insertion order. Complexity is O(n) for
+ * ordinary finite acyclic values and may recurse through nested collections.
+ */
 int cljn_equal_raw(Value a, Value b) {
     if (a == b) return 1;
     int ta = obj_type(a), tb = obj_type(b);
@@ -49,7 +72,7 @@ int cljn_equal_raw(Value a, Value b) {
         Str *x = (Str *)a, *y = (Str *)b;
         return ta == tb && x->len == y->len && memcmp(x->data, y->data, x->len) == 0;
     }
-    /* sequências (list/vector) comparam elemento a elemento */
+    /* Lists and vectors share element-wise sequential equality. */
     if (is_seq(ta) && is_seq(tb)) {
         int64_t la = seq_len(a, ta), lb = seq_len(b, tb);
         if (la != lb) return 0;
@@ -64,7 +87,7 @@ int cljn_equal_raw(Value a, Value b) {
             int64_t ca = (ta == T_HSET) ? ((HMap *)a)->count : (ta == T_SSET ? ((Sorted *)a)->count : ((Vec *)a)->len);
             int64_t cb = (tb == T_HSET) ? ((HMap *)b)->count : (tb == T_SSET ? ((Sorted *)b)->count : ((Vec *)b)->len);
             if (ca != cb) return 0;
-            /* toda entrada de `a` presente em `b` (contains dispatcha por repr) */
+            /* Every element of a must be present in b. */
             if (ta == T_HSET) return hnode_all_in(((HMap *)a)->root, b);
             if (ta == T_SSET) return tn_all_in(((Sorted *)a)->root, b);
             Vec *x = (Vec *)a;
@@ -80,7 +103,7 @@ int cljn_equal_raw(Value a, Value b) {
             int64_t ca = (ta == T_HMAP) ? ((HMap *)a)->count : (ta == T_SMAP ? ((Sorted *)a)->count : ((Map *)a)->n);
             int64_t cb = (tb == T_HMAP) ? ((HMap *)b)->count : (tb == T_SMAP ? ((Sorted *)b)->count : ((Map *)b)->n);
             if (ca != cb) return 0;
-            /* toda entrada de `a` presente e igual em `b` (dispatch cobre cross-repr) */
+            /* Every entry of a must be present and equal in b. */
             if (ta == T_HMAP) return hmap_node_subset(((HMap *)a)->root, b);
             if (ta == T_SMAP) return tn_map_subset(((Sorted *)a)->root, b);
             Map *x = (Map *)a;
@@ -98,27 +121,33 @@ int cljn_equal_raw(Value a, Value b) {
     }
     return 0;
 }
+/* Return tagged boolean structural equality; see cljn_equal_raw. */
 Value cljn_eq(Value a, Value b) { return b2v(cljn_equal_raw(a,b)); }
 
-/* Char <-> inteiro (ADR-0007 / IO-1). (char n) inteiro->char; (int c) char->codepoint.
- * Idempotentes no próprio tipo. Também emitido para literais de char \a. */
+/* Convert a fixnum to a character, or return a character unchanged. */
 Value cljn_char(Value x) {
     if (IS_CHAR(x)) return x;
     if (IS_FIX(x)) return MK_CHAR((uint32_t)FIX(x));
     die("char: esperava inteiro ou char");
     return NIL;
 }
+/* Convert a character to its code-point fixnum, or return a fixnum unchanged. */
 Value cljn_int(Value x) {
     if (IS_CHAR(x)) return MK_FIX((intptr_t)CHAR_CP(x));
     if (IS_FIX(x)) return x;
     die("int: esperava char ou inteiro");
     return NIL;
 }
+/* Return tagged boolean indicating whether `x` is an immediate character. */
 Value cljn_charp(Value x) { return b2v(IS_CHAR(x)); }
 
+/* Return raw C truthiness: only NIL and FALSEV are false. */
 int cljn_truthy(Value v) { return (v != NIL && v != FALSEV) ? 1 : 0; }
+/* Return tagged logical negation according to Clojure truthiness. */
 Value cljn_not(Value v) { return b2v(!cljn_truthy(v)); }
+/* Return tagged boolean indicating exact NIL identity. */
 Value cljn_nilp(Value v) { return b2v(v == NIL); }
+/* Return tagged emptiness for supported collections; unsupported values are false. */
 Value cljn_emptyp(Value v) {
     if (v == EMPTY || v == NIL) return TRUEV;
     switch (obj_type(v)) {
@@ -132,6 +161,12 @@ Value cljn_emptyp(Value v) {
     }
     return FALSEV;
 }
+/*
+ * Return the first item of a supported sequence or NIL when empty.
+ *
+ * Hash-set order follows its internal traversal. Invalid receivers are fatal.
+ * May allocate while materializing a hash or sorted collection view.
+ */
 Value cljn_first(Value v) {
     if (v == EMPTY || v == NIL) return NIL;
     switch (obj_type(v)) {
@@ -149,6 +184,12 @@ Value cljn_first(Value v) {
     }
     die("first: não é uma sequência"); return NIL;
 }
+/*
+ * Return the remaining items as a sequence, or EMPTY when no items remain.
+ *
+ * Vectors and sets are eagerly materialized as lists and therefore allocate
+ * O(n) cons cells. Invalid receivers terminate through the fatal path.
+ */
 Value cljn_rest(Value v) {
     if (v == EMPTY || v == NIL) return EMPTY;
     if (obj_type(v) == T_CONS) return ((Cons *)v)->tail;
@@ -167,7 +208,7 @@ Value cljn_rest(Value v) {
         int is_vec = obj_type(v) == T_VEC;
         int64_t len = is_vec ? ((PVec *)v)->count : ((Vec *)v)->len;
         Value acc = EMPTY;
-        cljn_gc_push(acc); /* rooteia o acumulador durante a construção */
+        cljn_gc_push(acc);
         for (int64_t i = len - 1; i >= 1; i--) {
             Value el = is_vec ? pv_nth((PVec *)v, i) : ((Vec *)v)->items[i];
             acc = cljn_cons(el, acc);
@@ -178,6 +219,12 @@ Value cljn_rest(Value v) {
     }
     die("rest: não é uma sequência"); return EMPTY;
 }
+/*
+ * Return a tagged fixnum count.
+ *
+ * Flat and tree collections are O(1); cons lists are O(n). String count is the
+ * stored UTF-8 byte length in the current native runtime.
+ */
 Value cljn_count(Value v) {
     switch (obj_type(v)) {
         case T_STR: return MK_FIX((long)((Str *)v)->len);

@@ -1,8 +1,9 @@
 /*
- * Unidade de tradução amalgamada do runtime nativo.
+ * Ordered native runtime amalgamation.
  *
- * A ordem deve permanecer igual à lista RUNTIME_MODULES em
- * clojure-codegen/src/lib.rs. Os fragmentos não são compilados isoladamente.
+ * ABI: include order must match RUNTIME_MODULES in clojure-codegen/src/lib.rs.
+ * Fragments depend on prior internal declarations and are not compiled as
+ * independent translation units.
  */
 #include "00_types.c"
 #include "10_gc.c"
