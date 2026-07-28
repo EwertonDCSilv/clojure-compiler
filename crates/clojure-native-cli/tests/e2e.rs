@@ -508,6 +508,30 @@ fn path_helpers_join_name_parent() {
 }
 
 #[test]
+fn bytes_type_and_binary_io() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-1: Bytes (array binário) + slurp-bytes/spit-bytes; count/bget;
+    // roundtrip via bytes->string; erro do SO como ex-data.
+    let src = r#"(ns by.core)
+(defn -main []
+  (let [b (bytes "Aé!")]
+    (println (count b) (bget b 0) (bget b 1) (= "Aé!" (bytes->string b)) b))
+  (spit-bytes "/tmp/cljn_e2e_bytes.bin" (bytes "hello world"))
+  (let [r (slurp-bytes "/tmp/cljn_e2e_bytes.bin")]
+    (println (count r) (= "hello world" (bytes->string r))))
+  (println (try (slurp-bytes "/nao/existe.bin") (catch E e (get e :kind)))))
+(-main)"#;
+    let expected = "4 65 195 true #bytes[4]\n11 true\n:not-found\n";
+    assert_eq!(build_and_run("bytes_io", src), expected);
+    assert_eq!(
+        build_and_run_env("bytes_io_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

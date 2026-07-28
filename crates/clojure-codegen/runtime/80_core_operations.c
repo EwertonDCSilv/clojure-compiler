@@ -181,6 +181,7 @@ Value cljn_rest(Value v) {
 Value cljn_count(Value v) {
     switch (obj_type(v)) {
         case T_STR: return MK_FIX((long)((Str *)v)->len);
+        case T_BYTES: return MK_FIX(((Bytes *)v)->len);
         case T_SET: return MK_FIX(((Vec *)v)->len);
         case T_HSET: return MK_FIX(((HMap *)v)->count);
         case T_VEC: return MK_FIX(((PVec *)v)->count);

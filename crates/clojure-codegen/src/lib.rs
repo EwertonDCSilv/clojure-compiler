@@ -233,6 +233,11 @@ struct Runtime {
     path_join: FuncId,        // (a,b)->string
     file_name: FuncId,        // (p)->string
     parent: FuncId,           // (p)->string|nil
+    bytes: FuncId,            // (string)->bytes
+    bytes_to_string: FuncId,  // (bytes)->string
+    bget: FuncId,             // (bytes,i)->fixnum
+    slurp_bytes: FuncId,      // (path)->bytes
+    spit_bytes: FuncId,       // (path,bytes)->nil
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -589,6 +594,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         path_join: bin(m, "cljn_path_join"),
         file_name: una(m, "cljn_file_name"),
         parent: una(m, "cljn_parent"),
+        bytes: una(m, "cljn_bytes"),
+        bytes_to_string: una(m, "cljn_bytes_to_string"),
+        bget: bin(m, "cljn_bget"),
+        slurp_bytes: una(m, "cljn_slurp_bytes"),
+        spit_bytes: bin(m, "cljn_spit_bytes"),
         read_char: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -672,6 +682,8 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::IntOf // devolve fixnum
             | Prim::CharP // devolve boolean
             | Prim::ReadChar // devolve char ou nil (imediatos)
+            | Prim::Bget // devolve fixnum (0..255)
+            | Prim::SpitBytes // devolve nil
     )
 }
 
@@ -2311,6 +2323,11 @@ impl<'a> FnGen<'a> {
             Prim::PathJoin => self.bin(self.rt.path_join, args),
             Prim::FileName => self.una(self.rt.file_name, args),
             Prim::Parent => self.una(self.rt.parent, args),
+            Prim::Bytes => self.una(self.rt.bytes, args),
+            Prim::BytesToString => self.una(self.rt.bytes_to_string, args),
+            Prim::Bget => self.bin(self.rt.bget, args),
+            Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
+            Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

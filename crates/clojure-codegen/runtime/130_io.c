@@ -101,6 +101,80 @@ Value cljn_getenv(Value name) {
     return v ? cljn_str_from(v, (long)strlen(v)) : NIL;
 }
 
+/* ---------- Bytes (ADR-0007 / IO-1): array binário + I/O binário ---------- */
+static Value bytes_alloc(int64_t n) {
+    Bytes *b = (Bytes *)obj_alloc(sizeof(Bytes), T_BYTES);
+    b->len = n;
+    b->data = (uint8_t *)xalloc(n ? n : 1);
+    return (Value)b;
+}
+/* (bytes s) — bytes UTF-8 da string (cópia). */
+Value cljn_bytes(Value s) {
+    if (obj_type(s) != T_STR) die("bytes: esperava string");
+    cljn_gc_push(s);
+    Value bv = bytes_alloc(((Str *)s)->len);
+    Str *ss = (Str *)s; /* revalida após possível GC (não-móvel) */
+    memcpy(((Bytes *)bv)->data, ss->data, ss->len);
+    cljn_gc_popn(1);
+    return bv;
+}
+/* (bytes->string b) — string com os bytes (interpretados como UTF-8/bruto). */
+Value cljn_bytes_to_string(Value b) {
+    if (obj_type(b) != T_BYTES) die("bytes->string: esperava bytes");
+    Bytes *bb = (Bytes *)b;
+    return cljn_str_from((char *)bb->data, (long)bb->len);
+}
+/* (bget b i) — byte no índice i como inteiro 0..255. */
+Value cljn_bget(Value b, Value i) {
+    if (obj_type(b) != T_BYTES) die("bget: esperava bytes");
+    if (!IS_FIX(i)) die("bget: índice deve ser inteiro");
+    int64_t idx = FIX(i);
+    Bytes *bb = (Bytes *)b;
+    if (idx < 0 || idx >= bb->len) die("bget: índice fora dos limites");
+    return MK_FIX((int64_t)bb->data[idx]);
+}
+/* (slurp-bytes path) — lê o arquivo em modo binário → bytes. */
+Value cljn_slurp_bytes(Value path) {
+    if (obj_type(path) != T_STR) die("slurp-bytes: path deve ser string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    FILE *f = fopen(cp, "rb");
+    free(cp);
+    if (!f) io_throw(io_kind(errno), "slurp-bytes", path, errno);
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)xalloc(cap);
+    for (;;) {
+        if (len == cap) { cap *= 2; buf = (char *)xrealloc(buf, cap); }
+        size_t n = fread(buf + len, 1, cap - len, f);
+        len += n;
+        if (n == 0) {
+            if (ferror(f)) { int e = errno; fclose(f); free(buf); io_throw("other", "slurp-bytes", path, e); }
+            break;
+        }
+    }
+    fclose(f);
+    Value bv = bytes_alloc((int64_t)len); /* buf é malloc'd (não coletável) */
+    memcpy(((Bytes *)bv)->data, buf, len);
+    free(buf);
+    cljn_gc_popn(1);
+    return bv;
+}
+/* (spit-bytes path b) — escreve os bytes em modo binário. */
+Value cljn_spit_bytes(Value path, Value b) {
+    if (obj_type(path) != T_STR) die("spit-bytes: path deve ser string");
+    if (obj_type(b) != T_BYTES) die("spit-bytes: esperava bytes");
+    char *cp = io_cstr(path);
+    FILE *f = fopen(cp, "wb");
+    free(cp);
+    if (!f) io_throw(io_kind(errno), "spit-bytes", path, errno);
+    Bytes *bb = (Bytes *)b;
+    if (bb->len && fwrite(bb->data, 1, bb->len, f) != (size_t)bb->len) {
+        int e = errno; fclose(f); io_throw("other", "spit-bytes", path, e);
+    }
+    fclose(f);
+    return NIL;
+}
+
 /* ---------- Path (ADR-0007 / IO-1): manipulação de caminho POSIX ----------
  * Operações puramente textuais sobre strings (separador '/'). */
 Value cljn_path_join(Value a, Value b) {

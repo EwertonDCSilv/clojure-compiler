@@ -117,6 +117,7 @@ static void write_val(SB *b, Value v, int for_str) {
         case T_SMAP: {
             sb_putc(b,'{'); int first=1; sb_write_tree(b, ((Sorted*)v)->root, 1, for_str, &first); sb_putc(b,'}'); return;
         }
+        case T_BYTES: { char t[32]; int n=snprintf(t,sizeof t,"#bytes[%ld]",(long)((Bytes*)v)->len); sb_write(b,t,(size_t)n); return; }
         case T_FN: sb_str(b, "#<fn>"); return;
         case T_RECORD: {
             Record *r = (Record *)v;

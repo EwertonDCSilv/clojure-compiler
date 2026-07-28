@@ -45,7 +45,7 @@ typedef intptr_t Value;
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
        T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19,
-       T_WRITER = 20, T_READER = 21 };
+       T_WRITER = 20, T_READER = 21, T_BYTES = 22 };
 
 typedef struct Obj {
     uint8_t type;
@@ -89,6 +89,9 @@ typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; } Write
  * string lê de `src` (uma Str) a partir do cursor `pos`. */
 enum { RD_STDIN = 0, RD_STRING = 1 };
 typedef struct { Obj h; int64_t kind; Value src; int64_t pos; } Reader; /* T_READER */
+/* Bytes (ADR-0007 / IO-1): array binário imutável (dados brutos). Folha p/ o GC;
+ * `data` é liberado no sweep. */
+typedef struct { Obj h; int64_t len; uint8_t *data; } Bytes; /* T_BYTES */
 typedef struct { Obj h; Value inner; } TBox; /* T_TBOX (mapa/set transiente) */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore

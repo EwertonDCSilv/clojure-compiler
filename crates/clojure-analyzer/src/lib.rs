@@ -152,6 +152,11 @@ pub enum Prim {
     PathJoin,
     FileName,
     Parent,
+    Bytes,
+    BytesToString,
+    Bget,
+    SlurpBytes,
+    SpitBytes,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -1804,6 +1809,11 @@ fn prim_of(name: &str) -> Option<Prim> {
         "path-join" => Prim::PathJoin,
         "file-name" => Prim::FileName,
         "parent" => Prim::Parent,
+        "bytes" => Prim::Bytes,
+        "bytes->string" => Prim::BytesToString,
+        "bget" => Prim::Bget,
+        "slurp-bytes" => Prim::SlurpBytes,
+        "spit-bytes" => Prim::SpitBytes,
         _ => return None,
     })
 }
@@ -1832,6 +1842,9 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::CharP
         | Prim::FileName
         | Prim::Parent
+        | Prim::Bytes
+        | Prim::BytesToString
+        | Prim::SlurpBytes
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1853,6 +1866,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::DissocBang
         | Prim::Spit
         | Prim::PathJoin
+        | Prim::Bget
+        | Prim::SpitBytes
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -1916,6 +1931,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
+        Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes => n == 1,
+        Prim::Bget | Prim::SpitBytes => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List
