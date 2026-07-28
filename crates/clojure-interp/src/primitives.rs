@@ -1,11 +1,15 @@
-//! Primitivas de `clojure.core` implementadas em Rust (categoria **R** de
-//! specs/STANDARD_LIBRARY_SCOPE.md). O restante do core vem em `core.clj`.
+//! Rust primitives installed into the bootstrap `clojure.core`.
+//!
+//! This module owns operations that require host arithmetic, collection access,
+//! printing, or constructors. Higher-level functions are evaluated from
+//! `core.clj`. Primitive errors are Portuguese strings; the interpreter adds the
+//! source call-site when it converts them to `EvalError`.
 
 use crate::Interp;
 use clojure_value::{pr_str, print_str, List, NativeFn, Value};
 use std::rc::Rc;
 
-/// Número unificado para aritmética int/float.
+/// Internal numeric classification for mixed integer/float arithmetic.
 #[derive(Clone, Copy)]
 enum Num {
     I(i64),
@@ -43,7 +47,7 @@ fn install_fn(
 }
 
 pub(crate) fn install(it: &mut Interp) {
-    // -- aritmética -------------------------------------------------------
+    // -- Arithmetic -------------------------------------------------------
     install_fn(it, "+", |a| fold_arith(a, Num::I(0), add));
     install_fn(it, "*", |a| fold_arith(a, Num::I(1), mul));
     install_fn(it, "-", |a| match a.len() {
@@ -107,7 +111,7 @@ pub(crate) fn install(it: &mut Interp) {
         Num::F(f) => Ok(Value::Float(f.abs())),
     });
 
-    // -- comparação -------------------------------------------------------
+    // -- Comparison -------------------------------------------------------
     install_fn(it, "=", |a| Ok(Value::Bool(all_eq(a))));
     install_fn(it, "not=", |a| Ok(Value::Bool(!all_eq(a))));
     install_fn(it, "==", |a| {
@@ -124,7 +128,7 @@ pub(crate) fn install(it: &mut Interp) {
         num_chain(a, |o| o != std::cmp::Ordering::Less)
     });
 
-    // -- predicados -------------------------------------------------------
+    // -- Predicates -------------------------------------------------------
     install_fn(it, "not", |a| Ok(Value::Bool(!one(a)?.is_truthy())));
     install_fn(it, "nil?", |a| {
         Ok(Value::Bool(matches!(one(a)?, Value::Nil)))
@@ -190,7 +194,7 @@ pub(crate) fn install(it: &mut Interp) {
     });
     install_fn(it, "empty?", |a| Ok(Value::Bool(is_empty(one(a)?))));
 
-    // -- impressão --------------------------------------------------------
+    // -- Printing ---------------------------------------------------------
     install_fn(it, "str", |a| {
         let mut s = String::new();
         for v in a {
@@ -237,7 +241,7 @@ pub(crate) fn install(it: &mut Interp) {
         Ok(Value::Nil)
     });
 
-    // -- construtores de coleção -----------------------------------------
+    // -- Collection constructors -----------------------------------------
     install_fn(it, "list", |a| Ok(Value::List(List::from_vec(a.to_vec()))));
     install_fn(it, "vector", |a| Ok(Value::Vector(Rc::new(a.to_vec()))));
     install_fn(it, "vec", |a| {
@@ -263,7 +267,7 @@ pub(crate) fn install(it: &mut Interp) {
         Ok(Value::Map(Rc::new(pairs)))
     });
 
-    // -- acesso a coleções ------------------------------------------------
+    // -- Collection access ------------------------------------------------
     install_fn(it, "first", |a| Ok(first(one(a)?)));
     install_fn(it, "rest", |a| Ok(rest(one(a)?)));
     install_fn(it, "next", |a| {
@@ -324,7 +328,7 @@ pub(crate) fn install(it: &mut Interp) {
         _ => Err("vals requer um mapa".into()),
     });
 
-    // -- símbolos / keywords ---------------------------------------------
+    // -- Symbols and keywords --------------------------------------------
     install_fn(it, "name", |a| match one(a)? {
         Value::Keyword(n) | Value::Symbol(n) => Ok(Value::str(n.name.as_str())),
         Value::Str(s) => Ok(Value::Str(s.clone())),
@@ -341,11 +345,11 @@ pub(crate) fn install(it: &mut Interp) {
         _ => Err("symbol requer string".into()),
     });
 
-    // -- range ------------------------------------------------------------
+    // -- Range ------------------------------------------------------------
     install_fn(it, "range", range);
 }
 
-// -- helpers de aridade ---------------------------------------------------
+// -- Arity helpers --------------------------------------------------------
 
 fn one(a: &[Value]) -> Result<&Value, String> {
     a.first().ok_or_else(|| "esperava 1 argumento".to_string())
@@ -364,7 +368,7 @@ fn int1(a: &[Value]) -> Result<i64, String> {
     }
 }
 
-// -- aritmética -----------------------------------------------------------
+// -- Arithmetic -----------------------------------------------------------
 
 fn add(a: Num, b: Num) -> Result<Num, String> {
     Ok(match (a, b) {
@@ -462,7 +466,7 @@ fn all_eq(a: &[Value]) -> bool {
     a.windows(2).all(|w| w[0] == w[1])
 }
 
-// -- coleções -------------------------------------------------------------
+// -- Collections ----------------------------------------------------------
 
 fn is_empty(v: &Value) -> bool {
     match v {
@@ -540,7 +544,7 @@ fn conj(coll: Value, x: Value) -> Value {
             Value::Set(Rc::new(ns))
         }
         Value::Map(m) => {
-            // conj de [k v] ou de um mapa.
+            // Bootstrap map conj accepts a [key value] vector or another map.
             let mut nm = m.as_ref().clone();
             match &x {
                 Value::Vector(kv) if kv.len() == 2 => {
@@ -574,7 +578,7 @@ fn nth(v: &Value, idx: i64, default: Option<Value>) -> Result<Value, String> {
         .ok_or_else(|| "nth: índice fora dos limites".into())
 }
 
-/// `get` genérico (bootstrap): mapa por chave, vetor por índice, set por membro.
+/// Performs bootstrap lookup by map key, vector index, or set member.
 pub(crate) fn get(coll: &Value, key: &Value) -> Value {
     match coll {
         Value::Map(m) => m

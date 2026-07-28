@@ -1,3 +1,5 @@
+//! Behavioral tests for bootstrap evaluation, macro expansion, and primitives.
+
 use super::*;
 
 fn eval_str(src: &str) -> Value {
@@ -41,7 +43,7 @@ fn if_let_fn_closures() {
     assert_eq!(eval_str("(if false 1 2)"), Value::Int(2));
     assert_eq!(eval_str("(let [a 1 b 2] (+ a b))"), Value::Int(3));
     assert_eq!(eval_str("((fn [x] (* x x)) 5)"), Value::Int(25));
-    // closure captura o ambiente
+    // A closure retains its defining lexical environment.
     assert_eq!(
         eval_str("(let [n 10] ((fn [x] (+ x n)) 5))"),
         Value::Int(15)
@@ -62,7 +64,7 @@ fn loop_recur() {
 
 #[test]
 fn recur_tail_no_overflow() {
-    // 100k iterações sem estourar a pilha (recur é loop).
+    // Recur is an interpreter loop and does not consume the Rust call stack.
     let src = "(defn cnt [n acc] (if (zero? n) acc (recur (- n 1) (+ acc 1)))) (cnt 100000 0)";
     assert_eq!(eval_str(src), Value::Int(100000));
 }

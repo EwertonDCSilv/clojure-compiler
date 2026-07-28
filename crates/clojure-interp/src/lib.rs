@@ -1,9 +1,10 @@
-//! Interpretador de bootstrap (Fase 2 / ADR-0004 / ADR-0005).
+//! Bootstrap interpreter for the source-level subset.
 //!
-//! Papel: avaliar Clojure para (a) rodar programas no caminho de bootstrap e (b),
-//! futuramente, expandir macros em tempo de compilação. **Não** é o runtime de
-//! produção (esse é compilado — Fases 4–5). Primitivas em Rust; parte de `core` em
-//! Clojure (`CORE_CLJ`), realizando o bootstrap progressivo.
+//! [`Interp`] reads and evaluates Clojure forms with [`clojure_value::Value`],
+//! installs fundamental primitives from Rust, and can load the self-hosted
+//! bootstrap library in [`CORE_CLJ`]. It is useful for frontend execution and
+//! macro bootstrap work. It is not the execution engine for generated programs:
+//! native objects use the tagged C runtime owned by `clojure-codegen`.
 
 use clojure_span::{Span, Spanned};
 use clojure_syntax::{Form, Name, SForm};
@@ -14,12 +15,15 @@ use std::rc::Rc;
 
 mod primitives;
 
-/// `core` mínimo escrito no próprio dialeto (bootstrap — ver ADR-0005).
+/// Minimal bootstrap `clojure.core` written in the interpreted subset.
 pub const CORE_CLJ: &str = include_str!("core.clj");
 
+/// Interpreter failure with an optional source range.
 #[derive(Debug, Clone)]
 pub struct EvalError {
+    /// User-facing Portuguese error text.
     pub msg: String,
+    /// Source form responsible for the failure, when known.
     pub span: Option<Span>,
 }
 
@@ -38,7 +42,10 @@ impl EvalError {
     }
 }
 
-/// Sinal de controle: erro ou `recur`.
+/// Internal non-local control flow for an error or `recur`.
+///
+/// INVARIANT: only loop and function invocation boundaries consume `Recur`.
+/// Reaching a top-level boundary is converted into an [`EvalError`].
 enum Control {
     Err(EvalError),
     Recur(Vec<Value>),
@@ -52,13 +59,19 @@ impl From<EvalError> for Control {
 
 type E = Result<Value, Control>;
 
-/// Estado do interpretador: Vars globais (bootstrap: um espaço plano), ns atual,
-/// buffer de saída e contador de gensym.
+/// Mutable state of one bootstrap interpreter.
+///
+/// Globals occupy a flat table in this bootstrap implementation. Lexical
+/// bindings live in immutable [`Scope`] chains, and output is captured instead
+/// of being written directly to a process stream.
 pub struct Interp {
     globals: HashMap<String, Value>,
     macros: std::collections::HashSet<&'static str>,
     current_ns: String,
-    /// Buffer de saída compartilhado com as primitivas de `print`/`println`.
+    /// Output buffer shared with the installed `print` and `println` primitives.
+    ///
+    /// Prefer [`Self::take_output`] or [`Self::peek_output`] unless a primitive
+    /// needs direct shared access.
     pub output: Rc<RefCell<String>>,
     gensym: u64,
 }
@@ -70,6 +83,10 @@ impl Default for Interp {
 }
 
 impl Interp {
+    /// Creates an interpreter with Rust primitives and an empty global scope.
+    ///
+    /// The self-hosted [`CORE_CLJ`] library is not loaded; use
+    /// [`Self::with_core`] for a ready-to-evaluate instance.
     pub fn new() -> Interp {
         let mut it = Interp {
             globals: HashMap::new(),
@@ -87,27 +104,34 @@ impl Interp {
         it
     }
 
-    /// Consome e devolve o que foi escrito na saída padrão do programa.
+    /// Removes and returns all captured program output.
     pub fn take_output(&self) -> String {
         std::mem::take(&mut self.output.borrow_mut())
     }
 
-    /// Espia a saída acumulada sem consumir.
+    /// Clones the captured output without clearing it.
     pub fn peek_output(&self) -> String {
         self.output.borrow().clone()
     }
 
-    /// Interpretador pronto com o `core.clj` de bootstrap carregado.
+    /// Creates an interpreter and evaluates the embedded bootstrap core.
+    ///
+    /// # Errors
+    ///
+    /// Returns the user-facing message from a reader or evaluation failure in
+    /// the embedded core.
     pub fn with_core() -> Result<Interp, String> {
         let mut it = Interp::new();
         it.eval_source("core.clj", CORE_CLJ).map_err(|e| e.msg)?;
         Ok(it)
     }
 
+    /// Defines or replaces one global value.
     pub fn define(&mut self, name: impl Into<String>, v: Value) {
         self.globals.insert(name.into(), v);
     }
 
+    /// Borrows a global value by its unqualified storage name.
     pub fn get_global(&self, name: &str) -> Option<&Value> {
         self.globals.get(name)
     }
@@ -117,7 +141,28 @@ impl Interp {
         format!("{prefix}__{}__auto", self.gensym)
     }
 
-    /// Lê e avalia todas as forms de uma fonte, na ordem. Devolve o último valor.
+    /// Reads and evaluates every top-level form in source order.
+    ///
+    /// The last value is returned, or `nil` when `text` contains no forms.
+    /// Definitions mutate this interpreter and remain available to later calls.
+    ///
+    /// # Errors
+    ///
+    /// Returns a reader error prefixed with `name`, or the first evaluation
+    /// error. Spans use source ID zero and byte offsets into `text`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clojure_interp::Interp;
+    /// use clojure_value::Value;
+    ///
+    /// let mut interpreter = Interp::new();
+    /// assert_eq!(
+    ///     interpreter.eval_source("example.clj", "(+ 20 22)").unwrap(),
+    ///     Value::Int(42),
+    /// );
+    /// ```
     pub fn eval_source(&mut self, name: &str, text: &str) -> Result<Value, EvalError> {
         let forms = clojure_reader::read_all(0, text).map_err(|d| {
             let first = d.items.into_iter().next().unwrap();
@@ -133,7 +178,12 @@ impl Interp {
         Ok(last)
     }
 
-    /// Avalia uma form de topo (sem ambiente léxico).
+    /// Evaluates one form without an enclosing lexical environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns evaluation failures and rejects a `recur` that escapes its legal
+    /// loop or function boundary.
     pub fn eval_top(&mut self, form: &SForm) -> Result<Value, EvalError> {
         match self.eval(form, &None) {
             Ok(v) => Ok(v),
@@ -142,7 +192,13 @@ impl Interp {
         }
     }
 
-    /// Chama `-main` se estiver definida (ponto de entrada de programas).
+    /// Invokes global `-main` with no arguments when it is defined.
+    ///
+    /// A missing entry point returns `nil`.
+    ///
+    /// # Errors
+    ///
+    /// Returns invocation, arity, or evaluation errors from `-main`.
     pub fn call_main(&mut self) -> Result<Value, EvalError> {
         if let Some(f) = self.globals.get("-main").cloned() {
             self.invoke(&f, vec![], None).map_err(|c| match c {
@@ -154,7 +210,7 @@ impl Interp {
         }
     }
 
-    // -- avaliação --------------------------------------------------------
+    // -- Evaluation -------------------------------------------------------
 
     fn eval(&mut self, form: &SForm, env: &Option<Rc<Scope>>) -> E {
         match &form.node {
@@ -216,11 +272,12 @@ impl Interp {
 
     fn eval_list(&mut self, items: &[SForm], env: &Option<Rc<Scope>>, span: Span) -> E {
         let Some((head, args)) = items.split_first() else {
-            // () → lista vazia
+            // An empty source list evaluates to the empty list value.
             return Ok(Value::List(List::empty()));
         };
 
-        // Forma especial / macro por símbolo em posição de operador.
+        // Symbols in operator position select special forms and bootstrap
+        // macros before ordinary value evaluation.
         if let Form::Symbol(name) = head.node.strip_meta() {
             if name.ns.is_none() {
                 match name.name.as_str() {
@@ -245,7 +302,7 @@ impl Interp {
             }
         }
 
-        // Chamada de função.
+        // Ordinary calls evaluate the callee and every argument eagerly.
         let f = self.eval(head, env)?;
         let mut argv = Vec::with_capacity(args.len());
         for a in args {
@@ -254,7 +311,7 @@ impl Interp {
         self.invoke(&f, argv, Some(span))
     }
 
-    // -- formas especiais -------------------------------------------------
+    // -- Special forms ----------------------------------------------------
 
     fn sf_quote(&self, args: &[SForm], span: Span) -> E {
         let f = args
@@ -328,10 +385,10 @@ impl Interp {
             .map(|f| matches!(f.node.strip_meta(), Form::Vector(_)))
             .unwrap_or(false)
         {
-            // aridade única: (fn [params] body...)
+            // Single arity: (fn [params] body...).
             vec![parse_method(rest, span)?]
         } else {
-            // multi-aridade: (fn ([p] b) ([p q] b))
+            // Multiple arities: (fn ([p] b) ([p q] b)).
             let mut ms = Vec::new();
             for m in rest {
                 match m.node.strip_meta() {
@@ -394,6 +451,8 @@ impl Interp {
             vals.push(val);
         }
         let body = &args[1..];
+        // INVARIANT: each iteration binds exactly one value per loop name.
+        // Recur carries the next value vector instead of using the Rust stack.
         loop {
             let iter_env = Some(Scope::child(
                 env.clone(),
@@ -445,7 +504,8 @@ impl Interp {
     }
 
     fn sf_var(&self, args: &[SForm], span: Span) -> E {
-        // Bootstrap: (var x) devolve o valor da Var (sem objeto Var real).
+        // Bootstrap difference: (var x) returns the value directly because the
+        // interpreter does not model a first-class Var object.
         match args.first().map(|f| f.node.strip_meta()) {
             Some(Form::Symbol(n)) => self
                 .globals
@@ -477,8 +537,14 @@ impl Interp {
         self.invoke(&f, argv, Some(span))
     }
 
-    // -- invocação --------------------------------------------------------
+    // -- Invocation -------------------------------------------------------
 
+    /// Invokes a callable bootstrap value without a source call-site.
+    ///
+    /// # Errors
+    ///
+    /// Returns an arity, callability, primitive, or body-evaluation failure.
+    /// An escaping `recur` is rejected as invalid.
     pub fn invoke_pub(&mut self, f: &Value, args: Vec<Value>) -> Result<Value, EvalError> {
         self.invoke(f, args, None).map_err(|c| match c {
             Control::Err(e) => e,
@@ -490,7 +556,7 @@ impl Interp {
         match f {
             Value::Native(n) => (n.f)(&args).map_err(|msg| Control::Err(EvalError { msg, span })),
             Value::Keyword(_) => {
-                // (:k m) → (get m :k)
+                // Keywords are unary map/set lookup functions.
                 if args.len() != 1 {
                     return Err(
                         EvalError::new("keyword como fn requer 1 argumento (o mapa)").into(),
@@ -509,7 +575,8 @@ impl Interp {
                         span,
                     })
                 })?;
-                // O índice do método pode mudar em recur? Não: recur mantém aridade.
+                // INVARIANT: recur remains in this method. A changed argument
+                // count is checked below and cannot select another overload.
                 let method_idx = closure
                     .methods
                     .iter()
@@ -552,7 +619,7 @@ impl Interp {
         }
     }
 
-    // -- expansão de macros (base em Rust — ADR-0004) ---------------------
+    // -- Rust bootstrap macro expansion (ADR-0004) ------------------------
 
     fn expand_macro(&mut self, name: &str, args: &[SForm], span: Span) -> Result<SForm, Control> {
         let mk = |node| Spanned::new(node, span);
@@ -561,13 +628,14 @@ impl Interp {
 
         match name {
             "defn" | "defn-" => {
-                // (defn nome doc? attrs? [params] body...) | (defn nome (...) (...))
+                // (defn name doc? attrs? [params] body...) or multi-arity defn.
                 let nm = args
                     .first()
                     .cloned()
                     .ok_or_else(|| Control::Err(EvalError::at("defn requer nome", span)))?;
                 let mut rest: Vec<SForm> = args[1..].to_vec();
-                // Descarta docstring e attr-map opcionais.
+                // Docstrings and attribute maps are accepted syntactically but
+                // are not retained as first-class Var metadata in bootstrap.
                 if rest.len() > 1 && matches!(rest[0].node.strip_meta(), Form::Str(_)) {
                     rest.remove(0);
                 }
@@ -680,7 +748,7 @@ fn arg(args: &[SForm], i: usize, who: &str, span: Span) -> Result<SForm, Control
         .ok_or_else(|| Control::Err(EvalError::at(format!("{who}: argumento {i} ausente"), span)))
 }
 
-/// Insere `expr` como 1º (`->`) ou último (`->>`) argumento de `step`.
+/// Inserts `expr` as the first (`->`) or last (`->>`) argument of `step`.
 fn thread_into(step: &SForm, expr: SForm, first: bool, span: Span) -> SForm {
     match step.node.strip_meta() {
         Form::List(items) => {
@@ -695,7 +763,7 @@ fn thread_into(step: &SForm, expr: SForm, first: bool, span: Span) -> SForm {
             }
             Spanned::new(Form::List(v), span)
         }
-        // (-> x f) → (f x)
+        // A symbol step such as (-> x f) becomes (f x).
         _ => Spanned::new(Form::List(vec![step.clone(), expr]), span),
     }
 }
@@ -775,7 +843,10 @@ fn bind_params(method: &FnMethod, args: &[Value]) -> Result<Vec<(String, Value)>
     Ok(bindings)
 }
 
-/// Converte uma `Form` (código) no `Value` correspondente (para `quote`).
+/// Converts source syntax to bootstrap data for `quote`.
+///
+/// Metadata wrappers are intentionally stripped because bootstrap values do not
+/// carry metadata.
 pub fn form_to_value(f: &SForm) -> Value {
     match f.node.strip_meta() {
         Form::Nil => Value::Nil,
@@ -799,7 +870,10 @@ pub fn form_to_value(f: &SForm) -> Value {
     }
 }
 
-/// Sequência de itens de uma coleção (para `apply`/rest).
+/// Materializes a sequential bootstrap value for `apply` and rest binding.
+///
+/// Returns `None` for maps, scalars, and functions. The result is eager and
+/// cloned; this interpreter does not model lazy sequences.
 pub fn seq_items(v: &Value) -> Option<Vec<Value>> {
     match v {
         Value::Nil => Some(vec![]),

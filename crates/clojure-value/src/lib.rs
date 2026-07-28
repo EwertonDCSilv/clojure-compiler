@@ -1,52 +1,74 @@
-//! Representação de valores do **interpretador de bootstrap** (Fase 2).
+//! Values owned by the bootstrap interpreter.
 //!
-//! ADR-0003 fixa `enum Value` como representação. ADR-0002 permite `Rc` no
-//! interpretador de bootstrap (não é o runtime de produção com GC). As coleções
-//! aqui são simplificadas (lista realmente persistente via cons; vetor/mapa via
-//! `Rc<Vec>` com copy-on-write) — as coleções persistentes reais (bitmapped trie /
-//! HAMT) são das Fases 4/8. Ver specs/RUNTIME_SPEC.md.
+//! [`Value`] is a safe Rust representation used only while interpreting source
+//! during bootstrap. It is not the tagged 64-bit `Value` ABI used by generated
+//! native code and the C runtime. Sharing uses [`Rc`]; lists are immutable cons
+//! cells, while vectors, maps, and sets use copy-on-write vectors suitable for
+//! the bootstrap path. Native persistent data structures and garbage collection
+//! belong to `clojure-codegen` and its C runtime.
 
 use clojure_syntax::{Name, SForm};
 use std::fmt;
 use std::rc::Rc;
 
+/// Backwards-compatible exported name for syntax-level names.
 pub use clojure_syntax::Name as SymName;
 
-/// Um valor Clojure em runtime (bootstrap).
+/// Runtime value understood by the bootstrap interpreter.
 #[derive(Clone)]
 pub enum Value {
+    /// The singleton `nil` value.
     Nil,
+    /// A boolean value.
     Bool(bool),
+    /// A signed 64-bit integer.
     Int(i64),
+    /// An IEEE-754 double-precision number.
     Float(f64),
+    /// A Unicode scalar value.
     Char(char),
+    /// An immutable UTF-8 string.
     Str(Rc<str>),
+    /// A symbolic name treated as data.
     Symbol(Rc<Name>),
+    /// An internable keyword name, stored directly during bootstrap.
     Keyword(Rc<Name>),
+    /// An immutable singly linked list.
     List(Rc<List>),
+    /// A copy-on-write vector.
     Vector(Rc<Vec<Value>>),
-    /// array-map: pares ordenados por inserção (bootstrap).
+    /// Bootstrap array map whose pairs preserve insertion order.
     Map(Rc<Vec<(Value, Value)>>),
+    /// Bootstrap set whose elements preserve insertion order.
     Set(Rc<Vec<Value>>),
+    /// An interpreted closure with one or more arities.
     Fn(Rc<Closure>),
+    /// A primitive implemented in Rust.
     Native(Rc<NativeFn>),
 }
 
-/// Lista persistente (cons cells imutáveis).
+/// Persistent list built from immutable cons cells.
 pub enum List {
+    /// Empty list.
     Empty,
+    /// One head value followed by a shared tail.
     Cons {
+        /// First value in this cell.
         head: Value,
+        /// Remaining immutable list.
         tail: Rc<List>,
+        /// Cached number of cells from this node onward.
         count: usize,
     },
 }
 
 impl List {
+    /// Creates an empty shared list.
     pub fn empty() -> Rc<List> {
         Rc::new(List::Empty)
     }
 
+    /// Returns the cached number of elements in `O(1)`.
     pub fn count(&self) -> usize {
         match self {
             List::Empty => 0,
@@ -54,11 +76,25 @@ impl List {
         }
     }
 
+    /// Prepends `head` to `tail` without modifying the tail.
     pub fn cons(head: Value, tail: Rc<List>) -> Rc<List> {
         let count = tail.count() + 1;
         Rc::new(List::Cons { head, tail, count })
     }
 
+    /// Converts a vector to a list while preserving iteration order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clojure_value::{List, Value};
+    ///
+    /// let list = List::from_vec(vec![Value::Int(1), Value::Int(2)]);
+    /// assert_eq!(list.iter().cloned().collect::<Vec<_>>(), vec![
+    ///     Value::Int(1),
+    ///     Value::Int(2),
+    /// ]);
+    /// ```
     pub fn from_vec(items: Vec<Value>) -> Rc<List> {
         let mut acc = List::empty();
         for v in items.into_iter().rev() {
@@ -67,11 +103,13 @@ impl List {
         acc
     }
 
+    /// Iterates from the list head to its empty tail.
     pub fn iter(&self) -> ListIter<'_> {
         ListIter { cur: self }
     }
 }
 
+/// Borrowing iterator over an immutable [`List`].
 pub struct ListIter<'a> {
     cur: &'a List,
 }
@@ -89,14 +127,18 @@ impl<'a> Iterator for ListIter<'a> {
     }
 }
 
-/// Método de uma função (uma aridade).
+/// One arity implementation of an interpreted function.
 pub struct FnMethod {
+    /// Fixed parameter names in binding order.
     pub params: Vec<String>,
+    /// Optional rest parameter bound to arguments after the fixed parameters.
     pub rest: Option<String>,
+    /// Function body evaluated in order.
     pub body: Vec<SForm>,
 }
 
 impl FnMethod {
+    /// Returns whether this method accepts `n` arguments.
     pub fn arity_matches(&self, n: usize) -> bool {
         if self.rest.is_some() {
             n >= self.params.len()
@@ -106,16 +148,23 @@ impl FnMethod {
     }
 }
 
-/// Closure interpretada: métodos (aridades) + ambiente léxico capturado.
+/// Interpreted function methods and their captured lexical environment.
 pub struct Closure {
+    /// Optional name used for self-reference and printed representations.
     pub name: Option<String>,
+    /// Fixed and variadic arity implementations.
     pub methods: Vec<FnMethod>,
+    /// Lexical environment captured when the function was created.
     pub env: Option<Rc<Scope>>,
 }
 
 impl Closure {
+    /// Selects the implementation for `n` arguments.
+    ///
+    /// Exact fixed arity takes precedence over a matching variadic method,
+    /// independent of declaration order.
     pub fn method_for(&self, n: usize) -> Option<&FnMethod> {
-        // Preferir aridade fixa exata; senão, variádica compatível.
+        // Prefer exact fixed arity before a compatible variadic method.
         self.methods
             .iter()
             .find(|m| m.rest.is_none() && m.params.len() == n)
@@ -123,15 +172,22 @@ impl Closure {
     }
 }
 
-/// Função nativa (implementada em Rust). Para o bootstrap, erros são `String`.
+/// Callable signature used by Rust bootstrap primitives.
+///
+/// Primitive failures use user-facing strings; `clojure-interp` attaches the
+/// call-site span at the interpreter boundary.
 pub type NativeCallable = dyn Fn(&[Value]) -> Result<Value, String>;
 
+/// Named primitive implemented in Rust.
 pub struct NativeFn {
+    /// Name used in printed values and error context.
     pub name: String,
+    /// Primitive implementation.
     pub f: Box<NativeCallable>,
 }
 
 impl NativeFn {
+    /// Wraps a Rust closure as a shared bootstrap primitive.
     pub fn new(
         name: impl Into<String>,
         f: impl Fn(&[Value]) -> Result<Value, String> + 'static,
@@ -143,17 +199,22 @@ impl NativeFn {
     }
 }
 
-/// Ambiente léxico imutável (cadeia de frames). Locais do interpretador.
+/// Immutable lexical frame linked to an optional parent frame.
+///
+/// Bindings are searched from the end so a later binding shadows an earlier
+/// binding in the same frame before lookup continues in the parent.
 pub struct Scope {
     bindings: Vec<(String, Value)>,
     parent: Option<Rc<Scope>>,
 }
 
 impl Scope {
+    /// Creates a lexical frame with an optional parent.
     pub fn child(parent: Option<Rc<Scope>>, bindings: Vec<(String, Value)>) -> Rc<Scope> {
         Rc::new(Scope { bindings, parent })
     }
 
+    /// Finds and clones the nearest value bound to `name`.
     pub fn lookup(&self, name: &str) -> Option<Value> {
         if let Some((_, v)) = self.bindings.iter().rev().find(|(n, _)| n == name) {
             return Some(v.clone());
@@ -163,23 +224,27 @@ impl Scope {
 }
 
 impl Value {
+    /// Creates an immutable string value.
     pub fn str(s: impl Into<Rc<str>>) -> Value {
         Value::Str(s.into())
     }
 
+    /// Creates a symbol value from a syntax name.
     pub fn symbol(name: Name) -> Value {
         Value::Symbol(Rc::new(name))
     }
 
+    /// Creates a keyword value from a syntax name.
     pub fn keyword(name: Name) -> Value {
         Value::Keyword(Rc::new(name))
     }
 
-    /// `nil` e `false` são os únicos valores falsos (specs/LANGUAGE_SCOPE.md).
+    /// Returns Clojure truthiness: only `nil` and `false` are false.
     pub fn is_truthy(&self) -> bool {
         !matches!(self, Value::Nil | Value::Bool(false))
     }
 
+    /// Returns the bootstrap category name used in diagnostics.
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Nil => "nil",
@@ -199,13 +264,19 @@ impl Value {
         }
     }
 
+    /// Returns whether the interpreter can invoke this value.
+    ///
+    /// Interpreted functions, native primitives, and keywords are callable.
     pub fn is_callable(&self) -> bool {
         matches!(self, Value::Fn(_) | Value::Native(_) | Value::Keyword(_))
     }
 }
 
-/// Igualdade de valor estrutural (`=` de Clojure). `nil`/`false` distintos;
-/// categorias numéricas distintas (`(= 1 1.0)` → false).
+/// Implements bootstrap structural equality.
+///
+/// `nil` and `false` remain distinct, numeric categories do not widen
+/// (`1 != 1.0`), lists and vectors compare sequentially, and map or set
+/// insertion order is ignored.
 impl PartialEq for Value {
     fn eq(&self, other: &Value) -> bool {
         use Value::*;
@@ -226,7 +297,7 @@ impl PartialEq for Value {
                     && a.iter()
                         .all(|(k, v)| b.iter().any(|(k2, v2)| k == k2 && v == v2))
             }
-            // Sequências entre list e vector comparam como sequências.
+            // Lists and vectors share sequential equality in the bootstrap.
             (List(a), Vector(b)) => a.iter().eq(b.iter()),
             (Vector(a), List(b)) => a.iter().eq(b.iter()),
             _ => false,
@@ -234,14 +305,19 @@ impl PartialEq for Value {
     }
 }
 
-/// Impressão estilo `pr-str` (com aspas/escapes), determinística.
+/// Returns deterministic, readable `pr-str`-style text.
+///
+/// Strings and characters include delimiters or names and escape control
+/// characters.
 pub fn pr_str(v: &Value) -> String {
     let mut s = String::new();
     write_value(&mut s, v, true);
     s
 }
 
-/// Impressão estilo `print`/`str` (sem aspas em strings/chars).
+/// Returns deterministic `print`/`str`-style text.
+///
+/// Strings and characters are emitted without reader delimiters.
 pub fn print_str(v: &Value) -> String {
     let mut s = String::new();
     write_value(&mut s, v, false);
@@ -383,7 +459,7 @@ mod tests {
         assert_ne!(Value::Nil, Value::Bool(false));
         let l = Value::List(List::from_vec(vec![Value::Int(1), Value::Int(2)]));
         let v = Value::Vector(Rc::new(vec![Value::Int(1), Value::Int(2)]));
-        assert_eq!(l, v); // sequências iguais
+        assert_eq!(l, v); // Lists and vectors have sequential equality.
     }
 
     #[test]
