@@ -254,6 +254,82 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_server_does_not_leak_descriptors_across_requests() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #6: every connection is closed. The server reports
+    // its own open descriptor count after each response; a leaked connection fd
+    // would make that count grow monotonically across many requests.
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns leak.core (:require [cljn.http.response :as resp]))
+(defn -main []
+  (let [srv (http-server-open 0)]
+    (println (http-server-port srv))
+    (flush)
+    (loop [i 0]
+      (let [req (http-server-accept srv)]
+        (if (nil? req)
+          nil
+          (do (http-server-respond srv (resp/ok "x"))
+              (println (count (list-dir "/proc/self/fd")))
+              (flush)
+              (recur (inc i))))))))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_leak_e2e.clj");
+    let exe = dir.join("cljn_leak_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let mut counts = Vec::new();
+    for _ in 0..40 {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET /x HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        assert!(resp.starts_with("HTTP/1.1 200 OK"), "resposta: {resp:?}");
+        let mut fd_line = String::new();
+        reader.read_line(&mut fd_line).unwrap();
+        counts.push(fd_line.trim().parse::<i64>().expect("fd count"));
+    }
+    let _ = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    // The descriptor count must be stable, not grow request-over-request.
+    let first = counts[0];
+    let last = *counts.last().unwrap();
+    assert_eq!(first, last, "vazamento de descritor: contagens {counts:?}");
+}
+
+#[test]
 fn http_service_lifecycle_and_signal_shutdown() {
     if !have_cc() {
         return;
@@ -443,7 +519,7 @@ fn http_response_serializer_bytes_and_validation() {
     let src = r#"(ns s.core)
 (defn kind [f] (try (do (f) :ok) (catch E e (get e :kind))))
 (defn -main []
-  (print (serialize-http-response {:status 200 :headers {:content-type "text/plain"} :body "hi"}))
+  (print (serialize-http-response {:status 200 :headers {:x-b "2" :x-a "1"} :body "hi"}))
   (println "|")
   (print (serialize-http-response {:status 204 :headers {} :body nil}))
   (println "|")
@@ -451,7 +527,7 @@ fn http_response_serializer_bytes_and_validation() {
            (kind (fn [] (serialize-http-response {:status 200 :headers {:x "a\r\nb"} :body nil})))
            (kind (fn [] (serialize-http-response {:status 200 :headers {:content-length "5"} :body nil})))))
 (-main)"#;
-    let expected = "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi|\nHTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n|\n:invalid-status :invalid-header :reserved-header\n";
+    let expected = "HTTP/1.1 200 OK\r\nx-a: 1\r\nx-b: 2\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi|\nHTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n|\n:invalid-status :invalid-header :reserved-header\n";
     assert_eq!(build_and_run("http_serializer", src), expected);
     assert_eq!(
         build_and_run_env("http_serializer_gc", src, &[("CLJN_GC_STRESS", "1")]),
