@@ -1480,7 +1480,7 @@ fn fixtures() -> Vec<Fixture> {
         build("arithmetic", "comparisons", "(ns b.cmp)\n(defn -main [] (println (< 1 2) (<= 2 2) (> 3 2) (>= 2 3) (= 4 4)))\n(-main)\n", "true true true false true\n"),
         build("arithmetic", "numeric-predicates", "(ns b.pred)\n(defn -main [] (println (zero? 0) (pos? 2) (neg? -2) (even? 4) (odd? 5)))\n(-main)\n", "true true true true true\n"),
         build_xfail("arithmetic", "overflow", "(ns b.overflow)\n(defn -main [] (println (+ 4611686018427387903 1)))\n(-main)\n", "4611686018427387904\n", "specs/LANGUAGE_SCOPE.md#números--política-explícita-decisão"),
-        build_xfail("arithmetic", "float-codegen", "(ns b.float)\n(defn -main [] (println (+ 1.5 2.5)))\n(-main)\n", "4.0\n", "specs/LANGUAGE_SCOPE.md#números--política-explícita-decisão"),
+        build("arithmetic", "float-codegen", "(ns b.float)\n(defn -main [] (println (+ 1.5 2.5)))\n(-main)\n", "4.0\n"),
         // Level B — control flow.
         build("control-flow", "truthiness", "(ns b.truth)\n(defn -main [] (println (if nil :bad :nil-false) (if false :bad :false-false) (if 0 :zero-true :bad) (if \"\" :string-true :bad)))\n(-main)\n", ":nil-false :false-false :zero-true :string-true\n"),
         build("control-flow", "if", "(ns b.if)\n(defn choose [x] (if x 1 2))\n(defn -main [] (println (choose true) (choose false) (choose nil)))\n(-main)\n", "1 2 2\n"),
