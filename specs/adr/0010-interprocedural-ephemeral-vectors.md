@@ -1,6 +1,6 @@
 # ADR-0010 — Eliminação interprocedural de vetores efêmeros (escape/uniqueness)
 
-- Status: **proposta** (design; não altera comportamento até implementada)
+- Status: **parcialmente implementada** (Transform B, primeiro subconjunto conservador)
 - Data: 2026-07-27
 - Relacionadas: [ADR-0002](0002-memory-management.md),
   [ADR-0006](0006-codegen-optimization.md),
@@ -32,6 +32,28 @@ fronteiras de função — fora do alcance de qualquer análise intraprocedural:
 
 Esta ADR decide **como** eliminar esses vetores com segurança. Ela **não** troca o
 backend, a representação de valores, nem o coletor não-móvel.
+
+### Estado da implementação em `476aefd`
+
+O commit `e87456e` entregou o primeiro subconjunto do **Transform B**:
+
+- sumários por ponto fixo identificam um parâmetro de função de topo que alimenta
+  exclusivamente um acumulador linear de `loop` e é devolvido;
+- chamadas a essa função preservam a cadeia transient quando o argumento é o acumulador
+  único reconhecido;
+- `conj`/`assoc` da cadeia são reescritos para as operações transientes existentes, e
+  `persistent!` é inserido na saída;
+- qualquer captura, uso duplicado ou chamada não resumida mantém a implementação
+  persistente.
+
+O Transform A (tuplas de retorno sem heap), sumários de escape gerais, flag pública,
+fuzzing diferencial e os gates estruturais completos desta ADR ainda não foram
+entregues. Portanto, o status não é “implementada” em sentido integral.
+
+No benchmark publicado em `476aefd`, que também inclui o hoisting independente de
+literais constantes de `1ca1d79`, `zero-one-knapsack` caiu de 3,70 s para 1,91 s. A
+suíte Cormen preservou os 30 checksums, mas esse resultado combinado não isola sozinho
+o ganho do Transform B.
 
 ## 2. Forças de decisão
 

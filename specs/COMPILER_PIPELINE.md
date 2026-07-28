@@ -47,11 +47,18 @@ O `clojure-analyzer`:
 - analisa literais de coleção;
 - sintetiza closures e wrappers de primitivas como valores;
 - registra records, protocolos e implementações de `extend-type`;
+- calcula o primeiro sumário conservador de parâmetros lineares entre funções de topo;
+- promove acumuladores frescos de vetor em `loop` para transients quando todos os usos
+  preservam unicidade;
 - rejeita forms fora do subconjunto com diagnóstico.
 
 A saída atual é `Program`/`Expr` analisado consumido diretamente pelo codegen. Uma
 camada HIR/LIR ANF permanece desejável quando otimizações de liveness, DCE, inlining ou
 especialização exigirem uma representação intermediária estável.
+
+O transform interprocedural entregue cobre o padrão B da ADR-0010 (acumulador
+encadeado). Tuplas de retorno em out-slots, análise geral de escape e scalar replacement
+continuam planejados.
 
 ## 4. Codegen
 
@@ -65,6 +72,8 @@ O `clojure-codegen` traduz cada função para Cranelift IR e emite um objeto nat
   com guard de tag e checagem de overflow.
 - Casos inválidos usam slow paths ABI C.
 - Loads/stores de roots são emitidos diretamente na shadow stack.
+- Vetores literais constantes de imediatos são construídos no primeiro uso e carregados
+  de um cache por site nas avaliações seguintes.
 
 `CodegenOptions` aceita `none`, `speed` e `speed-and-size`. A CLI mantém `none` como
 padrão porque o gate Cormen registrou regressão para `speed` no IR atual. O nível
@@ -85,6 +94,7 @@ O runtime implementa:
 - listas, vetores, maps, sets e records;
 - closures, `apply` e dispatch de protocolos;
 - operações de coleção e slow paths numéricos.
+- cache de literais constantes registrado como raiz permanente do GC.
 
 O executável final não contém JVM nem bytecode `.class`.
 
@@ -110,7 +120,8 @@ fonte permanecem futuros. Consulte [RUNTIME_SPEC.md](RUNTIME_SPEC.md#erros).
 
 1. introduzir liveness e rooting somente nos safepoints;
 2. criar uma IR explícita quando isso reduzir complexidade no codegen;
-3. executar macros de usuário de forma determinística no bootstrap;
-4. adicionar loader e grafo de namespaces multi-arquivo;
-5. ampliar otimizações próprias antes de depender do Cranelift para remover trabalho
+3. ampliar escape/unicidade para tuplas de retorno e outros valores efêmeros;
+4. executar macros de usuário de forma determinística no bootstrap;
+5. adicionar loader e grafo de namespaces multi-arquivo;
+6. ampliar otimizações próprias antes de depender do Cranelift para remover trabalho
    desnecessário.

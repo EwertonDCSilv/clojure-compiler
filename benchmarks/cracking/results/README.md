@@ -5,6 +5,9 @@
 
 Arquivo: [`extreme.csv`](extreme.csv)
 
+Snapshot do relatório:
+[`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+
 Medições nativas atualizadas em 2026-07-27 no commit `1ca1d79` com:
 
 ```bash

@@ -32,6 +32,12 @@ O interpretador de bootstrap é um caminho paralelo usado pelos comandos `eval` 
 O core compilável em `crates/clojure-native-cli/src/core_compiled.clj` é analisado junto
 com o programa do usuário em todo `build`.
 
+No snapshot documentado em
+[`476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c),
+o analyzer também executa um pós-passe conservador de unicidade para acumuladores de
+vetor. O primeiro subconjunto interprocedural propaga um parâmetro linear entre funções
+de topo; ausência de prova mantém o caminho persistente.
+
 ## Crates atuais
 
 | Crate | Responsabilidade |
@@ -77,6 +83,10 @@ O runtime fornece:
 Fast paths numéricos e operações da shadow stack são gerados diretamente sempre que
 possível.
 
+Vetores literais constantes compostos apenas por imediatos são cacheados por site de
+codegen. O cache pertence ao runtime e é marcado como raiz permanente em toda coleta.
+Literais dinâmicos não participam dessa otimização.
+
 O gate proposto em [IO_SPEC](IO_SPEC.md) preserva essa fronteira: handles, buffers e
 syscalls ficarão atrás da ABI C, enquanto opções, macros de lifecycle e readers
 derivados serão implementados em Clojure. A [ADR-0007](adr/0007-native-io-and-runtime-reader.md)
@@ -88,6 +98,9 @@ exceto pelo baseline de saída.
 Vetores usam trie bitmap de 32 vias. Mapas e sets começam compactos e promovem para
 HAMT. Todas essas coleções são imutáveis e preservam estrutura não alterada por
 path-copying.
+
+`mapv`, `into` e acumuladores cuja unicidade é provada usam o vetor transient estrutural
+durante a construção e voltam à representação persistente na fronteira de escape.
 
 O GC é preciso, não móvel e single-thread. Cada função abre um frame de shadow stack com
 `cljn_gc_enter` e o encerra com `cljn_gc_leave`; slots intermediários são atualizados por

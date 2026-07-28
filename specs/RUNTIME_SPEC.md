@@ -5,6 +5,11 @@ compilado, o runtime é C embutido em `clojure-codegen` e exposto ao objeto Cran
 ABI C. Os crates Rust `clojure-value` e `clojure-interp` mantêm a representação do
 interpretador de bootstrap; eles não são a representação ABI do executável nativo.
 
+Os subsistemas C ficam em arquivos separados sob `clojure-codegen/runtime/`, mas são
+concatenados na ordem declarada pelo codegen e compilados como uma única unidade de
+tradução. `clojure-codegen/runtime.c` permanece como entrada compatível para ferramentas
+C diretas.
+
 ## Representação atual
 
 O tipo ABI `Value` é uma palavra do tamanho de ponteiro (`intptr_t`):
@@ -40,6 +45,18 @@ do runtime compilado atual. Metadata em valores compilados, Vars dinâmicas, ato
 delays e objetos de exceção com tipo/`ex-data` também permanecem futuros. Valores
 lançados explicitamente são mantidos como roots enquanto atravessam handlers nativos.
 
+### Cache de literais constantes
+
+O codegen atribui IDs aos vetores literais não vazios cujos elementos são todos
+imediatos (`Int`, `Bool` ou `Nil`). Cada site constrói o vetor apenas no primeiro uso e
+registra o valor em `cljn_const_cache`; avaliações seguintes reutilizam o objeto
+imutável.
+
+O GC percorre as entradas registradas como roots permanentes antes do sweep. O cache
+não é finalizer nem weak reference e não se aplica a literais com elementos dinâmicos.
+O limite atual é 8.192 sites por objeto compilado; depois dele o codegen usa a construção
+persistente normal.
+
 ## Igualdade e hash
 
 - `=` usa igualdade estrutural para strings, listas, vetores, maps, sets e records.
@@ -72,6 +89,11 @@ O subconjunto transient implementa `transient`, `persistent!`, `conj!`, `assoc!`
 `dissoc!`. Vetores usam mutação real e crescimento amortizado; mapas e sets atualizam
 uma caixa com o novo valor persistente. Ainda faltam edit tokens, invalidação depois de
 `persistent!`, `disj!`, `pop!` e mutação in-place nos nós HAMT.
+
+O core compilado usa esse vetor transient em `mapv` e `into`. O analyzer também o
+seleciona para acumuladores de `loop` comprovadamente lineares, inclusive no primeiro
+subconjunto de chamadas interprocedurais. O valor é persistido na fronteira final; usos
+ambíguos, capturas e chamadas não resumidas preservam o caminho imutável.
 
 ## Modelo de funções
 

@@ -9,6 +9,10 @@ Este diretório registra a arquitetura, o escopo e as decisões do compilador na
 nome do produto e do binário é `clojure-native`; o repositório se chama
 `clojure-compiler`.
 
+> Snapshot documentado: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
+> em 2026-07-27. A política e o benchmark de referência estão em
+> [`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
+
 ## Estado executável
 
 Em 2026-07-27, o workspace já possui um corte vertical funcional:
@@ -31,6 +35,10 @@ Em 2026-07-27, o workspace já possui um corte vertical funcional:
 - `defmulti`/`defmethod` com dispatch por igualdade de valor e fallback `:default`.
 - Transients para vetores, mapas e sets por meio de `transient`, `persistent!`,
   `conj!`, `assoc!` e `dissoc!`.
+- Construção de `mapv`/`into` por vetor transient estrutural e promoção conservadora de
+  acumuladores lineares de `loop`, inclusive no primeiro subconjunto interprocedural.
+- Hoisting por site de vetores literais constantes formados somente por imediatos, com
+  cache registrado como root permanente do GC.
 - `clojure.core` compilável com 26 funções pré-carregadas em todo `build`.
 - Fast paths nativos verificados para `+`, `-`, `*`, `quot`, `mod`, `inc`, `dec`,
   `<`, `<=`, `>` e `>=`; igualdade estrutural permanece no runtime.
@@ -38,6 +46,8 @@ Em 2026-07-27, o workspace já possui um corte vertical funcional:
   `CLJN_GC_STRESS=1`.
 - Operações diretas na shadow stack substituem `gc_push`, `gc_popn` e `gc_set` no
   caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
+- Runtime C separado fisicamente por subsistema, mas amalgamado como uma única unidade
+  de tradução e uma única ABI.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
 [`tests/conformance/`](../tests/conformance) possui 447 casos: 170 ativos, 245 falhas
@@ -47,8 +57,11 @@ cobertura exige 82% globais para linhas, funções e regiões, além de 30% de l
 arquivo.
 
 O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
-fast paths e os stores diretos de roots. Os resultados completos e as ressalvas de
-medição estão na [ADR-0006](adr/0006-codegen-optimization.md).
+fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
+7,77 s nativos contra 24,96 s na JVM; Cormen acumula 29,45 s contra 16,91 s de parede,
+mas 29,30 s contra 32,61 s de CPU. Os 90 checksums são equivalentes. A metodologia,
+ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study.md) e em
+[`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
 
 ## Limites atuais
 
@@ -113,6 +126,14 @@ para reproduzir uma medição histórica.
   runtime em Clojure (proposta).
 - [0008](adr/0008-associative-indexed-dispatch.md) — capabilities com fast paths para
   `assoc` persistente e `nth` genérico (proposta).
+- [0009](adr/0009-benchmark-performance-study.md) — estudo da performance nativa nos
+  benchmarks Cormen e prioridades de otimização.
+- [0010](adr/0010-interprocedural-ephemeral-vectors.md) — análise de
+  escape/unicidade para vetores efêmeros interprocedurais (parcialmente implementada).
+- [0011](adr/0011-rust-crate-unit-testing-strategy.md) — estratégia de testes
+  unitários, integração e gates de cobertura dos crates Rust (proposta).
+- [0012](adr/0012-rust-crate-modularization.md) — modularização incremental dos crates
+  Rust e controle da dívida de arquivos gigantes (proposta).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -126,7 +147,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Valor nativo | fixnums tagueados + ponteiros para objetos GC | especialização/unboxing medidos |
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
-| Otimização | fast paths inteiros e stores diretos de roots | safepoints e otimização do IR |
+| Otimização | fast paths inteiros, stores diretos, auto-transient intra/interprocedural inicial e hoisting de literais | safepoints, escape geral e otimização do IR |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
 | Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | `print`/`println` diretos no stdout | streams dinâmicos, arquivos, filesystem e readers conforme IO_SPEC |

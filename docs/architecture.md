@@ -3,6 +3,9 @@
 [Índice da documentação](README.md) · [Visão geral](overview.md) ·
 [Uso](usage.md) · [Especificações](../specs/README.md)
 
+> Arquitetura auditada no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+> Consulte [SNAPSHOT.md](SNAPSHOT.md).
+
 O `clojure-compiler` é um workspace Cargo. O executável entregue pelo workspace se chama
 `clojure-native`.
 
@@ -42,6 +45,12 @@ cc + runtime C embutido ──► executável do host
 O CLI carrega primeiro o subconjunto compilável de `clojure.core`, analisa o core e o
 programa do usuário como uma unidade, gera o objeto e invoca o linker C do sistema.
 
+Depois da análise semântica, um pós-passe conservador identifica acumuladores frescos de
+vetor usados linearmente. O passe cobre loops locais e o primeiro padrão de parâmetro
+linear entre funções de topo; ele rebaixa para o caminho persistente quando encontra
+captura, alias ou chamada não reconhecida. O resultado continua sendo a mesma AST
+consumida pelo codegen — ainda não existe uma IR própria separada.
+
 ## Modelo de valores e chamadas
 
 No código compilado, fixnums são valores tagueados e os demais valores são ponteiros
@@ -65,12 +74,24 @@ vira um backedge nativo e não cresce a pilha.
 
 As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP,
 edit tokens e transients com mutação in-place em nós de map/set continuam planejados.
+O core compilado usa o vetor transient estrutural em `mapv` e `into`; o analyzer também
+o seleciona para os acumuladores cuja unicidade consegue provar.
 
 ## Runtime e GC
 
 O runtime C embutido fornece alocação, coleções, strings, impressão, exceções,
 dispatch de protocolos/multimétodos e slow paths. O coletor é mark-sweep preciso, não
 móvel e single-thread.
+
+Fisicamente, o runtime está dividido em fragmentos ordenados por subsistema em
+`crates/clojure-codegen/runtime/`. O codegen os concatena com `include_str!` e o
+compilador C ainda recebe uma única unidade de tradução; portanto a modularização não
+cria bibliotecas, ABIs ou estados duplicados.
+
+Vetores literais não vazios compostos somente por fixnums, booleanos e `nil` recebem um
+ID de site. No primeiro uso, o codegen constrói o vetor e o registra no cache do runtime;
+usos seguintes carregam o mesmo valor. O cache é uma raiz permanente visitada pelo GC.
+Literais com elementos dinâmicos continuam seguindo a construção normal.
 
 Streams gerais, arquivos e readers de runtime ainda são alvo futuro. A fronteira
 proposta mantém handles e buffers atrás da ABI C, conforme
@@ -108,6 +129,12 @@ make all
 Os scripts em `scripts/` e nos diretórios de benchmark continuam sendo as interfaces
 de baixo nível. A CI usa os mesmos alvos públicos do Makefile, divididos em jobs de
 qualidade, cobertura, conformidade e checksums de benchmarks.
+
+A estratégia para ampliar testes unitários por crate está na
+[`ADR-0011`](../specs/adr/0011-rust-crate-unit-testing-strategy.md), e a redução dos
+grandes arquivos Rust está na
+[`ADR-0012`](../specs/adr/0012-rust-crate-modularization.md). Ambas são propostas; a
+separação física já concluída do runtime C é um trabalho anterior e distinto.
 
 Detalhes normativos ficam nas
 [`especificações`](../specs/README.md); comandos e requisitos estão no

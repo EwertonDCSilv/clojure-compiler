@@ -3,6 +3,9 @@
 [Índice da documentação](README.md) · [Visão geral](overview.md) ·
 [Arquitetura](architecture.md) · [README em português](../README.pt-BR.md)
 
+> Comandos revisados no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+> Veja o [snapshot documentado](SNAPSHOT.md).
+
 O repositório se chama `clojure-compiler`; os comandos abaixo usam o binário
 `clojure-native`.
 
@@ -38,6 +41,9 @@ make install
 O destino padrão é `~/.local/bin`. Ele pode ser alterado com `PREFIX`, `BINDIR` e
 `DESTDIR`; o Makefile não modifica automaticamente o `PATH` nem arquivos de configuração
 do shell.
+
+No snapshot documentado, `make install` recompila o pacote `clojure-native-cli` em
+release, cria o diretório de destino e instala `clojure-native` com modo `0755`.
 
 Exemplos:
 

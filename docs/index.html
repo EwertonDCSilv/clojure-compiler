@@ -441,6 +441,41 @@
         box-shadow: 0 0 0 5px rgba(184, 243, 75, 0.1);
       }
 
+      .snapshot-link {
+        display: inline-flex;
+        gap: 0.55rem;
+        align-items: center;
+        margin-top: 1.25rem;
+        padding: 0.55rem 0.75rem;
+        color: #dbeafe;
+        font-family: var(--mono);
+        font-size: var(--text-micro);
+        text-decoration: none;
+        background: rgba(15, 23, 42, 0.48);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+      }
+
+      .snapshot-link code {
+        color: var(--lime);
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .snapshot-link time::before {
+        margin-right: 0.55rem;
+        color: #64748b;
+        content: "·";
+      }
+
+      .snapshot-link:hover,
+      .snapshot-link:focus-visible {
+        color: #fff;
+        background: rgba(30, 41, 59, 0.72);
+        border-color: rgba(184, 243, 75, 0.6);
+      }
+
       h1,
       h2,
       h3,
@@ -2213,6 +2248,8 @@
         "@type": "SoftwareSourceCode",
         "name": "clojure-native",
         "description": "Compilador nativo experimental de Clojure sem JVM.",
+        "version": "0.0.1+476aefd",
+        "dateModified": "2026-07-27",
         "codeRepository": "https://github.com/EwertonDCSilv/clojure-compiler",
         "license": [
           "https://opensource.org/license/mit",
@@ -2368,6 +2405,16 @@
                 <span data-i18n="hero.source">Ver código-fonte</span>
               </a>
             </div>
+            <a
+              class="snapshot-link"
+              href="https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span>HEAD</span>
+              <code>476aefd</code>
+              <time datetime="2026-07-27">2026-07-27</time>
+            </a>
           </div>
 
           <div

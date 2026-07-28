@@ -3,6 +3,9 @@
 [Índice da documentação](README.md) · [Uso](usage.md) ·
 [Arquitetura](architecture.md) · [Especificações](../specs/README.md)
 
+> Estado auditado no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+> Detalhes do snapshot: [SNAPSHOT.md](SNAPSHOT.md).
+
 O repositório `clojure-compiler` implementa um compilador nativo experimental de
 Clojure em Rust. O executável do projeto, `clojure-native`, lê, interpreta e compila
 antecipadamente um subconjunto documentado da linguagem. O binário gerado não usa JVM
@@ -31,6 +34,21 @@ nem bytecode `.class` em tempo de execução.
 - Um core compilado com 26 funções, entre elas `map`, `filter`, `reduce`, `range`,
   `into`, `mapv`, `take`, `drop`, `comp`, `concat` e `mapcat`.
 
+## Otimizações entregues
+
+- Fast paths Cranelift para fixnums retiram a ABI C do caminho inteiro comum.
+- Loads e stores diretos substituem `gc_push`, `gc_popn` e `gc_set` no caminho gerado.
+- `mapv` e `into` usam vetores transientes estruturais para construção em lote.
+- O analyzer reconhece acumuladores de vetor frescos e lineares em `loop`; o primeiro
+  subconjunto interprocedural propaga essa linearidade por parâmetros de funções de
+  topo e mantém o fallback persistente quando não consegue provar unicidade.
+- Vetores literais constantes com elementos imediatos são construídos no primeiro uso
+  do site, reutilizados nas avaliações seguintes e marcados como roots permanentes.
+
+A análise interprocedural entregue cobre o padrão de acumulador encadeado da
+[`ADR-0010`](../specs/adr/0010-interprocedural-ephemeral-vectors.md). Tuplas de retorno
+sem heap, análise geral de escape e rooting por liveness ainda são trabalho futuro.
+
 ## Runtime e memória
 
 O caminho nativo representa fixnums como valores tagueados e objetos compostos no heap
@@ -58,6 +76,11 @@ O inventário também cobre o gate proposto de I/O, mas essa superfície permane
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
 [`benchmarks/cormen/`](../benchmarks/cormen). Ambas exportam CSV com tempo de parede,
 CPU e pico de memória para o nativo e para Clojure/JVM.
+
+No snapshot de referência, Cracking acumula 7,77 s nativos contra 24,96 s na JVM. Cormen
+acumula 29,45 s nativos contra 16,91 s de parede na JVM, mas usa 29,30 s de CPU contra
+32,61 s da JVM. Os 90 checksums são equivalentes; ambiente, repetições e valores por
+caso estão em [SNAPSHOT.md](SNAPSHOT.md).
 
 Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 

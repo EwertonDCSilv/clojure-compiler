@@ -12,6 +12,11 @@ runtime. The repository is named `clojure-compiler`; its command-line binary is
 > Experimental project under active development. It implements a documented subset of
 > Clojure and is not production-ready.
 
+> Documented snapshot: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
+> (2026-07-27). The benchmark compiler is
+> [`1ca1d79`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1ca1d799a02ead388a1ffcae33b760fe0743d8d9).
+> See the [snapshot policy and current measurements](docs/SNAPSHOT.md).
+
 ## Overview
 
 `clojure-native` reads, interprets, and AOT-compiles Clojure source code into standalone
@@ -30,6 +35,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
 | [`docs/overview.md`](docs/overview.md) | Current capabilities and limitations |
 | [`docs/usage.md`](docs/usage.md) | CLI, Makefile, installation, tests, and benchmarks |
 | [`docs/architecture.md`](docs/architecture.md) | Crates, AOT pipeline, runtime, and GC |
+| [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | Audited HEAD, measured compiler commit, and current results |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Executable A–E compatibility contract |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catalog and methodology for all 90 benchmarks |
 
@@ -50,6 +56,11 @@ compatibility boundaries, implementation plans, and architectural decisions live
 - Ordered maps and sets backed by a persistent left-leaning red-black tree.
 - Transient vectors with mutable bulk construction, plus transient map/set wrappers
   supporting `transient`, `persistent!`, `conj!`, `assoc!`, and `dissoc!`.
+- `mapv` and `into` construct through structural transients. A conservative analyzer
+  pass also promotes fresh vector loop accumulators, including the first supported
+  interprocedural linear-parameter pattern.
+- Immediate-only constant vector literals are built once per compiled site, cached, and
+  kept as permanent GC roots instead of being reconstructed on every evaluation.
 - Records and protocol dispatch through `defrecord`, `defprotocol`, and `extend-type`.
 - Native `throw` and `try`/`catch`/`finally`, including nested unwind and GC-safe
   lexical captures.
@@ -60,11 +71,16 @@ compatibility boundaries, implementation plans, and architectural decisions live
 - Precise, non-moving, single-threaded mark-sweep GC with generated shadow-stack roots.
 - Direct root-stack loads/stores in generated code, removing root helper calls from hot
   paths.
+- The C runtime is split into subsystem files for maintenance while remaining one
+  translation unit with the same ABI.
 
 For detailed implementation status, see [`specs/README.md`](specs/README.md). The
 optimization roadmap and its decision record are in
 [`specs/optime.md`](specs/optime.md) and
-[`ADR-0006`](specs/adr/0006-codegen-optimization.md).
+[`ADR-0006`](specs/adr/0006-codegen-optimization.md). The allocation study and the
+partially implemented interprocedural decision are in
+[`ADR-0009`](specs/adr/0009-benchmark-performance-study.md) and
+[`ADR-0010`](specs/adr/0010-interprocedural-ephemeral-vectors.md).
 The proposed native I/O gate is specified separately in
 [`IO_SPEC`](specs/IO_SPEC.md) and [`ADR-0007`](specs/adr/0007-native-io-and-runtime-reader.md);
 only the conformance cases marked `active` are implemented today.
@@ -195,6 +211,17 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 - [`benchmarks/cormen`](benchmarks/cormen/README.md): 30 CLRS-style algorithm cases
   with checksum validation.
 
+Reference snapshot (`HEAD 476aefd`, native compiler `1ca1d79`, scale 25×):
+
+| Suite | Native/JVM wall | Native/JVM CPU | Native/JVM median RSS |
+| --- | ---: | ---: | ---: |
+| Cracking | 7.77 / 24.96 s | 7.61 / 53.88 s | 4.7 / 117.5 MiB |
+| Cormen/CLRS | 29.45 / 16.91 s | 29.30 / 32.61 s | 13.4 / 271.1 MiB |
+
+All 90 cases have matching native/JVM checksums. The Cormen native run now uses 10.1%
+less aggregate CPU than the preserved JVM reference, although its aggregate wall time
+is still higher.
+
 ## Project layout
 
 | Path | Purpose |
@@ -209,7 +236,7 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 | [`tests/conformance`](tests/conformance) | Executable A–E compatibility fixtures |
 | `examples` | Clojure examples and performance workloads |
 | `specs` | Language scope, runtime model, plans, risks, and ADRs |
-| [`docs`](docs/README.md) | Documentation index, website, usage, overview, and architecture guides |
+| [`docs`](docs/README.md) | Documentation index, audited snapshot, website, usage, overview, and architecture guides |
 
 ## Known limitations
 

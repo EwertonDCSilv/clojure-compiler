@@ -12,6 +12,11 @@ chama `clojure-native`.
 > Projeto experimental em desenvolvimento ativo. Ele implementa um subconjunto
 > documentado de Clojure e ainda não está pronto para produção.
 
+> Snapshot documentado: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
+> (2026-07-27). O compilador medido nos benchmarks é o
+> [`1ca1d79`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1ca1d799a02ead388a1ffcae33b760fe0743d8d9).
+> Consulte a [política do snapshot e as medições atuais](docs/SNAPSHOT.md).
+
 ## Visão geral
 
 O `clojure-native` lê, interpreta e compila antecipadamente código-fonte Clojure para
@@ -30,6 +35,7 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 | [`docs/overview.md`](docs/overview.md) | Recursos e limitações atuais |
 | [`docs/usage.md`](docs/usage.md) | CLI, Makefile, instalação, testes e benchmarks |
 | [`docs/architecture.md`](docs/architecture.md) | Crates, pipeline AOT, runtime e GC |
+| [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | HEAD auditado, commit medido e resultados atuais |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Contrato executável de compatibilidade A–E |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catálogo e metodologia dos 90 benchmarks |
 
@@ -50,6 +56,11 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 - Mapas e sets ordenados apoiados em árvore rubro-negra persistente inclinada à esquerda.
 - Vetores transientes com construção mutável em lote, além de wrappers transientes de
   map/set com `transient`, `persistent!`, `conj!`, `assoc!` e `dissoc!`.
+- `mapv` e `into` constroem por transientes estruturais. Um passe conservador do
+  analyzer também promove acumuladores frescos de vetor em loops, incluindo o primeiro
+  padrão suportado de parâmetro linear interprocedural.
+- Vetores literais constantes formados somente por imediatos são construídos uma vez
+  por site compilado, mantidos em cache e registrados como roots permanentes do GC.
 - Records e dispatch de protocolos com `defrecord`, `defprotocol` e `extend-type`.
 - `throw` e `try`/`catch`/`finally` nativos, incluindo unwind aninhado e capturas
   léxicas seguras sob GC.
@@ -59,10 +70,15 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 - GC mark-sweep preciso, não móvel e single-thread com shadow stack de roots gerado.
 - Loads/stores diretos na pilha de roots no código gerado, retirando chamadas auxiliares
   dos caminhos quentes.
+- O runtime C está separado por subsistema para manutenção, mas continua compilado como
+  uma única unidade de tradução com a mesma ABI.
 
 O estado detalhado está em [`specs/README.md`](specs/README.md). O roteiro de otimização
 e sua decisão arquitetural estão em [`specs/optime.md`](specs/optime.md) e na
-[`ADR-0006`](specs/adr/0006-codegen-optimization.md).
+[`ADR-0006`](specs/adr/0006-codegen-optimization.md). O estudo de alocação e a decisão
+interprocedural parcialmente implementada estão na
+[`ADR-0009`](specs/adr/0009-benchmark-performance-study.md) e na
+[`ADR-0010`](specs/adr/0010-interprocedural-ephemeral-vectors.md).
 O gate proposto de I/O nativo está separado na
 [`IO_SPEC`](specs/IO_SPEC.md) e na
 [`ADR-0007`](specs/adr/0007-native-io-and-runtime-reader.md); hoje só estão entregues
@@ -194,6 +210,17 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 - [`benchmarks/cormen`](benchmarks/cormen/README.md): 30 casos de algoritmos no estilo
   CLRS, com validação por checksum.
 
+Snapshot de referência (`HEAD 476aefd`, compilador nativo `1ca1d79`, escala 25×):
+
+| Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
+| --- | ---: | ---: | ---: |
+| Cracking | 7,77 / 24,96 s | 7,61 / 53,88 s | 4,7 / 117,5 MiB |
+| Cormen/CLRS | 29,45 / 16,91 s | 29,30 / 32,61 s | 13,4 / 271,1 MiB |
+
+Os 90 casos possuem checksums nativo/JVM equivalentes. No Cormen, o nativo passou a
+usar 10,1% menos CPU acumulada que a referência JVM preservada, embora o tempo de parede
+agregado ainda seja maior.
+
 ## Estrutura do projeto
 
 | Caminho | Responsabilidade |
@@ -208,7 +235,7 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
 | [`tests/conformance`](tests/conformance) | Fixtures executáveis de compatibilidade A–E |
 | `examples` | Exemplos Clojure e cargas de desempenho |
 | `specs` | Escopo, modelo de runtime, planos, riscos e ADRs |
-| [`docs`](docs/README.md) | Índice, site, guias de uso, visão geral e arquitetura |
+| [`docs`](docs/README.md) | Índice, snapshot auditado, site, guias de uso, visão geral e arquitetura |
 
 ## Limitações conhecidas
 
