@@ -230,6 +230,44 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn router_connector_full_p1_lifecycle() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gates 2+3: the full in-memory P1 lifecycle — a router-backed
+    // connector runs test-request through the chain + router to a handler response.
+    let app = r#"(ns app.core
+  (:require [cljn.http.request :as req]
+            [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]))
+(defn show [request] (resp/ok (str "id=" (get (get request :path-params) :id))))
+(defn -main []
+  (let [c (conn/create-router-connector
+            [{:segments ["health"] :method :get :name :h :handler (fn [r] (resp/ok "up"))}
+             {:segments ["users" :id] :method :get :name :u :handler show}])]
+    (println (get (conn/test-request c (req/request :get "/health")) :body))
+    (println (get (conn/test-request c (req/request :get "/users/7")) :body))
+    (println (get (conn/test-request c (req/request :get "/missing")) :status))
+    (println (get (conn/test-request c (req/request :post "/health")) :status))))
+(-main)"#;
+    let expected = "up\nid=7\n404\n405\n";
+    let files = &[("app.clj", app)][..];
+    assert_eq!(
+        build_and_run_project("router_conn", files, "app.clj"),
+        expected
+    );
+    assert_eq!(
+        build_and_run_project_env(
+            "router_conn_gc",
+            files,
+            "app.clj",
+            &[("CLJN_GC_STRESS", "1")],
+        ),
+        expected
+    );
+}
+
+#[test]
 fn interceptor_chain_enter_leave_terminate_recover() {
     if !have_cc() {
         return;
