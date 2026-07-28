@@ -317,6 +317,8 @@ pub enum Prim {
     VectorP,
     /// Test whether a value is a map.
     MapP,
+    /// Test whether a value is a byte array.
+    BytesP,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2204,6 +2206,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "keyword?" => Prim::KeywordP,
         "vector?" => Prim::VectorP,
         "map?" => Prim::MapP,
+        "bytes?" => Prim::BytesP,
         _ => return None,
     })
 }
@@ -2255,6 +2258,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::KeywordP
         | Prim::VectorP
         | Prim::MapP
+        | Prim::BytesP
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -2342,7 +2346,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ReadChar => n == 0,
         Prim::StringReader => n == 1,
         Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
-        Prim::StringP | Prim::IntP | Prim::KeywordP | Prim::VectorP | Prim::MapP => n == 1,
+        Prim::StringP | Prim::IntP | Prim::KeywordP | Prim::VectorP | Prim::MapP | Prim::BytesP => {
+            n == 1
+        }
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,

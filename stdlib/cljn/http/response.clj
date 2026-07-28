@@ -38,7 +38,14 @@
        (>= (get x :status) 100)
        (<= (get x :status) 599)
        (map? (get x :headers))
-       (let [b (get x :body)] (or (nil? b) (string? b)))))
+       (let [b (get x :body)] (or (nil? b) (string? b) (bytes? b)))))
+
+(defn content-length
+  "Comprimento do corpo em bytes: 0 para nil; `count` para string (bytes UTF-8) ou
+  Bytes. Pura."
+  [response]
+  (let [b (get response :body)]
+    (if (nil? b) 0 (count b))))
 
 (defn validate-response
   "Devolve `x` se for uma resposta válida; senão lança um mapa de erro

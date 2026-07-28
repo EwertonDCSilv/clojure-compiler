@@ -270,6 +270,7 @@ struct Runtime {
     keywordp: FuncId,         // (x)->bool
     vectorp: FuncId,          // (x)->bool
     mapp: FuncId,             // (x)->bool
+    bytesp: FuncId,           // (x)->bool
     float_from_bits: FuncId,  // (raw_i64)->float (literais)
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
@@ -675,6 +676,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         keywordp: una(m, "cljn_keywordp"),
         vectorp: una(m, "cljn_vectorp"),
         mapp: una(m, "cljn_mapp"),
+        bytesp: una(m, "cljn_bytesp"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -774,6 +776,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::KeywordP
             | Prim::VectorP
             | Prim::MapP
+            | Prim::BytesP
     )
 }
 
@@ -2491,6 +2494,7 @@ impl<'a> FnGen<'a> {
             Prim::KeywordP => self.una(self.rt.keywordp, args),
             Prim::VectorP => self.una(self.rt.vectorp, args),
             Prim::MapP => self.una(self.rt.mapp, args),
+            Prim::BytesP => self.una(self.rt.bytesp, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

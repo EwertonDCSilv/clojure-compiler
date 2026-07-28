@@ -202,6 +202,7 @@ Value cljn_intp(Value x) { return b2v(IS_FIX(x)); }
 Value cljn_keywordp(Value x) { return b2v(obj_type(x) == T_KW); }
 Value cljn_vectorp(Value x) { int t = obj_type(x); return b2v(t == T_VEC || t == T_TVEC); }
 Value cljn_mapp(Value x) { int t = obj_type(x); return b2v(t == T_MAP || t == T_HMAP || t == T_SMAP); }
+Value cljn_bytesp(Value x) { return b2v(obj_type(x) == T_BYTES); }
 
 /* Return raw C truthiness: only NIL and FALSEV are false. */
 int cljn_truthy(Value v) { return (v != NIL && v != FALSEV) ? 1 : 0; }

@@ -31,7 +31,7 @@
        (keyword? (get x :method))
        (string? (get x :path))
        (map? (get x :headers))
-       (let [b (get x :body)] (or (nil? b) (string? b)))))
+       (let [b (get x :body)] (or (nil? b) (string? b) (bytes? b)))))
 
 (defn validate-request
   "Devolve `x` se for uma requisição válida; senão lança um mapa de erro

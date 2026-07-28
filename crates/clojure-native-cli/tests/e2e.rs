@@ -85,6 +85,47 @@ fn build_and_run_project(name: &str, files: &[(&str, &str)], entry: &str) -> Str
     String::from_utf8(run.stdout).unwrap()
 }
 
+/// Like `build_and_run_project`, but runs the resulting binary with extra
+/// environment variables (e.g. `CLJN_GC_STRESS`).
+fn build_and_run_project_env(
+    name: &str,
+    files: &[(&str, &str)],
+    entry: &str,
+    env: &[(&str, &str)],
+) -> String {
+    let root = std::env::temp_dir().join(format!("cljn_proj_{name}"));
+    let _ = std::fs::remove_dir_all(&root);
+    for (rel, content) in files {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, content).unwrap();
+    }
+    let exe = std::env::temp_dir().join(format!("{name}.bin"));
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(root.join(entry))
+        .arg("--source-path")
+        .arg(&root)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("executa build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut cmd = Command::new(&exe);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let run = cmd.output().expect("executa binário nativo");
+    assert!(run.status.success(), "binário retornou erro");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_file(&exe);
+    String::from_utf8(run.stdout).unwrap()
+}
+
 fn build_and_run_with_options(
     name: &str,
     src: &str,
@@ -273,6 +314,48 @@ fn native_connector_validates_request_and_response() {
     let expected = "200\n:invalid-request\n:invalid-response\n:invalid-connector\n";
     assert_eq!(
         build_and_run_project("conn_valid", &[("app.clj", app)], "app.clj"),
+        expected
+    );
+}
+
+#[test]
+fn native_connector_bodies_and_gc_stress() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 2 exit: nil/string/Bytes bodies, content-length, and the P1
+    // Hello World through test-request in normal AND GC-stress modes.
+    let app = r#"(ns app.core
+  (:require [cljn.http.request :as req]
+            [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]))
+(defn handler [request]
+  (let [p (req/path request)]
+    (if (= p "/text") (resp/ok "hello")
+      (if (= p "/bin") (resp/respond 200 (bytes "AB"))
+        (resp/respond 204)))))
+(defn -main []
+  (let [c (conn/create-connector handler)]
+    (let [r (conn/test-request c (req/request :get "/text"))]
+      (println (get r :status) (resp/content-length r)))
+    (let [r (conn/test-request c (req/request :get "/bin"))]
+      (println (get r :status) (resp/content-length r) (bytes? (get r :body))))
+    (let [r (conn/test-request c (req/request :get "/empty"))]
+      (println (get r :status) (resp/content-length r)))))
+(-main)"#;
+    let expected = "200 5\n200 2 true\n204 0\n";
+    let files = &[("app.clj", app)][..];
+    assert_eq!(
+        build_and_run_project("conn_bodies", files, "app.clj"),
+        expected
+    );
+    assert_eq!(
+        build_and_run_project_env(
+            "conn_bodies_gc",
+            files,
+            "app.clj",
+            &[("CLJN_GC_STRESS", "1")]
+        ),
         expected
     );
 }
