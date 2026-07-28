@@ -254,6 +254,31 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_server_open_close_cycles_do_not_leak() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #6: repeated open/close lifecycles must not leak the
+    // listener descriptor. The self-pipe is primed once, then 500 cycles run; the
+    // process open-descriptor count returns to its baseline.
+    let src = r#"(ns cyc.core)
+(defn -main []
+  (http-server-close (http-server-open 0))
+  (let [before (count (list-dir "/proc/self/fd"))]
+    (loop [i 0]
+      (if (< i 500)
+        (do (http-server-close (http-server-open 0)) (recur (inc i)))
+        nil))
+    (println (- (count (list-dir "/proc/self/fd")) before))))
+(-main)"#;
+    assert_eq!(build_and_run("http_open_close_cycles", src), "0\n");
+    assert_eq!(
+        build_and_run_env("http_open_close_cycles_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        "0\n"
+    );
+}
+
+#[test]
 fn http_server_does_not_leak_descriptors_across_requests() {
     if !have_cc() {
         return;

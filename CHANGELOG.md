@@ -58,6 +58,10 @@ tags.
 - Emit response headers in deterministic lowercase lexical order and cover the
   no-descriptor-leak service contract with a multi-request end-to-end test
   (ADR-0013 Gate 4 acceptance #6, Gate 5).
+- Add the `runtime_http.c` HTTP parser/serializer fuzz harness to the C runtime test
+  suite, exercising an adversarial corpus and every input prefix under ASan/UBSan via
+  `make test-runtime-sanitize`, and an open/close-cycle descriptor-leak end-to-end
+  test (ADR-0013 Gate 4 CI hardening).
 
 ### Changed
 
