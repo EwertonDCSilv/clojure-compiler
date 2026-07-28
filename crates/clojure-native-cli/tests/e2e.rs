@@ -52,6 +52,39 @@ fn build_and_run_argv(name: &str, src: &str, argv: &[&str]) -> String {
     String::from_utf8(run.stdout).unwrap()
 }
 
+/// Builds a multi-file project: writes `(rel_path, content)` files under a fresh
+/// temp root, then builds `entry` (relative to the root) with `--source-path root`
+/// and runs the resulting binary (ADR-0013 Gate 1 static module loader).
+fn build_and_run_project(name: &str, files: &[(&str, &str)], entry: &str) -> String {
+    let root = std::env::temp_dir().join(format!("cljn_proj_{name}"));
+    let _ = std::fs::remove_dir_all(&root);
+    for (rel, content) in files {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, content).unwrap();
+    }
+    let exe = std::env::temp_dir().join(format!("{name}.bin"));
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(root.join(entry))
+        .arg("--source-path")
+        .arg(&root)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("executa build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let run = Command::new(&exe).output().expect("executa binário nativo");
+    assert!(run.status.success(), "binário retornou erro");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_file(&exe);
+    String::from_utf8(run.stdout).unwrap()
+}
+
 fn build_and_run_with_options(
     name: &str,
     src: &str,
@@ -115,6 +148,77 @@ fn rejects_invalid_cranelift_optimization_level() {
         .expect("executa build");
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("nível de otimização inválido"));
+}
+
+#[test]
+fn static_module_loader_two_namespace_project() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 1: a two-namespace local project. The entry :require's another
+    // namespace resolved from --source-path; aliased and fully-qualified refs work;
+    // required namespaces initialize (their top-level defs) before the entry.
+    let util = r#"(ns math.util)
+(def pi 3)
+(defn square [x] (* x x))
+(defn area [r] (* pi (square r)))"#;
+    let app = r#"(ns app.core (:require [math.util :as m]))
+(def label "r=")
+(defn -main []
+  (println (m/square 5) math.util/pi)
+  (println label (m/area 2)))
+(-main)"#;
+    let expected = "25 3\nr= 12\n";
+    assert_eq!(
+        build_and_run_project(
+            "two_ns",
+            &[("math/util.clj", util), ("app.clj", app)],
+            "app.clj",
+        ),
+        expected
+    );
+}
+
+#[test]
+fn static_module_loader_rejects_dependency_cycle() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 1: a require cycle is a build error, not a hang or crash.
+    let root = std::env::temp_dir().join("cljn_proj_cycle");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("p")).unwrap();
+    std::fs::write(
+        root.join("p/a.clj"),
+        "(ns p.a (:require [p.b :as b]))\n(defn fa [] (b/fb))",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("p/b.clj"),
+        "(ns p.b (:require [p.a :as a]))\n(defn fb [] (a/fa))",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("main.clj"),
+        "(ns main (:require [p.a :as a]))\n(defn -main [] (println 1))\n(-main)",
+    )
+    .unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(root.join("main.clj"))
+        .arg("--source-path")
+        .arg(&root)
+        .arg("-o")
+        .arg(std::env::temp_dir().join("cljn_cycle.bin"))
+        .output()
+        .expect("executa build");
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(!out.status.success(), "ciclo deveria falhar o build");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("ciclo de dependência"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]

@@ -1076,9 +1076,18 @@ impl<'a> Analyzer<'a> {
         name: &str,
         span: Span,
     ) -> Result<Ast, Diagnostic> {
+        // A namespace-qualified reference (`alias/name` or `ns.name/name`) resolves
+        // to the simple `name` in the flat project symbol space (ADR-0013 Gate 1).
+        // Local shadowing does not apply to qualified references.
         if ns.is_some() {
+            if let Some(&idx) = self.globals.get(name) {
+                return Ok(Ast::GlobalRef(idx));
+            }
+            if self.sigs.contains_key(name) {
+                return Ok(Ast::FnRef(name.to_string()));
+            }
             return Err(unsupported(
-                format!("símbolo qualificado {name} fora do slice"),
+                format!("referência qualificada não resolvida: {name}"),
                 span,
             ));
         }
@@ -1165,11 +1174,10 @@ impl<'a> Analyzer<'a> {
                 args: a,
             });
         };
+        // A qualified operator (`alias/fn`) is never a special form; resolve the
+        // simple name in the flat project symbol space (ADR-0013 Gate 1).
         if op.ns.is_some() {
-            return Err(unsupported(
-                format!("operador qualificado {op} fora do slice"),
-                head.span,
-            ));
+            return self.resolve_call(&op.name, args, span);
         }
         match op.name.as_str() {
             "if" => {
@@ -1248,42 +1256,53 @@ impl<'a> Analyzer<'a> {
                 "def/defn só é permitido no nível de topo",
                 span,
             )),
-            name => {
-                if let Some(prim) = prim_of(name) {
-                    check_prim_arity(prim, args.len(), span)?;
-                    let a = self.analyze_seq(args)?;
-                    Ok(Ast::Call {
-                        callee: Callee::Prim(prim),
-                        args: a,
-                    })
-                } else if let Some(ast) = self.resolve(name) {
-                    // A local or capture in operator position requires indirect call.
-                    let a = self.analyze_seq(args)?;
-                    Ok(Ast::CallValue {
-                        f: Box::new(ast),
-                        args: a,
-                    })
-                } else if let Some(arities) = self.sigs.get(name) {
-                    if !arity_accepts(arities, args.len()) {
-                        return Err(Diagnostic::error(
-                            "E0103",
-                            format!("aridade errada ao chamar {name}: recebeu {}", args.len()),
-                        )
-                        .with_span(span));
-                    }
-                    let a = self.analyze_seq(args)?;
-                    Ok(Ast::Call {
-                        callee: Callee::Fn(name.to_string()),
-                        args: a,
-                    })
-                } else {
-                    Err(
-                        Diagnostic::error("E0101", format!("função não resolvida: {name}"))
-                            .with_span(span)
-                            .with_help("defina-a com defn, use uma primitiva, um local ou um fn"),
-                    )
-                }
+            name => self.resolve_call(name, args, span),
+        }
+    }
+
+    /// Resolves a call whose operator is a simple `name`: primitive, local/capture
+    /// (indirect), top-level function, or a `def` global holding a callable.
+    fn resolve_call(&mut self, name: &str, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+        if let Some(prim) = prim_of(name) {
+            check_prim_arity(prim, args.len(), span)?;
+            let a = self.analyze_seq(args)?;
+            Ok(Ast::Call {
+                callee: Callee::Prim(prim),
+                args: a,
+            })
+        } else if let Some(ast) = self.resolve(name) {
+            // A local or capture in operator position requires indirect call.
+            let a = self.analyze_seq(args)?;
+            Ok(Ast::CallValue {
+                f: Box::new(ast),
+                args: a,
+            })
+        } else if let Some(arities) = self.sigs.get(name) {
+            if !arity_accepts(arities, args.len()) {
+                return Err(Diagnostic::error(
+                    "E0103",
+                    format!("aridade errada ao chamar {name}: recebeu {}", args.len()),
+                )
+                .with_span(span));
             }
+            let a = self.analyze_seq(args)?;
+            Ok(Ast::Call {
+                callee: Callee::Fn(name.to_string()),
+                args: a,
+            })
+        } else if let Some(&idx) = self.globals.get(name) {
+            // A global holding a callable value is invoked indirectly.
+            let a = self.analyze_seq(args)?;
+            Ok(Ast::CallValue {
+                f: Box::new(Ast::GlobalRef(idx)),
+                args: a,
+            })
+        } else {
+            Err(
+                Diagnostic::error("E0101", format!("função não resolvida: {name}"))
+                    .with_span(span)
+                    .with_help("defina-a com defn, use uma primitiva, um local ou um fn"),
+            )
         }
     }
 

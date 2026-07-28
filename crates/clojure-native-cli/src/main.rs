@@ -49,6 +49,97 @@ fn print_usage() {
     );
 }
 
+/// Extracts required namespace names from the `ns` form's `:require` clauses.
+///
+/// Only literal `(ns name (:require spec...))` is inspected. Each spec is a bare
+/// namespace symbol or a vector whose head is the namespace symbol (ADR-0013).
+fn parse_requires(forms: &[clojure_syntax::SForm]) -> Vec<String> {
+    use clojure_syntax::Form;
+    let mut out = Vec::new();
+    for f in forms {
+        let Form::List(items) = f.node.strip_meta() else {
+            continue;
+        };
+        let Some(Form::Symbol(h)) = items.first().map(|x| x.node.strip_meta()) else {
+            continue;
+        };
+        if h.ns.is_some() || h.name != "ns" {
+            continue;
+        }
+        for clause in items.iter().skip(2) {
+            let Form::List(citems) = clause.node.strip_meta() else {
+                continue;
+            };
+            let is_require = matches!(
+                citems.first().map(|x| x.node.strip_meta()),
+                Some(Form::Keyword(k)) if k.ns.is_none() && k.name == "require"
+            );
+            if !is_require {
+                continue;
+            }
+            for spec in citems.iter().skip(1) {
+                let ns_sym = match spec.node.strip_meta() {
+                    Form::Vector(v) => v.first().map(|x| x.node.strip_meta()),
+                    other @ Form::Symbol(_) => Some(other),
+                    _ => None,
+                };
+                if let Some(Form::Symbol(nsym)) = ns_sym {
+                    out.push(nsym.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Resolves a namespace name to a source file within the given roots.
+///
+/// Dots become directory separators and hyphens become underscores in each path
+/// segment, matching the Clojure file-naming convention.
+fn resolve_ns_path(ns: &str, roots: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    let rel = ns.replace('.', "/").replace('-', "_") + ".clj";
+    roots.iter().map(|r| r.join(&rel)).find(|p| p.is_file())
+}
+
+/// Loads `requires` and their transitive dependencies into `out`, in dependency
+/// (post-order) order, before any dependent. Detects cycles and missing files.
+///
+/// Resolution is offline and deterministic: no Maven, JAR, Git, or network access.
+fn load_deps(
+    requires: &[String],
+    roots: &[std::path::PathBuf],
+    sm: &mut SourceMap,
+    loaded: &mut std::collections::HashSet<String>,
+    stack: &mut Vec<String>,
+    out: &mut Vec<clojure_syntax::SForm>,
+) -> Result<(), String> {
+    for ns in requires {
+        if loaded.contains(ns) {
+            continue;
+        }
+        if stack.contains(ns) {
+            return Err(format!(
+                "ciclo de dependência de namespace: {} -> {ns}",
+                stack.join(" -> ")
+            ));
+        }
+        let Some(path) = resolve_ns_path(ns, roots) else {
+            return Err(format!("namespace não encontrado no source-path: {ns}"));
+        };
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("erro ao ler {}: {e}", path.display()))?;
+        let sid = sm.add(path.display().to_string(), text.clone());
+        let forms = clojure_reader::read_all(sid, &text).map_err(|d| d.render(sm))?;
+        let sub = parse_requires(&forms);
+        stack.push(ns.clone());
+        load_deps(&sub, roots, sm, loaded, stack, out)?;
+        stack.pop();
+        out.extend(forms);
+        loaded.insert(ns.clone());
+    }
+    Ok(())
+}
+
 fn read_file(path: &str) -> Result<String, ExitCode> {
     std::fs::read_to_string(path).map_err(|e| {
         eprintln!("erro ao ler {path}: {e}");
@@ -150,11 +241,20 @@ fn cmd_build(args: &[String]) -> ExitCode {
     let mut path = None;
     let mut output = None;
     let mut optimization_level = None;
+    let mut source_paths: Vec<std::path::PathBuf> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "-o" | "--output" => {
                 output = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--source-path" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--source-path requer um diretório");
+                    return ExitCode::FAILURE;
+                };
+                source_paths.push(std::path::PathBuf::from(value));
                 i += 2;
             }
             "--opt-level" => {
@@ -201,13 +301,18 @@ fn cmd_build(args: &[String]) -> ExitCode {
             .unwrap_or_else(|| "a".to_string())
     });
 
+    // The entry file's own directory is always a resolution root (ADR-0013).
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        source_paths.push(parent.to_path_buf());
+    }
+
     let mut sm = SourceMap::new();
     // Stage 0: prepend the compiled bootstrap core so its collection functions
     // are available without user declarations (ADR-0005).
     let core_id = sm.add("clojure/core.clj", CORE_COMPILED);
     let id = sm.add(path.clone(), text.clone());
 
-    // Stage 1: read core and user forms with distinct source identities.
+    // Stage 1: read core and entry forms with distinct source identities.
     let mut forms = match clojure_reader::read_all(core_id, CORE_COMPILED) {
         Ok(f) => f,
         Err(d) => {
@@ -215,13 +320,30 @@ fn cmd_build(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match clojure_reader::read_all(id, &text) {
-        Ok(f) => forms.extend(f),
+    let entry_forms = match clojure_reader::read_all(id, &text) {
+        Ok(f) => f,
         Err(d) => {
             eprintln!("{}", d.render(&sm));
             return ExitCode::FAILURE;
         }
+    };
+    // Stage 1b: statically resolve `:require`d namespaces from the source path,
+    // in dependency (topological) order, before the entry (ADR-0013 Gate 1).
+    let entry_requires = parse_requires(&entry_forms);
+    let mut loaded = std::collections::HashSet::new();
+    let mut stack = Vec::new();
+    if let Err(msg) = load_deps(
+        &entry_requires,
+        &source_paths,
+        &mut sm,
+        &mut loaded,
+        &mut stack,
+        &mut forms,
+    ) {
+        eprintln!("{msg}");
+        return ExitCode::FAILURE;
     }
+    forms.extend(entry_forms);
     // Stage 2: resolve and validate the combined program.
     let program = match clojure_analyzer::analyze(&forms) {
         Ok(p) => p,
