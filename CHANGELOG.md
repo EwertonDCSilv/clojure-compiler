@@ -70,6 +70,10 @@ tags.
   `make fuzz-http` entry point, seeded from the deterministic corpus (ADR-0013 Gate 4).
 - Add a CI `security` job that runs the runtime C harnesses under ASan/UBSan, the
   1000-cycle HTTP start/serve/stop gate, and an HTTP parser fuzz smoke.
+- Add the active `e.pedestal.native_connector_hello` conformance fixture that builds
+  and runs a native `cljn.pedestal.*` router connector through the in-memory
+  `test-request` dispatch path with no JVM or network, while the upstream
+  `e.pedestal.hello_world_api` fixture stays `pending` (ADR-0013 §11, Gate 5).
 
 ### Changed
 
