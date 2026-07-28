@@ -355,6 +355,31 @@ fn compiles_transients() {
 }
 
 #[test]
+fn constant_vector_literals_are_hoisted() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0009: literais de vetor com elementos imediatos são imutáveis → o mesmo
+    // objeto cacheado é reusado. Deve ser transparente: reuso repetido, uso como
+    // acumulador transiente (compartilha e copia-on-write), leituras e igualdade.
+    let src = r#"(ns ch.core)
+(defn fresh [] [10 20 30])
+(defn fill [] (loop [i 0 v [0 0 0]] (if (< i 6) (recur (inc i) (assoc v (mod i 3) (+ (nth v (mod i 3)) 1))) v)))
+(defn -main []
+  (println (fresh) (fresh) (= (fresh) [10 20 30]))
+  (println (fill))                         ;; transiente sobre o literal cacheado (COW)
+  (println (nth [7 8 9] 1))
+  (loop [k 0 s 0] (if (< k 3) (recur (inc k) (+ s (nth [100 200 300] k))) (println s))))
+(-main)"#;
+    let expected = "[10 20 30] [10 20 30] true\n[2 2 2]\n8\n600\n";
+    assert_eq!(build_and_run("cljn_e2e_hoist", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_hoist_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn interprocedural_uniqueness_preserves_semantics() {
     if !have_cc() {
         return;

@@ -192,6 +192,21 @@ static void gc_sweep(void) {
     }
 }
 
+/* Cache de vetores literais constantes (ADR-0009): um literal cujos elementos são
+ * todos imediatos é imutável — construído uma vez no 1º uso e reusado, em vez de
+ * reconstruído a cada avaliação. São raízes permanentes (marcados pelo GC). */
+#define CONST_MAX 8192
+Value cljn_const_cache[CONST_MAX];
+static int64_t const_hi = 0;
+void cljn_const_register(Value id, Value v) {
+    int64_t i = (int64_t)id;
+    cljn_const_cache[i] = v;
+    if (i + 1 > const_hi) const_hi = i + 1;
+}
+static void gc_mark_consts(void) {
+    for (int64_t i = 0; i < const_hi; i++) gc_mark(cljn_const_cache[i]);
+}
+
 static void gc_mark_method_table(void); /* fwd */
 static void gc_mark_exceptions(void);   /* fwd */
 static void gc_mark_multi(void);        /* fwd */
@@ -200,6 +215,7 @@ static void gc_collect(void) {
     gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
     gc_mark_exceptions();   /* valor de exceção em voo */
     gc_mark_multi();        /* funções de dispatch de multimethods + :default */
+    gc_mark_consts();       /* vetores literais constantes cacheados */
     gc_sweep();
     alloc_since_gc = 0;
 }

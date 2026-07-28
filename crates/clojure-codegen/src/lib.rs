@@ -127,6 +127,7 @@ const NIL: i64 = 2;
 const FALSEV: i64 = 6;
 const TRUEV: i64 = 10;
 const T_VEC: i64 = 5; // tag de PersistentVector (deve casar com runtime.c)
+const CONST_CACHE_MAX: usize = 8192; // deve casar com CONST_MAX no runtime
                       // Offsets dos campos de PVec/VNode (Obj = 16 B). Devem casar com runtime.c.
 const PV_COUNT: i32 = 16;
 const PV_SHIFT: i32 = 24;
@@ -176,6 +177,8 @@ struct Runtime {
     // ADR-0006 Fase 3: push/popn/set viram stores diretos nestes globais.
     gc_stack_data: DataId, // Value gc_stack[]
     gc_sp_data: DataId,    // int64_t gc_sp
+    const_cache_data: DataId, // Value cljn_const_cache[]
+    const_register: FuncId,   // (id,v)->void
     // Funções de primeira classe
     make_fn: FuncId,  // (code,arity,nfree)->fn
     set_free: FuncId, // (fn,i,v)->void
@@ -308,6 +311,7 @@ pub fn compile_object_with_options(
     }
 
     let mut diags = Diagnostics::new();
+    let next_const = std::cell::Cell::new(0u32); // sites de vetor literal constante
 
     for f in &program.functions {
         let (id, _) = fn_ids[&f.name];
@@ -327,6 +331,7 @@ pub fn compile_object_with_options(
                 &runtime,
                 &fn_ids,
                 &str_data,
+                &next_const,
             );
             fg.build_entry(&f.methods, f.local_count, f.dispatch)
         };
@@ -358,6 +363,7 @@ pub fn compile_object_with_options(
                 &runtime,
                 &fn_ids,
                 &str_data,
+                &next_const,
             );
             fg.build_main(&program.main_body, program.main_local_count)
         };
@@ -484,6 +490,10 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         gc_stack_data: m
             .declare_data("gc_stack", Linkage::Import, true, false)
             .unwrap(),
+        const_cache_data: m
+            .declare_data("cljn_const_cache", Linkage::Import, true, false)
+            .unwrap(),
+        const_register: bin_void(m, "cljn_const_register"),
         gc_sp_data: m
             .declare_data("gc_sp", Linkage::Import, true, false)
             .unwrap(),
@@ -637,6 +647,8 @@ struct FnGen<'a> {
     frame_base: Option<Variable>,
     /// `self` (a closure) da função atual — usado para ler capturas.
     self_var: Option<Variable>,
+    /// Contador global de sites de vetor literal constante (hoisting, ADR-0009).
+    next_const: &'a std::cell::Cell<u32>,
 }
 
 impl<'a> FnGen<'a> {
@@ -649,6 +661,7 @@ impl<'a> FnGen<'a> {
         rt: &'a Runtime,
         fn_ids: &'a HashMap<String, (FuncId, usize)>,
         str_data: &'a HashMap<String, (DataId, usize)>,
+        next_const: &'a std::cell::Cell<u32>,
     ) -> Self {
         FnGen {
             module,
@@ -662,6 +675,7 @@ impl<'a> FnGen<'a> {
             recur_targets: Vec::new(),
             frame_base: None,
             self_var: None,
+            next_const,
         }
     }
 
@@ -1320,6 +1334,51 @@ impl<'a> FnGen<'a> {
     /// Constrói um vetor persistente por `conj` sucessivos (net-0), rooteando o
     /// acumulador durante as alocações do trie.
     fn gen_vec(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        // ADR-0009: hoisting de literal constante — se todos os elementos são
+        // imediatos (Int/Bool/Nil), o vetor é imutável: constrói uma vez e cacheia.
+        let all_const = !items.is_empty()
+            && items
+                .iter()
+                .all(|it| matches!(it, Ast::Int(_) | Ast::Bool(_) | Ast::Nil));
+        if all_const {
+            let id = self.next_const.get();
+            if (id as usize) < CONST_CACHE_MAX {
+                self.next_const.set(id + 1);
+                return self.gen_const_vec(id, items);
+            }
+        }
+        self.gen_vec_build(items)
+    }
+    /// Vetor literal constante cacheado: `cache[id]` se já construído, senão
+    /// constrói, registra (raiz de GC) e devolve. Não empurra (contrato de gen_vec).
+    fn gen_const_vec(&mut self, id: u32, items: &[Ast]) -> Result<CValue, Diagnostic> {
+        let gv = self
+            .module
+            .declare_data_in_func(self.rt.const_cache_data, self.builder.func);
+        let base = self.builder.ins().symbol_value(self.ptr, gv);
+        let slot = self.builder.ins().iadd_imm(base, (id as i64) * 8);
+        let cached = self
+            .builder
+            .ins()
+            .load(types::I64, MemFlags::trusted(), slot, 0);
+        let build_b = self.builder.create_block();
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, types::I64);
+        let nz = self.builder.ins().icmp_imm(IntCC::NotEqual, cached, 0);
+        self.builder
+            .ins()
+            .brif(nz, merge, &[cached.into()], build_b, &[]);
+        self.builder.switch_to_block(build_b);
+        self.builder.seal_block(build_b);
+        let built = self.gen_vec_build(items)?;
+        let id_v = self.builder.ins().iconst(types::I64, id as i64);
+        self.call_void(self.rt.const_register, &[id_v, built]);
+        self.builder.ins().jump(merge, &[built.into()]);
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        Ok(self.builder.block_params(merge)[0])
+    }
+    fn gen_vec_build(&mut self, items: &[Ast]) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(items.len());
         for it in items {
             vals.push(self.spill_arg(it)?); // n temps (imediatos derramados)
