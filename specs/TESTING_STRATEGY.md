@@ -160,8 +160,8 @@ Na comparação diferencial:
 - no mínimo 82% de linhas;
 - no mínimo 30% de linhas em cada arquivo medido.
 
-No último resultado registrado, o workspace atingiu 85,39% de regiões, 82,22% de
-funções e 84,97% de linhas.
+No último resultado registrado, o workspace atingiu 84,73% de regiões, 82,44% de
+funções e 83,88% de linhas.
 
 ## Benchmarks
 
@@ -174,12 +174,18 @@ Os CSVs registram, por caso e implementação, tempo de parede, CPU e pico de me
 comparação JVM deve manter versões, warmup, repetição e escala registrados para evitar
 comparar Cranelift frio com HotSpot aquecido sem contexto.
 
-The optional optimization IR has an additional **Planned** native A/B gate defined by
+The optional optimization IR has an additional executable native A/B gate defined by
 [OPTIMIZATION_IR_SPEC](OPTIMIZATION_IR_SPEC.md#13-blocking-cormen-non-regression-gate).
 It compares `--ir-opt none` with `--ir-opt safe` on the same commit for at least seven
 paired Cormen repetitions. A checksum difference, aggregate regression, confirmed
 chapter regression, or confirmed per-case regression blocks pass promotion. The JVM
 columns remain contextual and are not rewritten by that native A/B gate.
+
+`scripts/conformance.sh verify --status active --ir-opt safe` executes the active
+compiled corpus through the opt-in IR adapter. The dedicated performance gate is
+`make benchmarks-cormen-ir`; passing ordinary conformance alone does not promote the
+profile. The current seven-pair, scale-25 result passes at 0.9568 wall and 0.9565 CPU
+candidate/control while preserving every Cormen checksum.
 
 ## Aceite
 

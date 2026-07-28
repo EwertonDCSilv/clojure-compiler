@@ -36,6 +36,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
 | [`docs/usage.md`](docs/usage.md) | CLI, Makefile, installation, tests, and benchmarks |
 | [`docs/architecture.md`](docs/architecture.md) | Crates, AOT pipeline, runtime, and GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | Audited HEAD, measured compiler commit, and current results |
+| [`CHANGELOG.md`](CHANGELOG.md) | Unreleased work and published release history |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Executable A–E compatibility contract |
 | [`specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md`](specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | Planned native HTTP connector and Pedestal-compatible subset |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catalog and methodology for 98 Native × JVM performance workloads |
@@ -140,6 +141,12 @@ Hello from native Clojure
 Cranelift optimization can be selected with `--opt-level none`, `speed`, or
 `speed-and-size`. The current default is `none`; optimized modes remain explicit while
 their benchmark regressions are investigated.
+
+The compiler-owned IR can be enabled explicitly with `--ir-opt safe`. The current
+partial implementation optimizes verified scalar islands and propagates conservative
+fixnum facts through loops and non-escaping direct calls. Its seven-pair, scale-25
+Cormen gate passed with median wall and CPU improvements of 4.32% and 4.35%;
+`--ir-opt none` remains the default.
 
 ## Other CLI commands
 

@@ -54,11 +54,14 @@ execution are tracked by [ADR-0004](adr/0004-macro-execution.md).
 - promotes fresh, uniquely used vector loop accumulators to transients; and
 - rejects forms outside the compiled subset with spanned diagnostics.
 
-The result is the documented `Program`/`Expr` AST consumed directly by codegen.
-There is no stable HIR/LIR boundary today. The interprocedural transform covers
+The result is the documented `Program`/`Expr` AST consumed directly by codegen by
+default. An optional `clojure-ir` boundary now lowers pure scalar islands, verifies and
+optimizes them, and materializes proven constants before direct codegen. It does not
+yet lower complete functions or serve as the final Cranelift input. The
+interprocedural transform covers
 the chained-accumulator pattern in
 [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md). General escape
-analysis, tuple out-slots, scalar replacement, and a dedicated optimization IR
+analysis, tuple out-slots, scalar replacement, and complete function-level IR lowering
 remain **Planned** under
 [ADR-0014](adr/0014-optional-optimization-ir.md).
 
@@ -77,8 +80,9 @@ functions to Cranelift IR and emits one host object.
 - Heap values live across allocation remain in root slots.
 - Immediate-only vector literals use a permanently rooted site cache.
 
-`CodegenOptions` accepts `none`, `speed`, and `speed-and-size`. The CLI currently
-defaults to `none`; benchmark methodology records the selected level explicitly.
+`CodegenOptions` independently accepts Cranelift levels `none`, `speed`, and
+`speed-and-size`, plus compiler IR modes `none` and experimental `safe`. Both dimensions
+default to `none`; benchmark methodology records them explicitly.
 
 ## 5. Runtime and link
 
@@ -130,10 +134,10 @@ runtime checks into catchable values are **Planned**; see
 
 ## Planned evolution
 
-1. Introduce the optional, verified IR from
-   [`OPTIMIZATION_IR_SPEC.md`](OPTIMIZATION_IR_SPEC.md), disabled by default.
-2. Compute liveness and retain roots only across safepoints in that IR.
-3. Admit compiler-owned passes only after their blocking Cormen non-regression gate.
+1. Extend the optional verified scalar IR from
+   [`OPTIMIZATION_IR_SPEC.md`](OPTIMIZATION_IR_SPEC.md) to complete function CFGs.
+2. Lower verified IR directly to Cranelift and consume its root plan at safepoints.
+3. Promote compiler-owned passes only after their blocking Cormen non-regression gate.
 4. Extend escape and uniqueness analysis beyond current vector patterns.
 5. Execute user macros deterministically through the bootstrap path.
 

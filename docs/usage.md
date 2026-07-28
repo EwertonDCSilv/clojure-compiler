@@ -136,6 +136,11 @@ disponíveis.
 `none`; os modos otimizados são opt-in enquanto as regressões observadas na suíte Cormen
 são investigadas.
 
+`--ir-opt none|safe` seleciona separadamente a IR mantida pelo compilador. `none`
+continua sendo o padrão estável. `safe` é opt-in e a implementação continua parcial,
+mas o perfil atual passou `make benchmarks-cormen-ir`: 0,9568 em wall e 0,9565 em CPU
+contra o pipeline direto no gate de sete pares e escala 25.
+
 Sem `-o`/`--output`, o nome de saída é o nome do arquivo sem a extensão. O binário
 produzido não requer JVM em tempo de execução, mas o build invoca o compilador C do
 sistema para o link final.

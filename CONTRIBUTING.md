@@ -15,6 +15,12 @@ All behavior-changing work follows the Red–Green–Refactor cycle in
 [`specs/DOCUMENTATION_STYLE.md`](specs/DOCUMENTATION_STYLE.md) and is updated with the
 contract it describes.
 
+Every commit also updates the relevant category under
+[`CHANGELOG.md`](CHANGELOG.md) `Unreleased`. Release preparation moves those entries
+into a dated version section without rewriting historical releases. Changelog-only and
+release-bookkeeping commits do not need a self-referential entry. The staged
+pre-commit hook enforces this policy.
+
 ## Enable the repository hooks
 
 Run this once in each checkout:

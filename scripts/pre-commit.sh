@@ -20,6 +20,7 @@ esac
 cd "${repository}"
 
 declare -a files=()
+declare -a staged_changes=()
 if [[ "${mode}" == "all" ]]; then
   mapfile -d '' -t files < <(
     {
@@ -31,10 +32,36 @@ else
   mapfile -d '' -t files < <(
     git diff --cached --name-only --diff-filter=ACMR -z
   )
+  mapfile -d '' -t staged_changes < <(
+    git diff --cached --name-only --diff-filter=ACMRD -z
+  )
+fi
+
+if [[ "${mode}" == "staged" ]] && ((${#staged_changes[@]} == 0)); then
+  printf 'pre-commit: no files to check.\n'
+  exit 0
+fi
+
+if [[ "${mode}" == "staged" ]]; then
+  changelog_staged=0
+  other_change_staged=0
+  for path in "${staged_changes[@]}"; do
+    if [[ "${path}" == "CHANGELOG.md" ]]; then
+      changelog_staged=1
+    else
+      other_change_staged=1
+    fi
+  done
+  if ((other_change_staged != 0 && changelog_staged == 0)); then
+    printf '%s\n' \
+      "pre-commit: repository changes require a staged CHANGELOG.md update." \
+      "Add a concise entry under Unreleased before committing." >&2
+    exit 1
+  fi
 fi
 
 if ((${#files[@]} == 0)); then
-  printf 'pre-commit: no files to check.\n'
+  printf 'pre-commit: no non-deleted files to check.\n'
   exit 0
 fi
 

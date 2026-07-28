@@ -7,6 +7,7 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 native_runner="$script_dir/run.sh"
 compiler=""
 opt_level=""
+ir_opt="none"
 chapter=""
 scale=25
 csv_path="$script_dir/results/extreme.csv"
@@ -22,6 +23,7 @@ usage() {
     "  --chapter PREFIX         Executa um capítulo, por exemplo 04" \
     "  --compiler PATH          Usa um binário específico do compilador nativo" \
     "  --opt-level LEVEL        Usa none, speed ou speed-and-size no Cranelift" \
+    "  --ir-opt MODE            Usa none ou safe na IR do compilador (padrão: none)" \
     "  --scale N                Multiplica a carga interna (padrão: 25)" \
     "  --csv PATH               Grava o CSV neste caminho" \
     "  --clojure-classpath CP   Usa um runtime Clojure/JVM já instalado" \
@@ -40,6 +42,10 @@ while (($# > 0)); do
       ;;
     --opt-level)
       opt_level="${2:-}"
+      shift 2
+      ;;
+    --ir-opt)
+      ir_opt="${2:-}"
       shift 2
       ;;
     --scale)
@@ -75,6 +81,14 @@ case "$opt_level" in
   ""|none|speed|speed-and-size) ;;
   *)
     printf 'Nível de otimização inválido: %s\n' "$opt_level" >&2
+    exit 2
+    ;;
+esac
+
+case "$ir_opt" in
+  none|safe) ;;
+  *)
+    printf 'Modo de IR inválido: %s\n' "$ir_opt" >&2
     exit 2
     ;;
 esac
@@ -151,6 +165,7 @@ trap cleanup EXIT
 
 native_csv="$output_dir/native.csv"
 declare -a native_args=(--scale "$scale" --csv "$native_csv")
+native_args+=(--ir-opt "$ir_opt")
 if [[ -n "$chapter" ]]; then
   native_args+=(--chapter "$chapter")
 fi

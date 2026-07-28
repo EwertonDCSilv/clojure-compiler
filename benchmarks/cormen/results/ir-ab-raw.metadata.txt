@@ -1,0 +1,17 @@
+schema=clojure-compiler-ir-ab-v1
+git_head=a3b3e81684e0c7af001a23723fcc283450bc2d5f
+git_worktree=dirty
+recorded_at_utc=2026-07-28T20:48:45Z
+kernel=Linux 6.14.0-37-generic x86_64 GNU/Linux
+cpu=AMD Ryzen 5 8600G w/ Radeon 760M Graphics
+affinity=0-11
+cpu_governor===> /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor <==
+rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+cc=cc (Ubuntu 14.2.0-19ubuntu2) 14.2.0
+cranelift_codegen=0.124.3
+compiler_sha256=eb92bf3301d10092723b0039a87f9b59f56fec533ef726aefd072a5e8575f6c7
+repetitions=7
+scale=25
+chapter=all
+control=--ir-opt none --opt-level none
+candidate=--ir-opt safe --opt-level none

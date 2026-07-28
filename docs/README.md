@@ -16,9 +16,10 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 | [Uso do compilador](usage.md) | requisitos, Makefile, CLI, instalação, testes e benchmarks |
 | [Arquitetura](architecture.md) | crates, pipeline AOT, modelo de valores, runtime e gates |
 | [Snapshot](SNAPSHOT.md) | HEAD auditado, mudanças incluídas e benchmark de referência |
+| [Changelog](../CHANGELOG.md) | alterações ainda não lançadas e histórico das releases |
 | [Especificações](../specs/README.md) | escopo da linguagem, decisões, planos e ADRs |
 | [Connector Pedestal](../specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | alvo planejado de HTTP nativo e compatibilidade por subconjunto |
-| [IR opcional de otimização](../specs/OPTIMIZATION_IR_SPEC.md) | contrato proposto, gates e política de não regressão Cormen |
+| [IR opcional de otimização](../specs/OPTIMIZATION_IR_SPEC.md) | implementação parcial, gates e política de não regressão Cormen |
 | [Conformidade](../specs/conformance/README.md) | contrato executável da matriz A–E |
 | [Benchmarks](../benchmarks/README.md) | 98 cargas de comparação de desempenho Native × JVM |
 

@@ -1,6 +1,6 @@
 # Optional Optimization IR Specification
 
-- Status: **Planned**
+- Status: **Partially implemented**
 - Decision: [ADR-0014](adr/0014-optional-optimization-ir.md)
 - Related:
   [compiler pipeline](COMPILER_PIPELINE.md),
@@ -41,6 +41,39 @@ Reader -> known expansion -> Analyzer AST -> Cranelift IR -> native executable
 
 The optimization IR is opt-in. Cargo release mode, Cranelift optimization level, or
 the presence of profiling data must not enable it implicitly.
+
+### 1.1 Executable implementation snapshot
+
+The current opt-in slice delivers:
+
+- the backend-neutral `clojure-ir` workspace crate;
+- deterministic values, blocks, CFG terminators, effects, representations, printer,
+  verifier, liveness, and conservative root-slot planning;
+- checked folding, CFG cleanup, copy propagation, local CSE, branch simplification,
+  and effect-aware DCE, with verifier checks around transformations;
+- `--ir-opt none|safe`, with `none` remaining the default;
+- lowering and re-materialization of pure scalar expression islands while every AST
+  container is traversed conservatively;
+- fixnum representation propagation through sequential `let` bindings, loop/recur
+  fixed points, intrinsic integer-returning primitives, and non-escaping fixed-arity
+  direct calls;
+- direct fixnum arithmetic and comparison lowering without redundant type guards,
+  while retaining overflow, divide-by-zero, and runtime slow paths;
+- active conformance execution in either mode; and
+- `benchmarks/cormen/compare-ir.sh`, which records paired alternating samples and
+  calculates median, MAD, and deterministic bootstrap intervals.
+
+This is not the complete pipeline drawn above. Unsupported and effectful AST regions
+still use the direct lowering, and optimized IR does not yet lower whole functions to
+Cranelift. The `safe` profile remains explicit and `none` remains the default.
+
+The current full A/B execution preserved all 30 checksums and passed the blocking
+performance gate. Across seven paired alternating scale-25 repetitions, aggregate
+candidate/control was 0.9568 for wall time and 0.9565 for CPU: median improvements of
+4.32% and 4.35%, respectively. The versioned
+[report](../benchmarks/cormen/results/ir-ab-report.md) and
+[raw samples](../benchmarks/cormen/results/ir-ab-raw.csv) are the current evidence; the
+whole-function work remains necessary to deliver the complete architecture.
 
 ## 2. Goals
 
@@ -83,7 +116,7 @@ separate decisions.
 
 ### 4.1 Public switch
 
-**Planned:** `clojure-native build` accepts:
+**Implemented, experimental:** `clojure-native build` accepts:
 
 ```text
 --ir-opt none|safe
@@ -132,7 +165,7 @@ IR dumping must not change optimization decisions or generated code.
 
 ## 5. Ownership and crate boundary
 
-**Planned:** add a `clojure-ir` workspace crate.
+**Partially implemented:** the workspace contains a `clojure-ir` crate.
 
 ```text
 crates/clojure-ir/
@@ -478,7 +511,7 @@ be rewritten by this A/B gate.
 
 ### 13.2 Measurement protocol
 
-**Planned:** `benchmarks/cormen/compare-ir.sh`:
+**Implemented for gate execution:** `benchmarks/cormen/compare-ir.sh`:
 
 - builds the control and candidate compilers or modes once;
 - runs all 30 cases at scale 25;
@@ -664,4 +697,3 @@ The specification is implemented only when:
 | IR leaks Cranelift details | crate dependency rule and backend-neutral public model |
 | exception or I/O is reordered | orthogonal effect flags and verifier barriers |
 | optimization becomes default accidentally | CLI tests in debug/release and superseding-ADR requirement |
-

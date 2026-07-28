@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 clojure-analyzer.workspace = true
 clojure-diagnostics.workspace = true
+clojure-ir.workspace = true
 cranelift-codegen = "0.124"
 cranelift-frontend = "0.124"
 cranelift-module = "0.124"

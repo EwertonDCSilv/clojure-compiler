@@ -72,12 +72,16 @@ fn print_usage() {
          \x20 clojure-native read  <arquivo.clj>           Lê e imprime as forms (dump determinístico)\n\
          \x20 clojure-native eval  <expr>                  Avalia uma expressão (interpretador)\n\
          \x20 clojure-native run   <arquivo.clj> [--main]  Executa via interpretador (script)\n\
-         \x20 clojure-native build <arquivo.clj> [-o out] [--opt-level nível]\n\
+         \x20 clojure-native build <arquivo.clj> [-o out] [--opt-level nível] [--ir-opt modo]\n\
          \x20                                              Compila para binário nativo\n\
          \n\
          NÍVEIS DE OTIMIZAÇÃO DO BUILD:\n\
          \x20 none | speed | speed-and-size\n\
-         \x20 Padrão atual: none; speed permanece experimental devido ao gate Cormen\n",
+         \x20 Padrão atual: none; speed permanece experimental devido ao gate Cormen\n\
+         \n\
+         IR DE OTIMIZAÇÃO OPCIONAL:\n\
+         \x20 none | safe\n\
+         \x20 Padrão: none; safe executa passes verificados e especialização de fixnum\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -283,6 +287,7 @@ fn cmd_build(args: &[String]) -> ExitCode {
     let mut path = None;
     let mut output = None;
     let mut optimization_level = None;
+    let mut ir_optimization = None;
     let mut source_paths: Vec<std::path::PathBuf> = Vec::new();
     let mut i = 0;
     while i < args.len() {
@@ -308,6 +313,20 @@ fn cmd_build(args: &[String]) -> ExitCode {
                     Ok(level) => optimization_level = Some(level),
                     Err(message) => {
                         eprintln!("nível de otimização inválido `{value}`; {message}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+                i += 2;
+            }
+            "--ir-opt" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--ir-opt requer um valor: none ou safe");
+                    return ExitCode::FAILURE;
+                };
+                match value.parse::<clojure_codegen::IrOptimizationMode>() {
+                    Ok(mode) => ir_optimization = Some(mode),
+                    Err(message) => {
+                        eprintln!("modo de IR inválido `{value}`; {message}");
                         return ExitCode::FAILURE;
                     }
                 }
@@ -395,10 +414,10 @@ fn cmd_build(args: &[String]) -> ExitCode {
         }
     };
     // Stage 3: lower the analyzed program to a host object.
-    let codegen_options = optimization_level.map_or_else(
-        clojure_codegen::CodegenOptions::default,
-        |optimization_level| clojure_codegen::CodegenOptions { optimization_level },
-    );
+    let codegen_options = clojure_codegen::CodegenOptions {
+        optimization_level: optimization_level.unwrap_or(clojure_codegen::OptimizationLevel::None),
+        ir_optimization: ir_optimization.unwrap_or(clojure_codegen::IrOptimizationMode::None),
+    };
     let obj = match clojure_codegen::compile_object_with_options(&program, codegen_options) {
         Ok(o) => o,
         Err(d) => {

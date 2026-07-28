@@ -192,6 +192,30 @@ fn rejects_invalid_cranelift_optimization_level() {
 }
 
 #[test]
+fn optional_ir_mode_is_explicit_and_matches_the_default_pipeline() {
+    if !have_cc() {
+        return;
+    }
+    let src = "(ns ir.core)\n(defn -main [] (println (+ 20 22)))\n(-main)";
+    let default = build_and_run_with_options("cljn_e2e_ir_default", src, &[], &[]);
+    let none = build_and_run_with_options("cljn_e2e_ir_none", src, &["--ir-opt", "none"], &[]);
+    let safe = build_and_run_with_options("cljn_e2e_ir_safe", src, &["--ir-opt", "safe"], &[]);
+    assert_eq!(default, "42\n");
+    assert_eq!(none, default);
+    assert_eq!(safe, default);
+}
+
+#[test]
+fn rejects_invalid_ir_optimization_mode() {
+    let output = Command::new(cli())
+        .args(["build", "unused.clj", "--ir-opt", "aggressive"])
+        .output()
+        .expect("executa build");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("modo de IR inválido"));
+}
+
+#[test]
 fn linear_router_params_404_405_and_via_chain() {
     if !have_cc() {
         return;

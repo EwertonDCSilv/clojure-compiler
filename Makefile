@@ -11,6 +11,7 @@ CLI_NAME := clojure-native
 CLI_BINARY := target/release/$(CLI_NAME)
 BENCHMARK_CHART_RENDERER := target/benchmark-tools/render-benchmark-charts
 BENCHMARK_CHART_TESTS := target/benchmark-tools/render-benchmark-charts-tests
+IR_AB_ANALYZER_TESTS := target/benchmark-tools/analyze-ir-ab-tests
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -18,6 +19,7 @@ DESTDIR ?=
 
 CRACKING_ARGS ?=
 CORMEN_ARGS ?=
+CORMEN_IR_ARGS ?=
 EXERCISM_ARGS ?=
 CRACKING_COMPARE_ARGS ?=
 CORMEN_COMPARE_ARGS ?=
@@ -33,10 +35,10 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	help all ci quality docs-check pre-commit pre-push hooks-install \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-benchmark-charts coverage \
+	test test-runtime test-runtime-sanitize test-benchmark-charts test-ir-ab-analyzer coverage \
 	compatibility compatibility-list compatibility-oracle \
 	exercism-compatibility \
-	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-exercism benchmarks-list \
+	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
 	benchmarks-charts \
 	benchmarks-ci benchmarks-compare benchmarks-compare-cracking \
 	benchmarks-compare-cormen benchmarks-compare-exercism \
@@ -61,6 +63,7 @@ help:
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
 		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
+		"  benchmarks-cormen-ir     Executa o gate A/B da IR opcional no Cormen" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
 		"  benchmarks-compare       Compara as três suítes com Clojure/JVM AOT" \
 		"  exercism-compatibility   Audita 101 práticas, 13 conceitos e 493 arquivos Exercism" \
@@ -74,6 +77,7 @@ help:
 		"  test-runtime             Testa o runtime C" \
 		"  test-runtime-sanitize    Testa o runtime C com sanitizers" \
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
+		"  test-ir-ab-analyzer      Testa o analisador estatístico do gate de IR" \
 		"  compatibility-list       Lista casos da matriz de compatibilidade" \
 		"  compatibility-oracle     Compara com o oracle Clojure/JVM manual" \
 		"  benchmarks-list          Lista todos os casos das três suítes" \
@@ -83,6 +87,7 @@ help:
 		"  CONFORMANCE_ARGS='--level A --status active'" \
 		"  CRACKING_ARGS='--chapter 08 --scale 10'" \
 		"  CORMEN_ARGS='--chapter 05'" \
+		"  CORMEN_IR_ARGS='--repetitions 7 --scale 25'" \
 		"  EXERCISM_ARGS='--scale 5'" \
 		"  CRACKING_COMPARE_ARGS='--chapter 01 --scale 25'" \
 		"  CORMEN_COMPARE_ARGS='--chapter 06 --scale 25'" \
@@ -126,10 +131,12 @@ check:
 fmt:
 	$(CARGO) fmt --all
 	rustfmt --edition 2021 benchmarks/render-benchmark-charts.rs
+	rustfmt --edition 2021 benchmarks/analyze-ir-ab.rs
 
 fmt-check:
 	$(CARGO) fmt --all --check
 	rustfmt --edition 2021 --check benchmarks/render-benchmark-charts.rs
+	rustfmt --edition 2021 --check benchmarks/analyze-ir-ab.rs
 
 lint: lint-files lint-rust lint-c lint-clojure
 
@@ -145,7 +152,7 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-benchmark-charts
+test: test-benchmark-charts test-ir-ab-analyzer
 	$(CARGO) test --workspace
 
 test-runtime:
@@ -153,6 +160,13 @@ test-runtime:
 
 test-runtime-sanitize:
 	scripts/test-runtime-c.sh --sanitize
+
+$(IR_AB_ANALYZER_TESTS): benchmarks/analyze-ir-ab.rs
+	mkdir -p "$(dir $@)"
+	$(RUSTC) --edition=2021 -D warnings --test "$<" -o "$@"
+
+test-ir-ab-analyzer: $(IR_AB_ANALYZER_TESTS)
+	$(IR_AB_ANALYZER_TESTS)
 
 coverage:
 	scripts/coverage.sh $(COVERAGE_ARGS)
@@ -182,6 +196,9 @@ benchmarks-cracking: release
 
 benchmarks-cormen: release
 	benchmarks/cormen/run.sh $(CORMEN_ARGS)
+
+benchmarks-cormen-ir: release
+	benchmarks/cormen/compare-ir.sh $(CORMEN_IR_ARGS)
 
 benchmarks-exercism: release
 	benchmarks/exercism/run.sh $(EXERCISM_ARGS)

@@ -101,8 +101,9 @@ Ordem sugerida:
 9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
 10. [PEDESTAL_NATIVE_CONNECTOR_SPEC.md](PEDESTAL_NATIVE_CONNECTOR_SPEC.md) — **Planejado**:
     connector HTTP nativo e subconjunto de aplicação compatível com Pedestal.
-11. [OPTIMIZATION_IR_SPEC.md](OPTIMIZATION_IR_SPEC.md) — **Planned**: optional,
-    verified optimization IR with a blocking Cormen non-regression gate.
+11. [OPTIMIZATION_IR_SPEC.md](OPTIMIZATION_IR_SPEC.md) — **Partially implemented**:
+    optional verified scalar IR, with whole-function lowering and promotion still
+    blocked by the Cormen gate.
 12. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
     `assoc` persistente e `nth` genérico.
 13. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
@@ -159,7 +160,8 @@ para reproduzir uma medição histórica.
 - [0013](adr/0013-compiled-clojure-pedestal-native-connector.md) — connector
   Pedestal-compatible escrito em Clojure compilado sobre provider HTTP C (proposta).
 - [0014](adr/0014-optional-optimization-ir.md) — optional, backend-neutral
-  optimization IR that remains disabled by default (proposed).
+  optimization IR that remains disabled by default (accepted; implementation in
+  progress).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
@@ -173,7 +175,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Valor nativo | fixnums tagueados + ponteiros para objetos GC | especialização/unboxing medidos |
 | Memória | mark-sweep preciso, não móvel, single-thread, shadow stack | rooting por liveness; GC geracional futuro |
 | Bootstrap | primitivas no runtime + core compilado em Clojure | self-hosting parcial |
-| Otimização | fast paths inteiros, stores diretos, auto-transient intra/interprocedural inicial e hoisting de literais | optional verified IR, safepoint liveness, and passes admitted only by the Cormen gate |
+| Otimização | fast paths inteiros, stores diretos, auto-transient, hoisting e IR escalar opt-in experimental | whole-function verified IR, safepoint liveness, and passes admitted only by the Cormen gate |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
 | Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
 | I/O | output, flush, redirecionamento, texto em arquivo e streams de string | filesystem amplo, binários e reader/EDN completo conforme IO_SPEC |

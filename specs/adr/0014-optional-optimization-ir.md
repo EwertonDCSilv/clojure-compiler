@@ -1,6 +1,6 @@
 # ADR-0014 — Add an optional compiler-owned optimization IR
 
-- Status: **Proposed**
+- Status: **Accepted; implementation in progress**
 - Date: 2026-07-28
 - Specification: [Optional Optimization IR](../OPTIMIZATION_IR_SPEC.md)
 - Related:
@@ -11,6 +11,32 @@
   [ADR-0010](0010-interprocedural-ephemeral-vectors.md),
   [ADR-0011](0011-rust-crate-unit-testing-strategy.md), and
   [ADR-0012](0012-rust-crate-modularization.md)
+
+## Implementation status
+
+The decision has been adopted without changing the default pipeline. The first
+implementation slice provides the backend-neutral `clojure-ir` crate, deterministic
+IDs and printing, CFG verification, representation and effect facts, liveness-based
+root planning, conservative local passes, the explicit `--ir-opt none|safe` switch,
+dual-mode conformance execution, and the paired Cormen A/B harness.
+
+The `safe` spelling is an opt-in performance profile. Its adapter lowers verified pure
+scalar islands, materializes proven constants, propagates fixnum representations
+through loops and non-escaping direct calls, and removes redundant numeric type guards
+before the existing direct Cranelift lowering. Overflow, divide-by-zero, dynamic-type
+slow paths, and evaluation order remain intact. Complete Analyzer AST CFG lowering,
+IR-to-Cranelift lowering, LICM, optimized root emission, and deterministic CLI dumps
+remain open. Consequently, the acceptance checklist at the end of this ADR is not yet
+complete and `none` remains the default.
+
+The current complete harness run used all 30 Cormen cases, scale 25, and seven paired
+alternating repetitions. It preserved every checksum and **passed** the blocking
+performance gate: candidate/control was 0.9568 for aggregate wall time and 0.9565 for
+aggregate CPU, or median improvements of 4.32% and 4.35%. Raw samples and the
+statistical report are versioned under
+[`benchmarks/cormen/results/`](../../../benchmarks/cormen/results/ir-ab-report.md).
+These measurements qualify the current explicit profile without enabling it by
+default or claiming that the whole-function architecture is complete.
 
 ## Context
 

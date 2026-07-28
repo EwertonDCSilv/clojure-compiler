@@ -6,6 +6,16 @@ repository="$(cd -- "$script_dir/.." && pwd)"
 
 cd "$repository"
 
+echo "Checking changelog contract..."
+if [[ ! -s CHANGELOG.md ]]; then
+  echo "missing CHANGELOG.md" >&2
+  exit 1
+fi
+if ! grep -Fq '## [Unreleased]' CHANGELOG.md; then
+  echo "CHANGELOG.md does not contain an Unreleased section" >&2
+  exit 1
+fi
+
 echo "Checking AI contributor instructions..."
 for required_rule in \
   AGENTS.md \

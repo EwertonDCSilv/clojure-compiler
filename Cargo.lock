@@ -66,6 +66,7 @@ version = "0.0.1"
 dependencies = [
  "clojure-analyzer",
  "clojure-diagnostics",
+ "clojure-ir",
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-module",
@@ -89,6 +90,13 @@ dependencies = [
  "clojure-span",
  "clojure-syntax",
  "clojure-value",
+]
+
+[[package]]
+name = "clojure-ir"
+version = "0.0.1"
+dependencies = [
+ "clojure-span",
 ]
 
 [[package]]

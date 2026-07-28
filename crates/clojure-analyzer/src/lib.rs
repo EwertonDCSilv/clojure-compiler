@@ -137,6 +137,12 @@ pub enum Ast {
 pub enum Callee {
     /// Built-in operation lowered through a known runtime or fast path.
     Prim(Prim),
+    /// Built-in operation whose operands are proven fixnums by optimization IR.
+    ///
+    /// The analyzer never emits this marker. The optional optimization adapter
+    /// may add it after proving every operand representation; code generation
+    /// must retain overflow behavior even though type guards are redundant.
+    ProvenFixnumPrim(Prim),
     /// Top-level function symbol.
     Fn(String),
 }

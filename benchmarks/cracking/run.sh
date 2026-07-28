@@ -6,6 +6,7 @@ script_dir="${CLJN_BENCHMARK_SUITE_DIR:-$default_script_dir}"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 compiler="$repo_root/target/release/clojure-native"
 opt_level=""
+ir_opt="none"
 chapter=""
 gc_stress=0
 list_only=0
@@ -20,6 +21,7 @@ usage() {
     "  --chapter PREFIX    Executa um capítulo, por exemplo 04" \
     "  --compiler PATH     Usa um binário específico do compilador" \
     "  --opt-level LEVEL   Usa none, speed ou speed-and-size no Cranelift" \
+    "  --ir-opt MODE       Usa none ou safe na IR do compilador (padrão: none)" \
     "  --gc-stress         Executa com CLJN_GC_STRESS=1" \
     "  --extreme           Multiplica a carga interna por 25" \
     "  --scale N           Multiplica a carga interna por N" \
@@ -41,6 +43,10 @@ while (($# > 0)); do
       ;;
     --opt-level)
       opt_level="${2:-}"
+      shift 2
+      ;;
+    --ir-opt)
+      ir_opt="${2:-}"
       shift 2
       ;;
     --gc-stress)
@@ -88,6 +94,14 @@ case "$opt_level" in
   ""|none|speed|speed-and-size) ;;
   *)
     printf 'Nível de otimização inválido: %s\n' "$opt_level" >&2
+    exit 2
+    ;;
+esac
+
+case "$ir_opt" in
+  none|safe) ;;
+  *)
+    printf 'Modo de IR inválido: %s\n' "$ir_opt" >&2
     exit 2
     ;;
 esac
@@ -147,6 +161,9 @@ fi
 if ((gc_stress)); then
   mode="$mode-gc-stress"
 fi
+if [[ "$ir_opt" != "none" ]]; then
+  mode="$mode-ir-$ir_opt"
+fi
 
 if [[ -n "$csv_path" ]]; then
   mkdir -p "$(dirname "$csv_path")"
@@ -189,6 +206,7 @@ for source in "${sources[@]}"; do
   if [[ -n "$opt_level" ]]; then
     build_args+=(--opt-level "$opt_level")
   fi
+  build_args+=(--ir-opt "$ir_opt")
 
   compile_start="$(date +%s%N)"
   if ! build_output="$("$compiler" "${build_args[@]}" 2>&1)"; then

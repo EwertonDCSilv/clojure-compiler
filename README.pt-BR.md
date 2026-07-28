@@ -36,6 +36,7 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 | [`docs/usage.md`](docs/usage.md) | CLI, Makefile, instalação, testes e benchmarks |
 | [`docs/architecture.md`](docs/architecture.md) | Crates, pipeline AOT, runtime e GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | HEAD auditado, commit medido e resultados atuais |
+| [`CHANGELOG.md`](CHANGELOG.md) | Trabalho ainda não lançado e histórico das releases |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Contrato executável de compatibilidade A–E |
 | [`specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md`](specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | Connector HTTP nativo planejado e subconjunto compatível com Pedestal |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catálogo e metodologia de 98 cargas de desempenho Native × JVM |
@@ -139,6 +140,12 @@ Hello from native Clojure
 A otimização do Cranelift pode ser escolhida com `--opt-level none`, `speed` ou
 `speed-and-size`. O padrão atual é `none`; os modos otimizados continuam explícitos
 enquanto suas regressões nos benchmarks são investigadas.
+
+A IR mantida pelo compilador pode ser ativada explicitamente com `--ir-opt safe`. A
+implementação parcial atual otimiza ilhas escalares verificadas e propaga fatos
+conservadores de fixnum por loops e chamadas diretas que não escapam. O gate Cormen com
+sete pares e escala 25 passou, com melhorias medianas de 4,32% em wall e 4,35% em CPU;
+`--ir-opt none` permanece como padrão.
 
 ## Outros comandos da CLI
 

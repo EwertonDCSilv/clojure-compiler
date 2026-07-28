@@ -19,6 +19,12 @@ implemented.
 
 ## Documentation requirements
 
+- Every change intended for commit must update the appropriate section under
+  [`CHANGELOG.md`](CHANGELOG.md) `Unreleased`. Keep entries user- and
+  contributor-relevant, group them as Added, Changed, Deprecated, Removed, Fixed,
+  Security, or Performance, and move them to a dated version section when releasing.
+  A change whose sole purpose is changelog or release bookkeeping is exempt from
+  adding a second self-referential entry.
 - Write technical documentation, docstrings, and source comments in concise English.
   Keep compiler diagnostics, CLI messages, and user-visible snapshots in Portuguese.
 - Follow `specs/DOCUMENTATION_STYLE.md` whenever adding or changing a crate, module,
@@ -78,5 +84,7 @@ characterization test, or lint gate before and after the change.
   test, unless the TDD exception is explicitly justified.
 - Flag documentation that violates `specs/DOCUMENTATION_STYLE.md`, describes planned
   behavior as implemented, or omits a changed public/ABI/GC contract.
+- Flag a commit that changes the repository without updating the `Unreleased`
+  changelog, except for changelog-only or release-bookkeeping commits.
 - Flag weakened tests, unexplained snapshot/checksum changes, hidden conformance
   regressions, unrooted live `Value` objects, and Rust/C ABI mismatches.

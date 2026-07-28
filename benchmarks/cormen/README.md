@@ -59,7 +59,22 @@ make benchmarks-charts
 make benchmarks-compare-cormen \
   CORMEN_COMPARE_ARGS="--opt-level speed" \
   CORMEN_COMPARISON_CSV=benchmarks/cormen/results/cranelift-speed.csv
+
+# Comparar IR direta e experimental em 7 pares alternados, sem alterar a JVM
+make benchmarks-cormen-ir \
+  CORMEN_IR_ARGS="--repetitions 7 --scale 25"
 ```
+
+O gate da IR grava amostras brutas em `results/ir-ab-raw.csv`, metadados do ambiente em
+`results/ir-ab-raw.metadata.txt` e o resumo estatístico em `results/ir-ab-report.md`.
+Uma execução por capítulo ou com menos de sete pares é apenas diagnóstica e nunca
+promove o perfil.
+
+O resultado versionado atual passou o gate completo: `safe/none` foi 0,9568 em wall e
+0,9565 em CPU, ou melhorias medianas de 4,32% e 4,35%, respectivamente. Os 30 checksums
+foram preservados e não houve regressão confirmada por caso ou capítulo. Isso promove a
+evidência do perfil opt-in; não altera o padrão `--ir-opt none`. Consulte o
+[relatório A/B](results/ir-ab-report.md) para as amostras e os intervalos.
 
 Os scripts continuam disponíveis como interface de baixo nível. O
 [`Makefile`](../../Makefile) é a entrada recomendada para build, testes, compatibilidade

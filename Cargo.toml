@@ -9,6 +9,7 @@ members = [
     "crates/clojure-value",
     "crates/clojure-interp",
     "crates/clojure-analyzer",
+    "crates/clojure-ir",
     "crates/clojure-codegen",
     "crates/clojure-native-cli",
     "crates/clojure-test-support",
@@ -28,6 +29,7 @@ clojure-reader = { path = "crates/clojure-reader" }
 clojure-value = { path = "crates/clojure-value" }
 clojure-interp = { path = "crates/clojure-interp" }
 clojure-analyzer = { path = "crates/clojure-analyzer" }
+clojure-ir = { path = "crates/clojure-ir" }
 clojure-codegen = { path = "crates/clojure-codegen" }
 clojure-test-support = { path = "crates/clojure-test-support" }
 

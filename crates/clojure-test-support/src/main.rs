@@ -22,6 +22,7 @@ struct Common {
     jobs: usize,
     classpath: Option<String>,
     java: PathBuf,
+    ir_optimization: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -53,6 +54,7 @@ fn run(args: Vec<String>) -> Result<bool, String> {
                 report_directory: common.report_directory,
                 jobs: common.jobs,
                 filters: common.filters,
+                ir_optimization: common.ir_optimization,
             })?;
             println!("{}", human_summary(&report));
             Ok(report.success)
@@ -117,6 +119,7 @@ fn parse_common(args: &[String]) -> Result<Common, String> {
         jobs: MAX_JOBS,
         classpath: None,
         java: PathBuf::from("java"),
+        ir_optimization: None,
     };
     let mut index = 0;
     while index < args.len() {
@@ -139,6 +142,14 @@ fn parse_common(args: &[String]) -> Result<Common, String> {
             "--namespace" => common.filters.namespace = Some(value.clone()),
             "--classpath" => common.classpath = Some(value.clone()),
             "--java" => common.java = PathBuf::from(value),
+            "--ir-opt" => match value.as_str() {
+                "none" | "safe" => common.ir_optimization = Some(value.clone()),
+                _ => {
+                    return Err(format!(
+                        "invalid --ir-opt value `{value}`; expected none or safe"
+                    ))
+                }
+            },
             _ => return Err(format!("unknown option `{flag}`")),
         }
         index += 2;
@@ -150,7 +161,7 @@ fn print_usage() {
     println!(
         "clojure-conformance\n\n\
          Usage:\n\
-           clojure-conformance verify [filters] [--jobs 1..4]\n\
+           clojure-conformance verify [filters] [--jobs 1..4] [--ir-opt none|safe]\n\
            clojure-conformance list [filters]\n\
            clojure-conformance oracle --check [filters] [--classpath PATH]\n\
            clojure-conformance oracle --bless [filters] [--classpath PATH]\n\n\

@@ -239,6 +239,11 @@ pub struct VerifyOptions {
     pub jobs: usize,
     /// Case selectors applied before execution.
     pub filters: Filters,
+    /// Optional compiler-owned IR profile passed to build targets.
+    ///
+    /// Reader targets do not use the code-generation pipeline and therefore
+    /// do not receive this option.
+    pub ir_optimization: Option<String>,
 }
 
 /// Interpreted outcome of one conformance case.
@@ -665,12 +670,13 @@ pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
             let queue = Arc::clone(&queue);
             let sender = sender.clone();
             let compiler = &options.compiler;
+            let ir_optimization = options.ir_optimization.as_deref();
             scope.spawn(move || loop {
                 let case = queue.lock().expect("case queue poisoned").pop_front();
                 let Some(case) = case else {
                     break;
                 };
-                let report = execute_case(&case, compiler);
+                let report = execute_case(&case, compiler, ir_optimization);
                 if sender.send(report).is_err() {
                     break;
                 }
@@ -695,7 +701,7 @@ pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
     Ok(report)
 }
 
-fn execute_case(case: &Case, compiler: &Path) -> CaseReport {
+fn execute_case(case: &Case, compiler: &Path, ir_optimization: Option<&str>) -> CaseReport {
     let started = Instant::now();
     if case.manifest.status == CaseStatus::Pending {
         return CaseReport {
@@ -725,7 +731,7 @@ fn execute_case(case: &Case, compiler: &Path) -> CaseReport {
         };
     }
 
-    let outcome = execute_target(case, compiler);
+    let outcome = execute_target(case, compiler, ir_optimization);
     let (result, message, category) = match (case.manifest.status, outcome) {
         (CaseStatus::Active, MatchResult::Match(message)) => (ResultKind::Pass, message, None),
         (CaseStatus::Active, MatchResult::Mismatch(message, category)) => {
@@ -762,12 +768,12 @@ fn platform_matches(platforms: &[String]) -> bool {
             .any(|platform| platform == std::env::consts::OS)
 }
 
-fn execute_target(case: &Case, compiler: &Path) -> MatchResult {
+fn execute_target(case: &Case, compiler: &Path, ir_optimization: Option<&str>) -> MatchResult {
     let timeout = Duration::from_millis(case.manifest.timeout_ms);
     match case.manifest.target {
         Target::Reader => execute_reader(case, compiler, timeout),
-        Target::BuildRun => execute_build_run(case, compiler, timeout),
-        Target::BuildError => execute_build_error(case, compiler, timeout),
+        Target::BuildRun => execute_build_run(case, compiler, timeout, ir_optimization),
+        Target::BuildError => execute_build_error(case, compiler, timeout, ir_optimization),
         Target::Project => MatchResult::Mismatch(
             "project execution is not implemented".to_string(),
             Some("unsupported".to_string()),
@@ -827,7 +833,12 @@ fn execute_reader(case: &Case, compiler: &Path, timeout: Duration) -> MatchResul
     }
 }
 
-fn execute_build_run(case: &Case, compiler: &Path, timeout: Duration) -> MatchResult {
+fn execute_build_run(
+    case: &Case,
+    compiler: &Path,
+    timeout: Duration,
+    ir_optimization: Option<&str>,
+) -> MatchResult {
     let temporary = match TempDir::new() {
         Ok(value) => value,
         Err(error) => {
@@ -841,6 +852,9 @@ fn execute_build_run(case: &Case, compiler: &Path, timeout: Duration) -> MatchRe
     let input = case.directory.join("input.clj");
     let mut build = Command::new(compiler);
     build.arg("build").arg(&input).arg("-o").arg(&executable);
+    if let Some(profile) = ir_optimization {
+        build.arg("--ir-opt").arg(profile);
+    }
     let build_output = match run_process(&mut build, timeout) {
         Ok(output) => output,
         Err(error) => {
@@ -1126,7 +1140,12 @@ fn collect_snapshot(
     Ok(())
 }
 
-fn execute_build_error(case: &Case, compiler: &Path, timeout: Duration) -> MatchResult {
+fn execute_build_error(
+    case: &Case,
+    compiler: &Path,
+    timeout: Duration,
+    ir_optimization: Option<&str>,
+) -> MatchResult {
     let temporary = match TempDir::new() {
         Ok(value) => value,
         Err(error) => {
@@ -1140,6 +1159,9 @@ fn execute_build_error(case: &Case, compiler: &Path, timeout: Duration) -> Match
     let input = case.directory.join("input.clj");
     let mut command = Command::new(compiler);
     command.arg("build").arg(&input).arg("-o").arg(&executable);
+    if let Some(profile) = ir_optimization {
+        command.arg("--ir-opt").arg(profile);
+    }
     let output = match run_process(&mut command, timeout) {
         Ok(output) => output,
         Err(error) => {
@@ -2360,6 +2382,7 @@ chmod +x "$output"
             report_directory: temp.path().join("reports"),
             jobs: 1,
             filters: Filters::default(),
+            ir_optimization: None,
         })
         .expect("verify process fixture");
         assert!(report.success, "{:?}", report.cases);
@@ -2487,6 +2510,7 @@ chmod +x "$output"
             report_directory: report_directory.clone(),
             jobs: 2,
             filters: Filters::default(),
+            ir_optimization: None,
         })
         .expect("verify");
         assert!(report.success, "{:?}", report.cases);
@@ -2512,6 +2536,54 @@ chmod +x "$output"
 
     #[cfg(unix)]
     #[test]
+    fn verify_forwards_the_optional_ir_profile_only_to_build_targets() {
+        let temp = TempDir::new().expect("temp");
+        let root = temp.path().join("suite");
+        create_case(
+            &root,
+            "run",
+            "active",
+            "build-run",
+            "ignored\n",
+            Some("expected.stdout"),
+            "safe\n",
+        );
+        update_checksums(&root).expect("checksums");
+
+        let arguments = temp.path().join("compiler-arguments");
+        let compiler = temp.path().join("fake-compiler");
+        executable(
+            &compiler,
+            &format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\n\
+                 shift 2\n\
+                 while [ \"$#\" -gt 0 ]; do\n\
+                 \u{20} if [ \"$1\" = -o ]; then output=\"$2\"; break; fi\n\
+                 \u{20} shift\n\
+                 done\n\
+                 printf '#!/bin/sh\\nprintf \"safe\\\\n\"\\n' > \"$output\"\n\
+                 chmod +x \"$output\"\n",
+                arguments.display()
+            ),
+        );
+
+        let report = verify(&VerifyOptions {
+            root,
+            compiler,
+            report_directory: temp.path().join("reports"),
+            jobs: 1,
+            filters: Filters::default(),
+            ir_optimization: Some("safe".to_string()),
+        })
+        .expect("verify safe profile");
+
+        assert!(report.success, "{:?}", report.cases);
+        let arguments = fs::read_to_string(arguments).expect("compiler arguments");
+        assert!(arguments.contains("--ir-opt safe"), "{arguments}");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn xfail_that_passes_fails_the_suite() {
         let temp = TempDir::new().expect("temp");
         let root = temp.path().join("suite");
@@ -2533,6 +2605,7 @@ chmod +x "$output"
             report_directory: temp.path().join("reports"),
             jobs: 1,
             filters: Filters::default(),
+            ir_optimization: None,
         })
         .expect("verify");
         assert!(!report.success);

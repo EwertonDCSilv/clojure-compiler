@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use target_lexicon::Triple;
 
+mod ir_adapter;
+
 macro_rules! embed_runtime_modules {
     ($(($name:literal, $path:literal)),+ $(,)?) => {
         /// Amalgamated C runtime source compiled during the native link step.
@@ -101,11 +103,34 @@ impl FromStr for OptimizationLevel {
     }
 }
 
+/// Optional compiler-owned IR pipeline selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrOptimizationMode {
+    /// Preserve the direct Analyzer AST to Cranelift lowering.
+    None,
+    /// Run admitted IR passes and representation specializations before lowering.
+    Safe,
+}
+
+impl FromStr for IrOptimizationMode {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "safe" => Ok(Self::Safe),
+            _ => Err("esperado: none ou safe"),
+        }
+    }
+}
+
 /// Backend options independent of the C runtime compilation profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CodegenOptions {
     /// Cranelift optimization level.
     pub optimization_level: OptimizationLevel,
+    /// Optional compiler-owned optimization IR mode.
+    pub ir_optimization: IrOptimizationMode,
 }
 
 impl CodegenOptions {
@@ -113,6 +138,7 @@ impl CodegenOptions {
     pub const fn unoptimized() -> Self {
         Self {
             optimization_level: OptimizationLevel::None,
+            ir_optimization: IrOptimizationMode::None,
         }
     }
 
@@ -120,6 +146,7 @@ impl CodegenOptions {
     pub const fn optimized_for_speed() -> Self {
         Self {
             optimization_level: OptimizationLevel::Speed,
+            ir_optimization: IrOptimizationMode::None,
         }
     }
 }
@@ -316,6 +343,18 @@ pub fn compile_object_with_options(
     program: &Program,
     options: CodegenOptions,
 ) -> Result<Vec<u8>, Diagnostics> {
+    let optimized_program;
+    let program = match options.ir_optimization {
+        IrOptimizationMode::None => program,
+        IrOptimizationMode::Safe => {
+            optimized_program = ir_adapter::optimize_program(program).map_err(|diagnostic| {
+                let mut diagnostics = Diagnostics::new();
+                diagnostics.push(diagnostic);
+                diagnostics
+            })?;
+            &optimized_program
+        }
+    };
     let mut flags = settings::builder();
     flags
         .set("is_pic", "true")
@@ -890,6 +929,7 @@ impl<'a> FnGen<'a> {
             }
             Ast::Recur(_) => Imm, // Diverges and never materializes a Value.
             Ast::Call { callee, .. } => match callee {
+                Callee::ProvenFixnumPrim(_) => Imm,
                 Callee::Prim(p) if prim_imm_result(*p) => Imm,
                 _ => Heap,
             },
@@ -2093,6 +2133,7 @@ impl<'a> FnGen<'a> {
     fn gen_call(&mut self, callee: &Callee, args: &[Ast]) -> Result<CValue, Diagnostic> {
         match callee {
             Callee::Prim(p) => self.gen_prim(*p, args),
+            Callee::ProvenFixnumPrim(p) => self.gen_proven_fixnum_prim(*p, args),
             Callee::Fn(name) => {
                 let (id, _) = self.fn_ids[name];
                 // `argv` points into roots for every argument, including spills.
@@ -2140,16 +2181,24 @@ impl<'a> FnGen<'a> {
     }
 
     /// Emits guarded inline addition/subtraction with runtime fallback.
-    fn gen_fix_arith(&mut self, a: CValue, b: CValue, add: bool, slow: FuncId) -> CValue {
-        let both = self.fix_both_guard(a, b);
-        let fast_b = self.builder.create_block();
+    fn gen_fix_arith(
+        &mut self,
+        a: CValue,
+        b: CValue,
+        add: bool,
+        slow: FuncId,
+        guard_types: bool,
+    ) -> CValue {
         let slow_b = self.builder.create_block();
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64);
-        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
-
-        self.builder.switch_to_block(fast_b);
-        self.builder.seal_block(fast_b);
+        if guard_types {
+            let both = self.fix_both_guard(a, b);
+            let fast_b = self.builder.create_block();
+            self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+            self.builder.switch_to_block(fast_b);
+            self.builder.seal_block(fast_b);
+        }
         let ar = self.builder.ins().sshr_imm(a, 1);
         let br = self.builder.ins().sshr_imm(b, 1);
         let rr = if add {
@@ -2179,16 +2228,17 @@ impl<'a> FnGen<'a> {
     ///
     /// The fast path uses low/high signed products to detect i64 overflow,
     /// checks the narrower fixnum range, and retags the result.
-    fn gen_fix_mul(&mut self, a: CValue, b: CValue, slow: FuncId) -> CValue {
-        let both = self.fix_both_guard(a, b);
-        let fast_b = self.builder.create_block();
+    fn gen_fix_mul(&mut self, a: CValue, b: CValue, slow: FuncId, guard_types: bool) -> CValue {
         let slow_b = self.builder.create_block();
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64);
-        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
-
-        self.builder.switch_to_block(fast_b);
-        self.builder.seal_block(fast_b);
+        if guard_types {
+            let both = self.fix_both_guard(a, b);
+            let fast_b = self.builder.create_block();
+            self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+            self.builder.switch_to_block(fast_b);
+            self.builder.seal_block(fast_b);
+        }
         let ar = self.builder.ins().sshr_imm(a, 1);
         let br = self.builder.ins().sshr_imm(b, 1);
         let lo = self.builder.ins().imul(ar, br);
@@ -2215,16 +2265,17 @@ impl<'a> FnGen<'a> {
     }
 
     /// Emits guarded inline increment/decrement with runtime fallback.
-    fn gen_fix_unop(&mut self, a: CValue, delta: i64, slow: FuncId) -> CValue {
-        let g = self.fix_guard(a);
-        let fast_b = self.builder.create_block();
+    fn gen_fix_unop(&mut self, a: CValue, delta: i64, slow: FuncId, guard_type: bool) -> CValue {
         let slow_b = self.builder.create_block();
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64);
-        self.builder.ins().brif(g, fast_b, &[], slow_b, &[]);
-
-        self.builder.switch_to_block(fast_b);
-        self.builder.seal_block(fast_b);
+        if guard_type {
+            let guard = self.fix_guard(a);
+            let fast_b = self.builder.create_block();
+            self.builder.ins().brif(guard, fast_b, &[], slow_b, &[]);
+            self.builder.switch_to_block(fast_b);
+            self.builder.seal_block(fast_b);
+        }
         let ar = self.builder.ins().sshr_imm(a, 1);
         let rr = self.builder.ins().iadd_imm(ar, delta);
         let inr = self.fix_in_range(rr);
@@ -2250,16 +2301,24 @@ impl<'a> FnGen<'a> {
     /// Zero divisors use the slow path for the user-facing error. Quotient also
     /// guards the minimum-fixnum divided by -1 overflow case. Modulus adjusts a
     /// non-zero C remainder when operand signs differ.
-    fn gen_fix_div(&mut self, a: CValue, b: CValue, is_quot: bool, slow: FuncId) -> CValue {
-        let both = self.fix_both_guard(a, b);
-        let fast_b = self.builder.create_block();
+    fn gen_fix_div(
+        &mut self,
+        a: CValue,
+        b: CValue,
+        is_quot: bool,
+        slow: FuncId,
+        guard_types: bool,
+    ) -> CValue {
         let slow_b = self.builder.create_block();
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64);
-        self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
-
-        self.builder.switch_to_block(fast_b);
-        self.builder.seal_block(fast_b);
+        if guard_types {
+            let both = self.fix_both_guard(a, b);
+            let fast_b = self.builder.create_block();
+            self.builder.ins().brif(both, fast_b, &[], slow_b, &[]);
+            self.builder.switch_to_block(fast_b);
+            self.builder.seal_block(fast_b);
+        }
         let ar = self.builder.ins().sshr_imm(a, 1);
         let br = self.builder.ins().sshr_imm(b, 1);
         let bz = self.builder.ins().icmp_imm(IntCC::Equal, br, 0);
@@ -2300,7 +2359,22 @@ impl<'a> FnGen<'a> {
     }
 
     /// Emits guarded inline numeric comparison with runtime fallback.
-    fn gen_fix_cmp(&mut self, a: CValue, b: CValue, cc: IntCC, slow: FuncId) -> CValue {
+    fn gen_fix_cmp(
+        &mut self,
+        a: CValue,
+        b: CValue,
+        cc: IntCC,
+        slow: FuncId,
+        guard_types: bool,
+    ) -> CValue {
+        if !guard_types {
+            let ar = self.builder.ins().sshr_imm(a, 1);
+            let br = self.builder.ins().sshr_imm(b, 1);
+            let comparison = self.builder.ins().icmp(cc, ar, br);
+            let truth = self.builder.ins().iconst(types::I64, TRUEV);
+            let falsehood = self.builder.ins().iconst(types::I64, FALSEV);
+            return self.builder.ins().select(comparison, truth, falsehood);
+        }
         let both = self.fix_both_guard(a, b);
         let fast_b = self.builder.create_block();
         let slow_b = self.builder.create_block();
@@ -2329,7 +2403,13 @@ impl<'a> FnGen<'a> {
     }
 
     /// Folds addition or subtraction through the pairwise fast path.
-    fn fold_fix(&mut self, args: &[Ast], add: bool, slow: FuncId) -> Result<CValue, Diagnostic> {
+    fn fold_fix(
+        &mut self,
+        args: &[Ast],
+        add: bool,
+        slow: FuncId,
+        guard_types: bool,
+    ) -> Result<CValue, Diagnostic> {
         let mut vals = Vec::with_capacity(args.len());
         let mut pushed = 0usize;
         for a in args {
@@ -2339,23 +2419,124 @@ impl<'a> FnGen<'a> {
         }
         let mut acc = vals[0];
         for v in &vals[1..] {
-            acc = self.gen_fix_arith(acc, *v, add, slow);
+            acc = self.gen_fix_arith(acc, *v, add, slow, guard_types);
         }
         self.gc_popn(pushed);
         Ok(acc)
     }
-    fn fix_cmp2(&mut self, args: &[Ast], cc: IntCC, slow: FuncId) -> Result<CValue, Diagnostic> {
+    fn fix_cmp2(
+        &mut self,
+        args: &[Ast],
+        cc: IntCC,
+        slow: FuncId,
+        guard_types: bool,
+    ) -> Result<CValue, Diagnostic> {
         let (a, pa) = self.operand(&args[0])?;
         let (b, pb) = self.operand(&args[1])?;
-        let r = self.gen_fix_cmp(a, b, cc, slow);
+        let r = self.gen_fix_cmp(a, b, cc, slow, guard_types);
         self.gc_popn(pa as usize + pb as usize);
         Ok(r)
     }
-    fn fix_una(&mut self, args: &[Ast], delta: i64, slow: FuncId) -> Result<CValue, Diagnostic> {
+    fn fix_una(
+        &mut self,
+        args: &[Ast],
+        delta: i64,
+        slow: FuncId,
+        guard_type: bool,
+    ) -> Result<CValue, Diagnostic> {
         let (a, pa) = self.operand(&args[0])?;
-        let r = self.gen_fix_unop(a, delta, slow);
+        let r = self.gen_fix_unop(a, delta, slow, guard_type);
         self.gc_popn(pa as usize);
         Ok(r)
+    }
+
+    /// Lowers an IR-proven fixnum primitive without redundant tag guards.
+    ///
+    /// Overflow, division by zero, and fixnum-range failures still branch to
+    /// the original runtime slow path. Only the operand type checks are
+    /// removed, because `clojure-ir` proved their tagged representation.
+    fn gen_proven_fixnum_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        match prim {
+            Prim::Add => self.fold_fix(args, true, self.rt.add, false),
+            Prim::Sub => {
+                if args.len() == 1 {
+                    let (value, pushed) = self.operand(&args[0])?;
+                    let zero = self.konst(1);
+                    let result = self.gen_fix_arith(zero, value, false, self.rt.sub, false);
+                    self.gc_popn(pushed as usize);
+                    Ok(result)
+                } else {
+                    self.fold_fix(args, false, self.rt.sub, false)
+                }
+            }
+            Prim::Mul => {
+                let mut values = Vec::with_capacity(args.len());
+                let mut pushed = 0usize;
+                for argument in args {
+                    let (value, was_pushed) = self.operand(argument)?;
+                    pushed += was_pushed as usize;
+                    values.push(value);
+                }
+                let mut result = values[0];
+                for value in &values[1..] {
+                    result = self.gen_fix_mul(result, *value, self.rt.mul, false);
+                }
+                self.gc_popn(pushed);
+                Ok(result)
+            }
+            Prim::Quot | Prim::Mod => {
+                let (left, left_pushed) = self.operand(&args[0])?;
+                let (right, right_pushed) = self.operand(&args[1])?;
+                let (quotient, slow) = if prim == Prim::Quot {
+                    (true, self.rt.quot)
+                } else {
+                    (false, self.rt.mod_)
+                };
+                let result = self.gen_fix_div(left, right, quotient, slow, false);
+                self.gc_popn(left_pushed as usize + right_pushed as usize);
+                Ok(result)
+            }
+            Prim::Inc | Prim::Dec => {
+                let delta = if prim == Prim::Inc { 1 } else { -1 };
+                let slow = if prim == Prim::Inc {
+                    self.rt.inc
+                } else {
+                    self.rt.dec
+                };
+                self.fix_una(args, delta, slow, false)
+            }
+            Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge => {
+                let condition = match prim {
+                    Prim::Lt => IntCC::SignedLessThan,
+                    Prim::Le => IntCC::SignedLessThanOrEqual,
+                    Prim::Gt => IntCC::SignedGreaterThan,
+                    Prim::Ge => IntCC::SignedGreaterThanOrEqual,
+                    _ => unreachable!(),
+                };
+                let slow = match prim {
+                    Prim::Lt => self.rt.lt,
+                    Prim::Le => self.rt.le,
+                    Prim::Gt => self.rt.gt,
+                    Prim::Ge => self.rt.ge,
+                    _ => unreachable!(),
+                };
+                self.fix_cmp2(args, condition, slow, false)
+            }
+            Prim::Eq => {
+                let (left, left_pushed) = self.operand(&args[0])?;
+                let (right, right_pushed) = self.operand(&args[1])?;
+                let equal = self.builder.ins().icmp(IntCC::Equal, left, right);
+                let truth = self.builder.ins().iconst(types::I64, TRUEV);
+                let falsehood = self.builder.ins().iconst(types::I64, FALSEV);
+                let result = self.builder.ins().select(equal, truth, falsehood);
+                self.gc_popn(left_pushed as usize + right_pushed as usize);
+                Ok(result)
+            }
+            _ => Err(Diagnostic::error(
+                "E0120",
+                "primitiva marcada como fixnum sem lowering especializado",
+            )),
+        }
     }
 
     fn gen_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
@@ -2364,7 +2545,7 @@ impl<'a> FnGen<'a> {
             Prim::Str => self.gen_str(args),
             Prim::List => self.gen_list(args),
             // Arithmetic with fixnum fast paths (ADR-0006).
-            Prim::Add => self.fold_fix(args, true, self.rt.add),
+            Prim::Add => self.fold_fix(args, true, self.rt.add, true),
             Prim::Sub => {
                 if args.len() == 1 {
                     let (v, pv) = self.operand(&args[0])?;
@@ -2373,7 +2554,7 @@ impl<'a> FnGen<'a> {
                     self.gc_popn(pv as usize);
                     Ok(r)
                 } else {
-                    self.fold_fix(args, false, self.rt.sub)
+                    self.fold_fix(args, false, self.rt.sub, true)
                 }
             }
             Prim::Mul => {
@@ -2386,36 +2567,36 @@ impl<'a> FnGen<'a> {
                 }
                 let mut acc = vals[0];
                 for v in &vals[1..] {
-                    acc = self.gen_fix_mul(acc, *v, self.rt.mul);
+                    acc = self.gen_fix_mul(acc, *v, self.rt.mul, true);
                 }
                 self.gc_popn(pushed);
                 Ok(acc)
             }
             // Comparisons with fixnum fast paths.
-            Prim::Lt => self.fix_cmp2(args, IntCC::SignedLessThan, self.rt.lt),
-            Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le),
-            Prim::Gt => self.fix_cmp2(args, IntCC::SignedGreaterThan, self.rt.gt),
-            Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge),
+            Prim::Lt => self.fix_cmp2(args, IntCC::SignedLessThan, self.rt.lt, true),
+            Prim::Le => self.fix_cmp2(args, IntCC::SignedLessThanOrEqual, self.rt.le, true),
+            Prim::Gt => self.fix_cmp2(args, IntCC::SignedGreaterThan, self.rt.gt, true),
+            Prim::Ge => self.fix_cmp2(args, IntCC::SignedGreaterThanOrEqual, self.rt.ge, true),
             // Integer division with fixnum fast paths.
             Prim::Quot => {
                 let (a, pa) = self.operand(&args[0])?;
                 let (b, pb) = self.operand(&args[1])?;
-                let r = self.gen_fix_div(a, b, true, self.rt.quot);
+                let r = self.gen_fix_div(a, b, true, self.rt.quot, true);
                 self.gc_popn(pa as usize + pb as usize);
                 Ok(r)
             }
             Prim::Mod => {
                 let (a, pa) = self.operand(&args[0])?;
                 let (b, pb) = self.operand(&args[1])?;
-                let r = self.gen_fix_div(a, b, false, self.rt.mod_);
+                let r = self.gen_fix_div(a, b, false, self.rt.mod_, true);
                 self.gc_popn(pa as usize + pb as usize);
                 Ok(r)
             }
             Prim::Eq => self.bin(self.rt.eq, args),
             Prim::Cons => self.bin(self.rt.cons, args),
             // Unary operations.
-            Prim::Inc => self.fix_una(args, 1, self.rt.inc),
-            Prim::Dec => self.fix_una(args, -1, self.rt.dec),
+            Prim::Inc => self.fix_una(args, 1, self.rt.inc, true),
+            Prim::Dec => self.fix_una(args, -1, self.rt.dec, true),
             Prim::Not => self.una(self.rt.not_, args),
             Prim::NilP => self.una(self.rt.nilp, args),
             Prim::EmptyP => self.una(self.rt.emptyp, args),
@@ -2755,9 +2936,14 @@ mod tests {
             OptimizationLevel::Speed,
             OptimizationLevel::SpeedAndSize,
         ] {
-            let object =
-                compile_object_with_options(&program, CodegenOptions { optimization_level })
-                    .expect("all supported optimization levels should compile");
+            let object = compile_object_with_options(
+                &program,
+                CodegenOptions {
+                    optimization_level,
+                    ..CodegenOptions::default()
+                },
+            )
+            .expect("all supported optimization levels should compile");
             assert!(object.len() > 100);
         }
     }
