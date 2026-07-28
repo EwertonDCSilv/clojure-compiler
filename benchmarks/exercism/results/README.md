@@ -1,6 +1,7 @@
 # Exercism external comparison
 
 [Suite guide](../README.md) ·
+[Upstream attribution](../UPSTREAM.md) ·
 [Implementation plan](../IMPLEMENTATION_PLAN.md) ·
 [Compilation matrix](compilation.tsv)
 
@@ -18,7 +19,7 @@ Files:
 | Component | Revision |
 | --- | --- |
 | Compiler checkout used for measurement | `7607bef9f951b25711307f5f7c936053bc34baf8` |
-| `exercism/clojure` | `4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190` |
+| [`exercism/clojure`](https://github.com/exercism/clojure) | [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190) |
 | Clojure/JVM | 1.12.5, AOT with HotSpot enabled |
 | Internal load multiplier | 5× |
 

@@ -40,7 +40,8 @@ correção sem depender apenas de tempo de execução.
 As implementações Cracking e Cormen são originais. A suíte Exercism preserva sete
 soluções públicas MIT do snapshot documentado e adiciona apenas cargas e checksums; o
 catálogo associado também compila as 101 soluções de referência diretamente do
-checkout externo.
+checkout externo. A origem, a licença e o mapeamento para cada arquivo upstream estão
+registrados em [`exercism/UPSTREAM.md`](exercism/UPSTREAM.md).
 
 ## Execute os benchmarks
 

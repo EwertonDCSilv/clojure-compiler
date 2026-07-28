@@ -1,6 +1,6 @@
-;; Derived from exercism/clojure, exercise "binary-search", reference solution.
-;; Upstream commit: 4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190
-;; License: MIT, see ../LICENSE.exercism.
+;; Upstream: Exercism Clojure Track, exercise "binary-search".
+;; Source: https://github.com/exercism/clojure/blob/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190/exercises/practice/binary-search/.meta/example.clj
+;; License: MIT; attribution and local benchmark changes: ../UPSTREAM.md
 
 (ns binary-search)
 

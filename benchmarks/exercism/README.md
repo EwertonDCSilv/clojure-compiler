@@ -1,6 +1,7 @@
 # External Exercism benchmark and compatibility corpus
 
 [Central benchmark catalog](../README.md) ·
+[Upstream attribution](UPSTREAM.md) ·
 [Implementation plan](IMPLEMENTATION_PLAN.md) ·
 [Compilation matrix](results/compilation.tsv) ·
 [Complete checkout matrix](results/all-files.tsv) ·
@@ -10,13 +11,13 @@ This suite uses public reference solutions from
 [`exercism/clojure`](https://github.com/exercism/clojure) as an external,
 independently maintained corpus for the native compiler.
 
-The audited upstream snapshot is:
-
-```text
-repository: exercism/clojure
-commit:     4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190
-license:    MIT
-```
+The audited upstream snapshot is the official
+[`exercism/clojure`](https://github.com/exercism/clojure) repository at commit
+[`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190),
+licensed under the
+[MIT License](https://github.com/exercism/clojure/blob/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190/LICENSE).
+See the complete file-level mapping and separation between upstream and local changes
+in [`UPSTREAM.md`](UPSTREAM.md).
 
 The upstream repository is cloned separately instead of becoming a Git submodule. The
 default location is `~/github/exercism-clojure`, configurable through
@@ -94,8 +95,9 @@ failing the audit. `--strict` is intended for the future 101/101 reference gate.
 The seven passing reference implementations have deterministic workload adapters under
 [`01-practice/`](01-practice/). The upstream implementation remains intact; each file
 adds only fixed input data, a `benchmark` function and a `-main` checksum entry point.
-The copied portions retain the upstream MIT terms in
-[`LICENSE.exercism`](LICENSE.exercism).
+The copied portions remain attributed to Exercism and its contributors and retain the
+upstream MIT terms in [`LICENSE.exercism`](LICENSE.exercism). Exact source links for
+each fixture are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
 | Case | Main pressure |
 | --- | --- |

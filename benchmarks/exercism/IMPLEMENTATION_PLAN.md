@@ -2,7 +2,9 @@
 
 This plan turns the 101 public Exercism reference solutions into an evolving external
 gate for `clojure-compiler`. It is based on upstream commit
-`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190` and compiler baseline
+[`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190)
+from the [Exercism Clojure Track](https://github.com/exercism/clojure), with full
+provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and compiler baseline
 `7607bef9f951b25711307f5f7c936053bc34baf8`.
 
 ## Baseline

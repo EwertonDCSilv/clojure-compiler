@@ -1,6 +1,6 @@
-;; Derived from exercism/clojure, exercise "two-fer", reference solution.
-;; Upstream commit: 4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190
-;; License: MIT, see ../LICENSE.exercism.
+;; Upstream: Exercism Clojure Track, exercise "two-fer".
+;; Source: https://github.com/exercism/clojure/blob/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190/exercises/practice/two-fer/.meta/example.clj
+;; License: MIT; attribution and local benchmark changes: ../UPSTREAM.md
 
 (ns two-fer)
 
