@@ -30,7 +30,7 @@ CORMEN_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cormen-comparison.csv
 EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 
 .PHONY: \
-	help all ci quality \
+	help all ci quality docs-check \
 	build release check \
 	fmt fmt-check lint lint-rust lint-clojure \
 	test test-runtime test-runtime-sanitize test-benchmark-charts coverage \
@@ -53,7 +53,8 @@ help:
 		"  build                    Compila todo o workspace em modo debug" \
 		"  release                  Compila o CLI otimizado em target/release" \
 		"  test                     Executa cargo test no workspace" \
-		"  quality                  Formatação, lint Rust/Clojure e testes" \
+		"  quality                  Formatação, documentação, lint e testes" \
+		"  docs-check               Valida rustdoc, doctests e contratos documentais" \
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
 		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
@@ -97,7 +98,10 @@ all: quality coverage compatibility benchmarks
 
 ci: quality coverage benchmarks-ci compatibility
 
-quality: fmt-check lint test
+quality: fmt-check docs-check lint test
+
+docs-check:
+	scripts/check-docs.sh
 
 build:
 	$(CARGO) build --workspace
