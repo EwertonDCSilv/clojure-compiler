@@ -68,6 +68,7 @@ embed_runtime_modules!(
     ("io", "../runtime/130_io.c"),
     ("reader", "../runtime/140_reader.c"),
     ("http", "../runtime/150_http.c"),
+    ("server", "../runtime/160_server.c"),
 );
 
 /// Cranelift optimization level for generated functions.
@@ -386,6 +387,11 @@ struct Runtime {
     str_split: FuncId,               // (string,char)->vetor de strings
     parse_http_request: FuncId,      // (string)->mapa de requisição (ADR-0013 Gate 4)
     serialize_http_response: FuncId, // (mapa)->string de resposta HTTP
+    http_server_open: FuncId,        // (port)->servidor
+    http_server_port: FuncId,        // (server)->fixnum
+    http_server_accept: FuncId,      // (server)->requisição
+    http_server_respond: FuncId,     // (server,resp)->nil
+    http_server_close: FuncId,       // (server)->nil
     float_from_bits: FuncId,         // (raw_i64)->float (literais)
     transient: FuncId,               // (coll)->transient
     persistent_bang: FuncId,         // (t)->coll
@@ -910,6 +916,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         str_split: bin(m, "cljn_str_split"),
         parse_http_request: una(m, "cljn_parse_http_request"),
         serialize_http_response: una(m, "cljn_serialize_http_response"),
+        http_server_open: una(m, "cljn_http_server_open"),
+        http_server_port: una(m, "cljn_http_server_port"),
+        http_server_accept: una(m, "cljn_http_server_accept"),
+        http_server_respond: bin(m, "cljn_http_server_respond"),
+        http_server_close: una(m, "cljn_http_server_close"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -1026,6 +1037,9 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::VectorP
             | Prim::MapP
             | Prim::BytesP
+            | Prim::HttpServerPort // devolve fixnum
+            | Prim::HttpServerRespond // devolve nil
+            | Prim::HttpServerClose // devolve nil
     )
 }
 
@@ -3490,6 +3504,11 @@ impl<'a> FnGen<'a> {
             Prim::StrSplit => self.bin(self.rt.str_split, args),
             Prim::ParseHttpRequest => self.una(self.rt.parse_http_request, args),
             Prim::SerializeHttpResponse => self.una(self.rt.serialize_http_response, args),
+            Prim::HttpServerOpen => self.una(self.rt.http_server_open, args),
+            Prim::HttpServerPort => self.una(self.rt.http_server_port, args),
+            Prim::HttpServerAccept => self.una(self.rt.http_server_accept, args),
+            Prim::HttpServerRespond => self.bin(self.rt.http_server_respond, args),
+            Prim::HttpServerClose => self.una(self.rt.http_server_close, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

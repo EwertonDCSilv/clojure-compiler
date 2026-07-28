@@ -254,6 +254,82 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn loopback_http_server_serves_real_requests() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4: a Clojure service loop over the C socket provider serves real
+    // loopback HTTP requests on an ephemeral port (open/port/accept/respond/close).
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns srv.core
+  (:require [cljn.http.response :as resp]))
+(defn handler [req]
+  (if (= (get req :path) "/health") (resp/ok "up") (resp/not-found)))
+(defn serve [srv]
+  (try
+    (let [req (http-server-accept srv)]
+      (http-server-respond srv (handler req)))
+    (catch E e (http-server-respond srv {:status 400 :headers {} :body nil})))
+  (recur srv))
+(defn -main []
+  (let [srv (http-server-open 0)]
+    (println (http-server-port srv))
+    (flush)
+    (serve srv)))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_srv_e2e.clj");
+    let exe = dir.join("cljn_srv_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn servidor");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let request = |path: &str| -> String {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        resp
+    };
+    let health = request("/health");
+    let missing = request("/missing");
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    assert_eq!(
+        health,
+        "HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nup"
+    );
+    assert_eq!(
+        missing,
+        "HTTP/1.1 404 Not Found\r\ncontent-length: 9\r\nconnection: close\r\n\r\nNot Found"
+    );
+}
+
+#[test]
 fn http_request_parser_valid_and_malformed() {
     if !have_cc() {
         return;

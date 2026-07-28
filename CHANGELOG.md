@@ -30,6 +30,27 @@ tags.
   generic-boundary fallbacks.
 - Add deterministic aggregate lowering metrics through `--ir-stats PATH` and make the
   paired Cormen runner configurable for `safe`-versus-candidate comparisons.
+- Add ADR-0013 Gate 1 static module loading: initialized top-level `def` globals with
+  permanent GC roots, a `--source-path` multi-file namespace graph with transitive
+  `:require` resolution, dependency-cycle and missing-file diagnostics, and an embedded
+  built-in source bundle resolved ahead of local roots.
+- Add per-namespace symbol resolution (namespace-mangled `def`/`defn`, alias and
+  `clojure.core` auto-refer), namespaced keywords, and the `string?`/`int?`/`keyword?`/
+  `vector?`/`map?`/`bytes?` type predicates plus `str-split`.
+- Add the ADR-0013 P0/P1 native connector namespaces `cljn.http.request`,
+  `cljn.http.response`, `cljn.pedestal.chain`, `cljn.pedestal.route`, and
+  `cljn.pedestal.connector`: request/response validation with categorized error maps,
+  a synchronous interceptor chain (`:enter`/`:leave`/`:error`, termination, recovery),
+  a deterministic linear router (`:param` capture, 404/405, ambiguity rejection), and
+  `test-request` sharing the same dispatch path as the network route.
+- Add the strict bounded HTTP/1.x `parse-http-request` and `serialize-http-response`
+  runtime primitives (ADR-0013 Gate 4), rejecting Transfer-Encoding, divergent
+  Content-Length, folded headers, NUL, bare CR/LF, invalid tokens/versions, header
+  injection, and limit overflow.
+- Add the loopback HTTP socket provider (`T_HTTP_SERVER`,
+  `http-server-open`/`-port`/`-accept`/`-respond`/`-close`) with a Clojure-driven
+  synchronous service loop, bounded timed reads, and GC-sweep descriptor cleanup,
+  serving real ephemeral-port loopback requests (ADR-0013 Gate 4).
 
 ### Changed
 
