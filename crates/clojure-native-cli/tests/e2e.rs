@@ -557,6 +557,37 @@ fn read_string_edn_reader() {
 }
 
 #[test]
+fn file_streams_and_with_open() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-2/3: writer/reader de arquivo + with-open (fecha via
+    // try/finally, inclusive em exceção); integram com *out*/*in*.
+    let src = r##"(ns wo.core)
+(defn read-lines [acc]
+  (let [l (read-line)]
+    (if (nil? l) acc (recur (conj acc l)))))
+(defn -main []
+  (with-open [w (writer "/tmp/cljn_e2e_wo.txt")]
+    (binding [*out* w] (println "l1") (println "l2") (print "end")))
+  (println (with-open [r (reader "/tmp/cljn_e2e_wo.txt")]
+             (binding [*in* r] (read-lines []))))
+  (println (= "l1\nl2\nend" (slurp "/tmp/cljn_e2e_wo.txt")))
+  (println (try (with-open [w (writer "/tmp/cljn_e2e_wo2.txt")]
+                  (binding [*out* w] (print "partial") (throw {:e 1})))
+                (catch E e "caught")))
+  (println (slurp "/tmp/cljn_e2e_wo2.txt"))
+  (println (try (reader "/nao/existe.txt") (catch E e (get e :kind)))))
+(-main)"##;
+    let expected = "[l1 l2 end]\ntrue\ncaught\npartial\n:not-found\n";
+    assert_eq!(build_and_run("file_streams", src), expected);
+    assert_eq!(
+        build_and_run_env("file_streams_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

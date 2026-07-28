@@ -18,6 +18,7 @@ static Value mk_std_writer(int kind) {
     w->buf = NULL;
     w->len = 0;
     w->cap = 0;
+    w->fp = NULL;
     return (Value)w;
 }
 /* ---------- UTF-8 (para Char e read-line/read-char) ---------- */
@@ -65,6 +66,7 @@ static Value mk_reader(int kind, Value src) {
     r->kind = kind;
     r->src = src;
     r->pos = 0;
+    r->fp = NULL;
     return (Value)r;
 }
 /* Leitura de Var com init preguiçoso (evita depender de ordem de construtores). */
@@ -84,6 +86,7 @@ static void writer_write(Value w, const char *p, size_t n) {
     Writer *wr = (Writer *)w;
     if (wr->kind == WR_STDOUT) { fwrite(p, 1, n, stdout); return; }
     if (wr->kind == WR_STDERR) { fwrite(p, 1, n, stderr); return; }
+    if (wr->kind == WR_FILE) { if (wr->fp) fwrite(p, 1, n, (FILE *)wr->fp); return; }
     if (wr->len + n > wr->cap) {
         size_t c = wr->cap ? wr->cap : 64;
         while (wr->len + n > c) c *= 2;
@@ -125,11 +128,13 @@ Value cljn_read_line(void) {
         if (r->pos < (int64_t)s->len) r->pos++; /* consome o '\n' */
         return cljn_str_from(s->data + start, (long)linelen); /* GC ok: src rooteado */
     }
-    /* stdin: lê byte a byte até '\n'/EOF num buffer que cresce */
+    /* stdin/arquivo: lê byte a byte até '\n'/EOF num buffer que cresce */
+    FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
+    if (!fp) return NIL;
     size_t cap = 128, len = 0;
     char *buf = (char *)xalloc(cap);
     int c;
-    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+    while ((c = fgetc(fp)) != EOF && c != '\n') {
         if (len + 1 > cap) { cap *= 2; buf = (char *)xrealloc(buf, cap); }
         buf[len++] = (char)c;
     }
@@ -151,13 +156,15 @@ Value cljn_read_char(void) {
         r->pos += n;
         return MK_CHAR(cp);
     }
-    int c0 = fgetc(stdin);
+    FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
+    if (!fp) return NIL;
+    int c0 = fgetc(fp);
     if (c0 == EOF) return NIL;
     int n = utf8_len((unsigned char)c0);
     char buf[4];
     buf[0] = (char)c0;
     for (int i = 1; i < n; i++) {
-        int ci = fgetc(stdin);
+        int ci = fgetc(fp);
         if (ci == EOF) { n = i; break; }
         buf[i] = (char)ci;
     }

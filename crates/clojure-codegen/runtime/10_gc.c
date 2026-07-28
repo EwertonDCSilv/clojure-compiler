@@ -189,7 +189,15 @@ static void gc_sweep(void) {
         } else {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
-            if (o->type == T_WRITER) free(((Writer *)o)->buf);
+            if (o->type == T_WRITER) {
+                Writer *w = (Writer *)o;
+                free(w->buf);
+                if (w->kind == WR_FILE && w->fp) fclose((FILE *)w->fp); /* handle vazado */
+            }
+            if (o->type == T_READER) {
+                Reader *r = (Reader *)o;
+                if (r->kind == RD_FILE && r->fp) fclose((FILE *)r->fp);
+            }
             if (o->type == T_BYTES) free(((Bytes *)o)->data);
             if (o->szc == 0) {
                 free(o); /* grande: malloc'd */

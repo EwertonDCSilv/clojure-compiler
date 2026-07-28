@@ -83,12 +83,12 @@ typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET 
 typedef struct { Obj h; } Edit;             /* T_EDIT: token único de posse */
 /* Writer (ADR-0007): destino de saída de print/println. kind stdout/stderr escreve
  * direto; kind string acumula num buffer (base de with-out-str). */
-enum { WR_STDOUT = 0, WR_STDERR = 1, WR_STRING = 2 };
-typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; } Writer; /* T_WRITER */
-/* Reader (ADR-0007): fonte de entrada de read-line. kind stdin lê do stdin; kind
- * string lê de `src` (uma Str) a partir do cursor `pos`. */
-enum { RD_STDIN = 0, RD_STRING = 1 };
-typedef struct { Obj h; int64_t kind; Value src; int64_t pos; } Reader; /* T_READER */
+enum { WR_STDOUT = 0, WR_STDERR = 1, WR_STRING = 2, WR_FILE = 3 };
+typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; void *fp; } Writer; /* T_WRITER; fp=FILE* p/ WR_FILE */
+/* Reader (ADR-0007): fonte de entrada de read-line/read-char. kind stdin lê do
+ * stdin; string lê de `src` (uma Str) a partir do cursor `pos`; file lê de `fp`. */
+enum { RD_STDIN = 0, RD_STRING = 1, RD_FILE = 2 };
+typedef struct { Obj h; int64_t kind; Value src; int64_t pos; void *fp; } Reader; /* T_READER; fp=FILE* p/ RD_FILE */
 /* Bytes (ADR-0007 / IO-1): array binário imutável (dados brutos). Folha p/ o GC;
  * `data` é liberado no sweep. */
 typedef struct { Obj h; int64_t len; uint8_t *data; } Bytes; /* T_BYTES */

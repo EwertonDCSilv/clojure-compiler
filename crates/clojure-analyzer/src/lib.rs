@@ -158,6 +158,10 @@ pub enum Prim {
     SlurpBytes,
     SpitBytes,
     ReadString,
+    WriterOpen,
+    ReaderOpen,
+    Close,
+    Flush,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -972,6 +976,7 @@ impl<'a> Analyzer<'a> {
                 })
             }
             "binding" => self.analyze_binding(args, span),
+            "with-open" => self.analyze_with_open(args, span),
             "with-in-str" => {
                 // (with-in-str s corpo...) — rebinda *in* a um Reader sobre s.
                 if args.is_empty() {
@@ -1365,6 +1370,51 @@ impl<'a> Analyzer<'a> {
                 val,
                 thunk,
             ]))];
+        }
+        match acc.len() {
+            0 => Ok(Ast::Nil),
+            1 => self.analyze(&acc[0], false),
+            _ => self.analyze_body(&acc, span, false),
+        }
+    }
+
+    /// `(with-open [n (reader p) ...] corpo...)` — liga recursos e garante `close`.
+    /// Desugar: cada par vira `(let* [n res] (try corpo... (finally (close n))))`,
+    /// aninhando de dentro pra fora (fecha em ordem inversa, mesmo em exceção).
+    fn analyze_with_open(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
+        let first = args
+            .first()
+            .ok_or_else(|| unsupported("with-open requer vetor de bindings", span))?;
+        let Form::Vector(binds) = first.node.strip_meta() else {
+            return Err(unsupported("with-open requer vetor de bindings", span));
+        };
+        if binds.len() % 2 != 0 {
+            return Err(unsupported("with-open: bindings em pares", span));
+        }
+        let mut pairs: Vec<(SForm, SForm)> = Vec::new();
+        let mut i = 0;
+        while i < binds.len() {
+            let nf = &binds[i];
+            if !matches!(nf.node.strip_meta(), Form::Symbol(_)) {
+                return Err(unsupported("with-open: alvo deve ser um símbolo", nf.span));
+            }
+            pairs.push((nf.clone(), binds[i + 1].clone()));
+            i += 2;
+        }
+        let sf = |f: Form| SForm::new(f, span);
+        let mut acc: Vec<SForm> = args[1..].to_vec();
+        for (name, res) in pairs.into_iter().rev() {
+            let close_call = sf(Form::List(vec![sf(Form::sym("close")), name.clone()]));
+            let finally = sf(Form::List(vec![sf(Form::sym("finally")), close_call]));
+            let mut try_items = vec![sf(Form::sym("try"))];
+            try_items.extend(acc);
+            try_items.push(finally);
+            let let_form = sf(Form::List(vec![
+                sf(Form::sym("let*")),
+                sf(Form::Vector(vec![name, res])),
+                sf(Form::List(try_items)),
+            ]));
+            acc = vec![let_form];
         }
         match acc.len() {
             0 => Ok(Ast::Nil),
@@ -1816,6 +1866,10 @@ fn prim_of(name: &str) -> Option<Prim> {
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
+        "writer" => Prim::WriterOpen,
+        "reader" => Prim::ReaderOpen,
+        "close" => Prim::Close,
+        "flush" => Prim::Flush,
         _ => return None,
     })
 }
@@ -1848,6 +1902,9 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::BytesToString
         | Prim::SlurpBytes
         | Prim::ReadString
+        | Prim::WriterOpen
+        | Prim::ReaderOpen
+        | Prim::Close
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1887,6 +1944,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::WithBinding // sintetizada (desugar de binding)
         | Prim::ReadLine // 0-ária; use (fn [] (read-line)) como valor
         | Prim::ReadChar // idem
+        | Prim::Flush // 0-ária
         | Prim::StringReader // sintetizada (with-in-str)
         | Prim::Print => return None,
     })
@@ -1936,6 +1994,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
         Prim::Bget | Prim::SpitBytes => n == 2,
+        Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
+        Prim::Flush => n == 0,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

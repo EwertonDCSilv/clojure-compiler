@@ -240,6 +240,10 @@ struct Runtime {
     slurp_bytes: FuncId,      // (path)->bytes
     spit_bytes: FuncId,       // (path,bytes)->nil
     read_string: FuncId,      // (string)->valor EDN
+    writer_open: FuncId,      // (path)->writer de arquivo
+    reader_open: FuncId,      // (path)->reader de arquivo
+    close: FuncId,            // (x)->nil (fecha handle)
+    flush: FuncId,            // ()->nil (descarrega *out*)
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -602,6 +606,15 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
+        writer_open: una(m, "cljn_writer"),
+        reader_open: una(m, "cljn_reader"),
+        close: una(m, "cljn_close"),
+        flush: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_flush", Linkage::Import, &s)
+                .unwrap()
+        },
         read_char: {
             let mut s = m.make_signature();
             s.returns.push(AbiParam::new(types::I64));
@@ -687,6 +700,8 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::ReadChar // devolve char ou nil (imediatos)
             | Prim::Bget // devolve fixnum (0..255)
             | Prim::SpitBytes // devolve nil
+            | Prim::Close // devolve nil
+            | Prim::Flush // devolve nil
     )
 }
 
@@ -2332,6 +2347,10 @@ impl<'a> FnGen<'a> {
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
+            Prim::WriterOpen => self.una(self.rt.writer_open, args),
+            Prim::ReaderOpen => self.una(self.rt.reader_open, args),
+            Prim::Close => self.una(self.rt.close, args),
+            Prim::Flush => Ok(self.call0(self.rt.flush)),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

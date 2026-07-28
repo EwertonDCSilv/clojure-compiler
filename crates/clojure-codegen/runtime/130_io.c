@@ -212,6 +212,63 @@ Value cljn_parent(Value p) {
     return cljn_str_from(s->data, (long)end);
 }
 
+/* ---------- Streams de arquivo + with-open (ADR-0007 / IO-2/3) ----------
+ * writer/reader abrem um FILE* atrás de um Writer/Reader; close fecha; with-open
+ * garante o close via try/finally. Integram-se com as Vars de saida/entrada: um
+ * (binding [*out* w] (print ...)) escreve no arquivo; (binding [*in* r] ...) le. */
+Value cljn_writer(Value path) {
+    if (obj_type(path) != T_STR) die("writer: path deve ser string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    FILE *f = fopen(cp, "wb");
+    free(cp);
+    if (!f) io_throw(io_kind(errno), "writer", path, errno);
+    Writer *w = (Writer *)obj_alloc(sizeof(Writer), T_WRITER); /* path rooteado */
+    w->kind = WR_FILE;
+    w->buf = NULL;
+    w->len = 0;
+    w->cap = 0;
+    w->fp = f;
+    cljn_gc_popn(1);
+    return (Value)w;
+}
+Value cljn_reader(Value path) {
+    if (obj_type(path) != T_STR) die("reader: path deve ser string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    FILE *f = fopen(cp, "rb");
+    free(cp);
+    if (!f) io_throw(io_kind(errno), "reader", path, errno);
+    Reader *r = (Reader *)obj_alloc(sizeof(Reader), T_READER);
+    r->kind = RD_FILE;
+    r->src = NIL;
+    r->pos = 0;
+    r->fp = f;
+    cljn_gc_popn(1);
+    return (Value)r;
+}
+/* (close x) — fecha o handle de arquivo de um writer/reader (idempotente); nil
+ * para stdout/stderr/string/stdin. */
+Value cljn_close(Value x) {
+    int t = obj_type(x);
+    if (t == T_WRITER) {
+        Writer *w = (Writer *)x;
+        if (w->kind == WR_FILE && w->fp) { fclose((FILE *)w->fp); w->fp = NULL; }
+    } else if (t == T_READER) {
+        Reader *r = (Reader *)x;
+        if (r->kind == RD_FILE && r->fp) { fclose((FILE *)r->fp); r->fp = NULL; }
+    }
+    return NIL;
+}
+/* (flush) — descarrega o buffer do *out* corrente. */
+Value cljn_flush(void) {
+    Writer *w = (Writer *)dynvar_get(VAR_OUT);
+    if (w->kind == WR_STDOUT) fflush(stdout);
+    else if (w->kind == WR_STDERR) fflush(stderr);
+    else if (w->kind == WR_FILE && w->fp) fflush((FILE *)w->fp);
+    return NIL;
+}
+
 /* (with-out-str thunk) — roda o thunk (fn de 0 arg) com *out* rebindado a um Writer
  * de string e devolve o texto acumulado. Restaura *out* mesmo se o corpo lançar
  * (repropaga a exceção), reusando a pilha de handlers de exceção. `old` e `w` ficam
