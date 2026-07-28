@@ -28,10 +28,9 @@
   [response k v]
   (assoc response :headers (assoc (get response :headers) k v)))
 
-(defn response-valid?
+(defn valid?
   "Verdadeiro se `x` é um mapa de resposta bem-formado: `:status` inteiro em
-  100..599, `:headers` mapa, `:body` nil ou string. Predicado puro. (Nome com
-  prefixo `response-` até o compilador ter espaços de nomes por-namespace.)"
+  100..599, `:headers` mapa, `:body` nil/string/Bytes. Predicado puro."
   [x]
   (and (map? x)
        (int? (get x :status))
@@ -47,12 +46,12 @@
   (let [b (get response :body)]
     (if (nil? b) 0 (count b))))
 
-(defn validate-response
+(defn validate
   "Devolve `x` se for uma resposta válida; senão lança um mapa de erro
   categorizado (ADR-0013 §7): {:cljn.error/domain :http :kind :invalid-response
   :operation :validate-response :value x}. Construção pura; não muta."
   [x]
-  (if (response-valid? x)
+  (if (valid? x)
     x
     (throw {:cljn.error/domain :http
             :kind :invalid-response

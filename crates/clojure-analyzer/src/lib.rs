@@ -418,23 +418,36 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut records: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Multimethod names share the positive runtime method-ID namespace.
     let mut multis: HashMap<String, i64> = HashMap::new();
-    // Top-level `def` globals: name -> permanent-root index, in source order.
+    // Top-level `def` globals: mangled name -> permanent-root index, source order.
     let mut globals: HashMap<String, u32> = HashMap::new();
+    // Per-namespace alias -> target-namespace, for qualified reference resolution.
+    let mut aliases: HashMap<String, HashMap<String, String>> = HashMap::new();
+    // Current namespace while walking forms; `def`/`defn` names are mangled by it.
+    let mut cur_ns = String::from("user");
     let mut next_mid: i64 = 1;
     for f in forms {
+        if let Some(ns) = form_ns(f) {
+            let entry = aliases.entry(ns.clone()).or_default();
+            for (alias, target) in form_aliases(f) {
+                entry.insert(alias, target);
+            }
+            cur_ns = ns;
+            continue;
+        }
         if let Some((name, _)) = match_def(f) {
-            if globals.contains_key(&name) {
+            let sym = mangle(&cur_ns, &name);
+            if globals.contains_key(&sym) {
                 diags.push(
                     Diagnostic::error("E0113", format!("redefinição de def não suportada: {name}"))
                         .with_span(f.span),
                 );
             } else {
                 let idx = globals.len() as u32;
-                globals.insert(name, idx);
+                globals.insert(sym, idx);
             }
         } else if let Some((name, decls)) = match_defn(f) {
             sigs.insert(
-                name,
+                mangle(&cur_ns, &name),
                 decls
                     .iter()
                     .map(|(p, r, _)| (p.len(), r.is_some()))
@@ -461,6 +474,8 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         protos: &protos,
         records: &records,
         globals: &globals,
+        aliases: &aliases,
+        cur_ns: String::from("user"),
         frames: Vec::new(),
         functions: Vec::new(),
         lam: 0,
@@ -472,11 +487,12 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     an.frames.push(Frame::new(false));
 
     for f in forms {
-        if is_ns(f) {
+        if let Some(ns) = form_ns(f) {
+            an.cur_ns = ns; // subsequent def/defn names are mangled by this namespace
             continue;
         }
         if let Some((name, value_form)) = match_def(f) {
-            let index = an.globals[&name];
+            let index = an.globals[&mangle(&an.cur_ns, &name)];
             match an.analyze(&value_form, false) {
                 Ok(value) => main_body.push(Ast::DefGlobal {
                     index,
@@ -485,9 +501,10 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 Err(d) => diags.push(d),
             }
         } else if let Some((name, decls)) = match_defn(f) {
+            let sym = mangle(&an.cur_ns, &name);
             match an.analyze_methods(&decls, false, f.span) {
                 Ok((methods, lc, _caps)) => an.functions.push(Function {
-                    name,
+                    name: sym,
                     methods,
                     local_count: lc,
                     is_lambda: false,
@@ -660,11 +677,6 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     })
 }
 
-fn is_ns(f: &SForm) -> bool {
-    matches!(f.node.strip_meta(), Form::List(items)
-        if matches!(items.first().map(|h| h.node.strip_meta()), Some(Form::Symbol(n)) if n.ns.is_none() && n.name == "ns"))
-}
-
 type MethodDecl = (Vec<String>, Option<String>, Vec<SForm>);
 
 /// Recognizes single- and multi-arity `defn` and returns its declarations.
@@ -690,6 +702,82 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     }
     let methods = parse_methods(rest)?;
     Some((name, methods))
+}
+
+/// Mangles a namespace-qualified top-level name into a unique linker symbol, e.g.
+/// `cljn.http.request` + `valid?` -> `cljn_http_request__valid?` (ADR-0013). Dots
+/// become underscores; the `__` separator keeps names from distinct namespaces
+/// disjoint. `def`/`defn` names are namespaced; protocol/multimethod/record names
+/// stay global (project-wide unique) in the current P1 subset.
+fn mangle(ns: &str, name: &str) -> String {
+    format!("{}__{}", ns.replace('.', "_"), name)
+}
+
+/// The namespace name declared by a `(ns name ...)` form, if this form is one.
+fn form_ns(f: &SForm) -> Option<String> {
+    let Form::List(items) = f.node.strip_meta() else {
+        return None;
+    };
+    let Some(Form::Symbol(h)) = items.first().map(|x| x.node.strip_meta()) else {
+        return None;
+    };
+    if h.ns.is_some() || h.name != "ns" {
+        return None;
+    }
+    match items.get(1).map(|x| x.node.strip_meta()) {
+        Some(Form::Symbol(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// The `alias -> target-namespace` pairs from a `(ns ... (:require [t :as a]))`
+/// form. Bare `(:require t)` specs contribute `t -> t` so `t/name` also resolves.
+fn form_aliases(f: &SForm) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Form::List(items) = f.node.strip_meta() else {
+        return out;
+    };
+    for clause in items.iter().skip(2) {
+        let Form::List(citems) = clause.node.strip_meta() else {
+            continue;
+        };
+        let is_require = matches!(
+            citems.first().map(|x| x.node.strip_meta()),
+            Some(Form::Keyword(k)) if k.ns.is_none() && k.name == "require"
+        );
+        if !is_require {
+            continue;
+        }
+        for spec in citems.iter().skip(1) {
+            match spec.node.strip_meta() {
+                Form::Vector(v) => {
+                    let Some(Form::Symbol(target)) = v.first().map(|x| x.node.strip_meta()) else {
+                        continue;
+                    };
+                    let target = target.to_string();
+                    // Look for `:as alias`.
+                    let mut alias = target.clone();
+                    let mut i = 1;
+                    while i + 1 < v.len() {
+                        if matches!(v[i].node.strip_meta(), Form::Keyword(k) if k.ns.is_none() && k.name == "as")
+                        {
+                            if let Form::Symbol(a) = v[i + 1].node.strip_meta() {
+                                alias = a.to_string();
+                            }
+                        }
+                        i += 1;
+                    }
+                    out.push((alias, target));
+                }
+                Form::Symbol(t) => {
+                    let t = t.to_string();
+                    out.push((t.clone(), t));
+                }
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 /// Full keyword text including any namespace, e.g. `cljn.error/domain`. The
@@ -972,8 +1060,12 @@ struct Analyzer<'a> {
     sigs: &'a HashMap<String, Vec<(usize, bool)>>,
     protos: &'a HashMap<String, (i64, usize)>,
     records: &'a std::collections::HashSet<String>,
-    /// Top-level `def` name -> permanent-root index (ADR-0013 Gate 1).
+    /// Mangled top-level `def` name -> permanent-root index (ADR-0013 Gate 1).
     globals: &'a HashMap<String, u32>,
+    /// Per-namespace alias -> target-namespace, for qualified references.
+    aliases: &'a HashMap<String, HashMap<String, String>>,
+    /// Namespace of the current top-level form; drives `def`/`defn` mangling.
+    cur_ns: String,
     frames: Vec<Frame>,
     functions: Vec<Function>,
     lam: u32,
@@ -1092,36 +1184,31 @@ impl<'a> Analyzer<'a> {
         name: &str,
         span: Span,
     ) -> Result<Ast, Diagnostic> {
-        // A namespace-qualified reference (`alias/name` or `ns.name/name`) resolves
-        // to the simple `name` in the flat project symbol space (ADR-0013 Gate 1).
-        // Local shadowing does not apply to qualified references.
-        if ns.is_some() {
-            if let Some(&idx) = self.globals.get(name) {
+        // Unqualified names may be locals or dynamic Vars; qualified names never are.
+        if ns.is_none() {
+            if let Some(ast) = self.resolve(name) {
+                return Ok(ast);
+            }
+            if let Some(id) = dyn_var_id(name) {
+                // A dynamic Var in value position lowers to `(var-get id)`.
+                return Ok(Ast::Call {
+                    callee: Callee::Prim(Prim::VarGet),
+                    args: vec![Ast::Int(id)],
+                });
+            }
+        }
+        // Top-level reference: resolve per-namespace to a mangled symbol.
+        if let Some(sym) = self.resolve_top(ns.as_deref(), name) {
+            if let Some(&idx) = self.globals.get(&sym) {
                 return Ok(Ast::GlobalRef(idx));
             }
-            if self.sigs.contains_key(name) {
-                return Ok(Ast::FnRef(name.to_string()));
-            }
+            return Ok(Ast::FnRef(sym));
+        }
+        if ns.is_some() {
             return Err(unsupported(
                 format!("referência qualificada não resolvida: {name}"),
                 span,
             ));
-        }
-        if let Some(ast) = self.resolve(name) {
-            return Ok(ast);
-        }
-        if let Some(id) = dyn_var_id(name) {
-            // A dynamic Var in value position lowers to `(var-get id)`.
-            return Ok(Ast::Call {
-                callee: Callee::Prim(Prim::VarGet),
-                args: vec![Ast::Int(id)],
-            });
-        }
-        if let Some(&idx) = self.globals.get(name) {
-            return Ok(Ast::GlobalRef(idx)); // top-level def global (ADR-0013)
-        }
-        if self.sigs.contains_key(name) {
-            return Ok(Ast::FnRef(name.to_string()));
         }
         if let Some(prim) = prim_of(name) {
             // A primitive used as a value gets a synthesized callable wrapper.
@@ -1190,10 +1277,10 @@ impl<'a> Analyzer<'a> {
                 args: a,
             });
         };
-        // A qualified operator (`alias/fn`) is never a special form; resolve the
-        // simple name in the flat project symbol space (ADR-0013 Gate 1).
+        // A qualified operator (`alias/fn`) is never a special form; resolve it
+        // per-namespace (ADR-0013).
         if op.ns.is_some() {
-            return self.resolve_call(&op.name, args, span);
+            return self.resolve_call(op.ns.as_deref(), &op.name, args, span);
         }
         match op.name.as_str() {
             "if" => {
@@ -1272,54 +1359,106 @@ impl<'a> Analyzer<'a> {
                 "def/defn só é permitido no nível de topo",
                 span,
             )),
-            name => self.resolve_call(name, args, span),
+            name => self.resolve_call(None, name, args, span),
         }
     }
 
-    /// Resolves a call whose operator is a simple `name`: primitive, local/capture
-    /// (indirect), top-level function, or a `def` global holding a callable.
-    fn resolve_call(&mut self, name: &str, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
-        if let Some(prim) = prim_of(name) {
-            check_prim_arity(prim, args.len(), span)?;
-            let a = self.analyze_seq(args)?;
-            Ok(Ast::Call {
-                callee: Callee::Prim(prim),
-                args: a,
-            })
-        } else if let Some(ast) = self.resolve(name) {
-            // A local or capture in operator position requires indirect call.
-            let a = self.analyze_seq(args)?;
-            Ok(Ast::CallValue {
-                f: Box::new(ast),
-                args: a,
-            })
-        } else if let Some(arities) = self.sigs.get(name) {
-            if !arity_accepts(arities, args.len()) {
-                return Err(Diagnostic::error(
-                    "E0103",
-                    format!("aridade errada ao chamar {name}: recebeu {}", args.len()),
-                )
-                .with_span(span));
+    /// Resolves a top-level reference to its mangled linker symbol (ADR-0013).
+    ///
+    /// Unqualified names try the current namespace's own `def`/`defn`, then a
+    /// project-global protocol/multimethod/record name, then the auto-referred
+    /// `clojure.core`. Qualified names resolve the alias (or literal namespace) to
+    /// its target and mangle there.
+    fn resolve_top(&self, ns: Option<&str>, name: &str) -> Option<String> {
+        if let Some(q) = ns {
+            let target = self
+                .aliases
+                .get(&self.cur_ns)
+                .and_then(|m| m.get(q))
+                .cloned()
+                .unwrap_or_else(|| q.to_string());
+            let sym = mangle(&target, name);
+            if self.globals.contains_key(&sym) || self.sigs.contains_key(&sym) {
+                return Some(sym);
             }
-            let a = self.analyze_seq(args)?;
-            Ok(Ast::Call {
-                callee: Callee::Fn(name.to_string()),
-                args: a,
-            })
-        } else if let Some(&idx) = self.globals.get(name) {
-            // A global holding a callable value is invoked indirectly.
-            let a = self.analyze_seq(args)?;
-            Ok(Ast::CallValue {
-                f: Box::new(Ast::GlobalRef(idx)),
-                args: a,
-            })
-        } else {
-            Err(
-                Diagnostic::error("E0101", format!("função não resolvida: {name}"))
-                    .with_span(span)
-                    .with_help("defina-a com defn, use uma primitiva, um local ou um fn"),
-            )
+            // Fall back to a project-global name referenced through a namespace.
+            if self.sigs.contains_key(name) {
+                return Some(name.to_string());
+            }
+            return None;
         }
+        let own = mangle(&self.cur_ns, name);
+        if self.globals.contains_key(&own) || self.sigs.contains_key(&own) {
+            return Some(own);
+        }
+        // Project-global protocol/multimethod/record-constructor name.
+        if self.sigs.contains_key(name) {
+            return Some(name.to_string());
+        }
+        let core = mangle("clojure.core", name);
+        if self.globals.contains_key(&core) || self.sigs.contains_key(&core) {
+            return Some(core);
+        }
+        None
+    }
+
+    /// Resolves a call operator: primitive, local/capture (indirect), top-level
+    /// function, or a `def` global holding a callable. `ns` is the operator's
+    /// namespace qualifier, if any.
+    fn resolve_call(
+        &mut self,
+        ns: Option<&str>,
+        name: &str,
+        args: &[SForm],
+        span: Span,
+    ) -> Result<Ast, Diagnostic> {
+        if ns.is_none() {
+            if let Some(prim) = prim_of(name) {
+                check_prim_arity(prim, args.len(), span)?;
+                let a = self.analyze_seq(args)?;
+                return Ok(Ast::Call {
+                    callee: Callee::Prim(prim),
+                    args: a,
+                });
+            }
+            if let Some(ast) = self.resolve(name) {
+                // A local or capture in operator position requires indirect call.
+                let a = self.analyze_seq(args)?;
+                return Ok(Ast::CallValue {
+                    f: Box::new(ast),
+                    args: a,
+                });
+            }
+        }
+        if let Some(sym) = self.resolve_top(ns, name) {
+            if let Some(&idx) = self.globals.get(&sym) {
+                // A global holding a callable value is invoked indirectly.
+                let a = self.analyze_seq(args)?;
+                return Ok(Ast::CallValue {
+                    f: Box::new(Ast::GlobalRef(idx)),
+                    args: a,
+                });
+            }
+            if let Some(arities) = self.sigs.get(&sym) {
+                if !arity_accepts(arities, args.len()) {
+                    return Err(Diagnostic::error(
+                        "E0103",
+                        format!("aridade errada ao chamar {name}: recebeu {}", args.len()),
+                    )
+                    .with_span(span));
+                }
+                let a = self.analyze_seq(args)?;
+                return Ok(Ast::Call {
+                    callee: Callee::Fn(sym),
+                    args: a,
+                });
+            }
+        }
+        Err(
+            Diagnostic::error("E0101", format!("função não resolvida: {name}"))
+                .with_span(span)
+                .with_help("defina-a com defn, use uma primitiva, um local ou um fn"),
+        )
     }
 
     fn analyze_seq(&mut self, forms: &[SForm]) -> Result<Vec<Ast>, Diagnostic> {
@@ -2425,7 +2564,7 @@ mod tests {
         } = &p
             .functions
             .iter()
-            .find(|f| f.name == "adder")
+            .find(|f| f.name == "user__adder")
             .unwrap()
             .methods[0]
             .body
@@ -2441,14 +2580,14 @@ mod tests {
     #[test]
     fn higher_order_call_value() {
         let p = prog("(defn ap [f x] (f x))");
-        let ap = p.functions.iter().find(|f| f.name == "ap").unwrap();
+        let ap = p.functions.iter().find(|f| f.name == "user__ap").unwrap();
         assert!(matches!(ap.methods[0].body, Ast::CallValue { .. }));
     }
 
     #[test]
     fn fn_as_value_is_fnref() {
         let p = prog("(defn inc1 [x] (+ x 1))\n(defn use [] (ap inc1 5))\n(defn ap [f x] (f x))");
-        let usef = p.functions.iter().find(|f| f.name == "use").unwrap();
+        let usef = p.functions.iter().find(|f| f.name == "user__use").unwrap();
         if let Ast::Call { args, .. } = &usef.methods[0].body {
             assert!(matches!(args[0], Ast::FnRef(_)));
         } else {

@@ -26,5 +26,5 @@
   Valida a requisição na entrada e a resposta na saída (lançando mapas de erro
   categorizados em caso de forma inválida). Não abre sockets. Sem preguiça."
   [connector request]
-  (resp/validate-response
-   ((get connector :handler) (req/validate-request request))))
+  (resp/validate
+   ((get connector :handler) (req/validate request))))

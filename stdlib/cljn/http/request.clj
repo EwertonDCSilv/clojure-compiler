@@ -22,10 +22,9 @@
   [req]
   (get req :path))
 
-(defn request-valid?
+(defn valid?
   "Verdadeiro se `x` é um mapa de requisição bem-formado: `:method` keyword,
-  `:path` string, `:headers` mapa, `:body` nil ou string. Predicado puro. (Nome
-  com prefixo `request-` até haver espaços de nomes por-namespace.)"
+  `:path` string, `:headers` mapa, `:body` nil/string/Bytes. Predicado puro."
   [x]
   (and (map? x)
        (keyword? (get x :method))
@@ -33,13 +32,13 @@
        (map? (get x :headers))
        (let [b (get x :body)] (or (nil? b) (string? b) (bytes? b)))))
 
-(defn validate-request
+(defn validate
   "Devolve `x` se for uma requisição válida; senão lança um mapa de erro
   categorizado (ADR-0013 §7): {:cljn.error/domain :http :kind :invalid-request
   :operation :validate-request :value x}. A saída do parser nativo não é confiada
   só por vir do C (ADR-0013 §10). Não muta."
   [x]
-  (if (request-valid? x)
+  (if (valid? x)
     x
     (throw {:cljn.error/domain :http
             :kind :invalid-request

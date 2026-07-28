@@ -192,6 +192,31 @@ fn rejects_invalid_cranelift_optimization_level() {
 }
 
 #[test]
+fn per_namespace_symbols_allow_same_simple_name() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013: two namespaces may define the same simple name; per-namespace
+    // resolution keeps `a/valid?` and `b/valid?` distinct.
+    let a = "(ns lib.a)\n(defn valid? [x] (> x 0))\n(defn tag [] :a)";
+    let b = "(ns lib.b)\n(defn valid? [x] (< x 10))\n(defn tag [] :b)";
+    let app = r#"(ns app.core (:require [lib.a :as a] [lib.b :as b]))
+(defn -main []
+  (println (a/valid? 5) (b/valid? 5) (a/valid? -1) (b/valid? 50))
+  (println (a/tag) (b/tag)))
+(-main)"#;
+    let expected = "true true false false\n:a :b\n";
+    assert_eq!(
+        build_and_run_project(
+            "per_ns",
+            &[("lib/a.clj", a), ("lib/b.clj", b), ("app.clj", app)],
+            "app.clj",
+        ),
+        expected
+    );
+}
+
+#[test]
 fn static_module_loader_two_namespace_project() {
     if !have_cc() {
         return;
