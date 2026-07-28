@@ -254,6 +254,80 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_service_lifecycle_and_signal_shutdown() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 §6 / Gate 5: start!/serve! over the connector, real requests,
+    // and a clean SIGTERM shutdown through the self-pipe (no hang, no leaked port).
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns svc.core
+  (:require [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]
+            [cljn.pedestal.service :as svc]))
+(defn handler [req] (if (= (get req :path) "/health") (resp/ok "up") (resp/not-found)))
+(defn -main []
+  (let [running (svc/start! (conn/create-connector handler) {:port 0})]
+    (println (svc/server-port running))
+    (flush)
+    (svc/serve! running)
+    (println "stopped-cleanly")
+    (flush)))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_svc_e2e.clj");
+    let exe = dir.join("cljn_svc_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let request = |path: &str| -> String {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        resp.lines().next().unwrap_or("").to_string()
+    };
+    assert_eq!(request("/health"), "HTTP/1.1 200 OK");
+    assert_eq!(request("/x"), "HTTP/1.1 404 Not Found");
+
+    // SIGTERM must wake the blocked accept and shut down cleanly.
+    let _ = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status();
+    let mut rest = String::new();
+    reader.read_to_string(&mut rest).unwrap(); // blocks until stdout closes at exit
+    let status = child.wait().unwrap();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    assert!(rest.contains("stopped-cleanly"), "saída: {rest:?}");
+    assert!(status.success(), "servidor não saiu limpo: {status:?}");
+}
+
+#[test]
 fn loopback_http_server_serves_real_requests() {
     if !have_cc() {
         return;

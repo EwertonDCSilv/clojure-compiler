@@ -346,6 +346,8 @@ pub enum Prim {
     HttpServerRespond,
     /// Close an HTTP server handle (idempotent).
     HttpServerClose,
+    /// Request a graceful stop of the HTTP service loop.
+    HttpServerStop,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2401,6 +2403,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "http-server-accept" => Prim::HttpServerAccept,
         "http-server-respond" => Prim::HttpServerRespond,
         "http-server-close" => Prim::HttpServerClose,
+        "http-server-stop" => Prim::HttpServerStop,
         _ => return None,
     })
 }
@@ -2440,6 +2443,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::HttpServerPort
         | Prim::HttpServerAccept
         | Prim::HttpServerClose
+        | Prim::HttpServerStop
         | Prim::WriterOpen
         | Prim::ReaderOpen
         | Prim::Close
@@ -2558,7 +2562,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::HttpServerOpen
         | Prim::HttpServerPort
         | Prim::HttpServerAccept
-        | Prim::HttpServerClose => n == 1,
+        | Prim::HttpServerClose
+        | Prim::HttpServerStop => n == 1,
         Prim::HttpServerRespond => n == 2,
         Prim::Bget | Prim::SpitBytes | Prim::StrSplit => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,

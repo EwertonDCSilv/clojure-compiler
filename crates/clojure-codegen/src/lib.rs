@@ -392,6 +392,7 @@ struct Runtime {
     http_server_accept: FuncId,      // (server)->requisição
     http_server_respond: FuncId,     // (server,resp)->nil
     http_server_close: FuncId,       // (server)->nil
+    http_server_stop: FuncId,        // (server)->nil (para o loop)
     float_from_bits: FuncId,         // (raw_i64)->float (literais)
     transient: FuncId,               // (coll)->transient
     persistent_bang: FuncId,         // (t)->coll
@@ -921,6 +922,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         http_server_accept: una(m, "cljn_http_server_accept"),
         http_server_respond: bin(m, "cljn_http_server_respond"),
         http_server_close: una(m, "cljn_http_server_close"),
+        http_server_stop: una(m, "cljn_http_server_stop"),
         float_from_bits: una(m, "cljn_float_from_bits"),
         flush: {
             let mut s = m.make_signature();
@@ -1040,6 +1042,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::HttpServerPort // devolve fixnum
             | Prim::HttpServerRespond // devolve nil
             | Prim::HttpServerClose // devolve nil
+            | Prim::HttpServerStop // devolve nil
     )
 }
 
@@ -3509,6 +3512,7 @@ impl<'a> FnGen<'a> {
             Prim::HttpServerAccept => self.una(self.rt.http_server_accept, args),
             Prim::HttpServerRespond => self.bin(self.rt.http_server_respond, args),
             Prim::HttpServerClose => self.una(self.rt.http_server_close, args),
+            Prim::HttpServerStop => self.una(self.rt.http_server_stop, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

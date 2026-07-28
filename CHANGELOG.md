@@ -51,10 +51,17 @@ tags.
   `http-server-open`/`-port`/`-accept`/`-respond`/`-close`) with a Clojure-driven
   synchronous service loop, bounded timed reads, and GC-sweep descriptor cleanup,
   serving real ephemeral-port loopback requests (ADR-0013 Gate 4).
+- Add a self-pipe `SIGINT`/`SIGTERM` stop mechanism, `http-server-stop`, and the
+  `cljn.pedestal.service` lifecycle (`start!`/`serve!`/`serve-one!`/`server-port`/
+  `stop!`) that drives the connector's shared dispatch over the provider and shuts
+  down cleanly on a signal or a dispatch-path stop (ADR-0013 §3/§6, Gate 5).
 
 ### Changed
 
 - Stop tracking the local `.lsp/.cache/` editor cache and ignore future cache files.
+- Require every AI-assisted feature to start from an issue registered in the public
+  project, use a `feature/<issue-number>-<semantic-description>` branch, and reach
+  `master` through a pull request; documentation checks now preserve this policy.
 - Keep ADR-0015 outside the admitted `safe` profile after its first full Cormen gate
   recorded candidate/control ratios of 1.0066 wall and 1.0054 CPU, failed the required
   3% gain, and exceeded the per-case point-estimate ceiling.

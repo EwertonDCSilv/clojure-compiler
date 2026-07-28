@@ -36,6 +36,10 @@ const BUILTIN_MODULES: &[(&str, &str)] = &[
         "cljn.pedestal.connector",
         include_str!("../../../stdlib/cljn/pedestal/connector.clj"),
     ),
+    (
+        "cljn.pedestal.service",
+        include_str!("../../../stdlib/cljn/pedestal/service.clj"),
+    ),
 ];
 
 /// Returns the embedded source of a built-in namespace, if any.

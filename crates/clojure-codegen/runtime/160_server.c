@@ -19,9 +19,36 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/time.h>
+#include <signal.h>
+#include <fcntl.h>
 
 #define HTTP_ACCEPT_TIMEOUT_MS 30000
 #define HTTP_READ_TIMEOUT_SEC 10
+
+/* Self-pipe stop signalling (ADR-0013 §6). The handler only sets a flag and writes
+ * one byte to the pipe; it does not allocate, touch the GC, or call Clojure. A full
+ * pipe cannot lose the request because the atomic flag stays set. Single server per
+ * process (P1), so process-global state is sufficient. */
+static volatile sig_atomic_t g_http_stop = 0;
+static int g_http_stop_pipe[2] = {-1, -1};
+static void http_stop_handler(int sig) {
+    (void)sig;
+    g_http_stop = 1;
+    if (g_http_stop_pipe[1] >= 0) {
+        char b = 1;
+        ssize_t r = write(g_http_stop_pipe[1], &b, 1);
+        (void)r;
+    }
+}
+static void http_install_signals(void) {
+    if (g_http_stop_pipe[0] >= 0) return; /* once */
+    if (pipe(g_http_stop_pipe) != 0) return;
+    fcntl(g_http_stop_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(g_http_stop_pipe[1], F_SETFL, O_NONBLOCK);
+    /* ISO C signal(); the handler only flips an atomic flag and writes one byte. */
+    signal(SIGINT, http_stop_handler);
+    signal(SIGTERM, http_stop_handler);
+}
 
 /* Build and throw a categorized network error. */
 static void net_throw(const char *kind, const char *op, int status, int err) {
@@ -53,6 +80,7 @@ Value cljn_http_server_open(Value port_v) {
         net_throw(e == EADDRINUSE ? "address-in-use" : "bind-failed", "bind", 500, e);
     }
     if (listen(fd, 16) < 0) { int e = errno; close(fd); net_throw("listen-failed", "listen", 500, e); }
+    http_install_signals();
     HttpServer *s = (HttpServer *)obj_alloc(sizeof(HttpServer), T_HTTP_SERVER);
     s->listen_fd = fd;
     s->conn_fd = -1;
@@ -109,12 +137,21 @@ static int64_t http_request_end(const char *buf, int64_t len) {
 Value cljn_http_server_accept(Value sv) {
     if (obj_type(sv) != T_HTTP_SERVER) die("http-server-accept: esperava servidor");
     HttpServer *s = (HttpServer *)sv;
-    struct pollfd pfd;
-    pfd.fd = s->listen_fd;
-    pfd.events = POLLIN;
-    int pr = poll(&pfd, 1, HTTP_ACCEPT_TIMEOUT_MS);
+    if (g_http_stop) return NIL; /* stop requested (signal or http-server-stop) */
+    /* Poll the listener and the self-pipe so a stop wakes a blocked accept. */
+    struct pollfd pfd[2];
+    pfd[0].fd = s->listen_fd;
+    pfd[0].events = POLLIN;
+    pfd[1].fd = g_http_stop_pipe[0];
+    pfd[1].events = POLLIN;
+    int pr = poll(pfd, g_http_stop_pipe[0] >= 0 ? 2 : 1, HTTP_ACCEPT_TIMEOUT_MS);
+    if (g_http_stop) return NIL;
     if (pr == 0) net_throw("accept-timeout", "accept", 408, 0);
-    if (pr < 0) net_throw("poll-failed", "accept", 500, errno);
+    if (pr < 0) {
+        if (errno == EINTR) return NIL;
+        net_throw("poll-failed", "accept", 500, errno);
+    }
+    if (!(pfd[0].revents & POLLIN)) return NIL; /* only the stop pipe fired */
     int c = accept(s->listen_fd, NULL, NULL);
     if (c < 0) net_throw("accept-failed", "accept", 500, errno);
     s->conn_fd = c;
@@ -154,6 +191,19 @@ Value cljn_http_server_respond(Value sv, Value response) {
         off += (size_t)w;
     }
     if (s->conn_fd >= 0) { close(s->conn_fd); s->conn_fd = -1; }
+    return NIL;
+}
+
+/* (http-server-stop server) -> nil. Requests a graceful stop: sets the atomic flag
+ * and wakes a blocked accept through the self-pipe. Safe from a dispatch path. */
+Value cljn_http_server_stop(Value sv) {
+    if (obj_type(sv) != T_HTTP_SERVER) die("http-server-stop: esperava servidor");
+    g_http_stop = 1;
+    if (g_http_stop_pipe[1] >= 0) {
+        char b = 1;
+        ssize_t r = write(g_http_stop_pipe[1], &b, 1);
+        (void)r;
+    }
     return NIL;
 }
 
