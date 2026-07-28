@@ -355,6 +355,36 @@ fn compiles_transients() {
 }
 
 #[test]
+fn interprocedural_uniqueness_preserves_semantics() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0010: um acumulador de loop passado a um helper LINEAR (que o consome e
+    // devolve) é threaded como transiente; conj/assoc dispatcham sobre T_TVEC em
+    // runtime. A análise de unicidade DEVE cancelar quando o acumulador é aliased
+    // (guardado noutra estrutura) ou passado a um helper não-linear.
+    let src = r#"(ns iu.core)
+;; helper linear (consome e devolve o acumulador) — deve threadar o transiente
+(defn step [acc lim] (loop [i 0 r acc] (if (>= i lim) r (recur (inc i) (assoc r (mod i 4) (+ (nth r (mod i 4)) i))))))
+(defn work [] (loop [k 0 acc [0 0 0 0]] (if (>= k 3) acc (recur (inc k) (step acc 8)))))
+;; ADVERSARIAL: acumulador guardado (aliased) → NÃO pode mutar in-place
+(defn snaps [] (loop [i 0 v [] s (list)] (if (>= i 4) (map count s) (recur (inc i) (conj v i) (cons v s)))))
+;; make devolve o acumulador inteiro; dois usos independentes
+(defn make [n] (loop [i 0 v []] (if (< i n) (recur (inc i) (conj v i)) v)))
+(defn -main []
+  (println (work))
+  (println (snaps))
+  (let [a (make 3) b (make 5)] (println a b)))
+(-main)"#;
+    let expected = "[12 18 24 30]\n(3 2 1 0)\n[0 1 2] [0 1 2 3 4]\n";
+    assert_eq!(build_and_run("cljn_e2e_uniq", src), expected);
+    assert_eq!(
+        build_and_run_env("cljn_e2e_uniq_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn core_vector_builders_use_transients() {
     if !have_cc() {
         return;

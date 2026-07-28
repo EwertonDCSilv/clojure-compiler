@@ -94,9 +94,14 @@ Value cljn_contains(Value coll, Value key) {
         default: return FALSEV;
     }
 }
+Value cljn_conj_bang(Value t, Value x);          /* fwd (70_transients.c) */
+Value cljn_assoc_bang(Value t, Value k, Value v); /* fwd */
 Value cljn_conj(Value coll, Value x) {
     switch (obj_type(coll)) {
         case T_VEC: return cljn_vec_conj(coll, x);
+        /* ADR-0010: um transiente que chega aqui é um valor ÚNICO threaded pela
+         * análise de unicidade; mutar in-place é observacionalmente igual a copiar. */
+        case T_TVEC: case T_TBOX: return cljn_conj_bang(coll, x);
         case T_SET: case T_HSET: return cljn_set_conj(coll, x);
         case T_SSET: return cljn_sorted_set_conj(coll, x);
         case T_CONS: return cljn_cons(x, coll);
@@ -140,6 +145,7 @@ Value cljn_assoc(Value coll, Value k, Value v) {
         case T_MAP: case T_HMAP: return cljn_map_assoc(coll, k, v);
         case T_SMAP: return cljn_sorted_assoc(coll, k, v);
         case T_VEC: return cljn_vec_assoc(coll, k, v);
+        case T_TVEC: case T_TBOX: return cljn_assoc_bang(coll, k, v); /* ADR-0010: único */
         default:
             if (coll == NIL) { Value m = cljn_map_alloc(0); return cljn_map_assoc(m, k, v); }
             /* capability por tipo nominal (sem tag embutida) */

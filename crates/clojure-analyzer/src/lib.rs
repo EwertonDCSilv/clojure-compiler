@@ -409,8 +409,10 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     if diags.has_errors() {
         return Err(diags);
     }
+    let mut functions = an.functions;
+    optimize_transients(&mut functions, &mut main_body); // ADR-0009/0010: auto-transient
     Ok(Program {
-        functions: an.functions,
+        functions,
         main_body,
         main_local_count: main_frame.max_slots,
     })
@@ -1056,8 +1058,8 @@ impl<'a> Analyzer<'a> {
         let fr = self.top();
         fr.locals.truncate(saved);
         fr.next_slot = saved_next;
-        let mut body = body;
-        linearize_loop(&mut slots, &mut body); // ADR-0009: auto-transient de acumuladores
+        // A linearização (auto-transient, ADR-0009/0010) é um post-pass sobre o
+        // Program inteiro (precisa dos sumários de todas as funções).
         Ok(Ast::Loop {
             slots,
             body: Box::new(body),
@@ -1296,7 +1298,22 @@ fn s_derived(e: &Ast, s: u32) -> bool {
 /// Verdadeiro se TODA ocorrência de `Local(s)` em `e` está numa posição linear
 /// válida. `tail` indica que um valor derivado de `s` pode escapar/religar aqui.
 /// `pos` é a posição do slot `s` na lista de slots do loop (para `recur`).
-fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool) -> bool {
+type LinMap = HashMap<String, usize>;
+/// `e` é uma chamada a função linear que consome `s` no parâmetro linear (ADR-0010)?
+fn is_lin_call(e: &Ast, s: u32, lin: &LinMap) -> bool {
+    if let Ast::Call { callee: Callee::Fn(name), args } = e {
+        if let Some(&j) = lin.get(name) {
+            return args.get(j).is_some_and(|a| ast_is_local(a, s));
+        }
+    }
+    false
+}
+/// Valor que produz o próximo transiente de `s`: cadeia conj/assoc, `s` puro, ou
+/// chamada a função linear consumindo `s`.
+fn transient_producing(e: &Ast, s: u32, lin: &LinMap) -> bool {
+    s_derived(e, s) || is_lin_call(e, s, lin)
+}
+fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
     match e {
         Ast::Local(x) => *x != s || tail, // `s` puro só é válido em cauda (escape/recur-s)
         Ast::Int(_) | Ast::Bool(_) | Ast::Nil | Ast::Str(_) | Ast::Keyword(_)
@@ -1305,52 +1322,153 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool) -> bool {
             if matches!(p, Prim::Conj | Prim::Assoc) && args.first().is_some_and(|r| s_derived(r, s)) =>
         {
             // mutação enraizada em `s`: válida só em cauda; args seguintes podem LER `s`
-            tail && args[1..].iter().all(|a| linear_ok(a, s, pos, false))
+            tail && args[1..].iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
         Ast::Call { callee: Callee::Prim(p), args }
             if matches!(p, Prim::Nth | Prim::Get | Prim::Count | Prim::Contains)
                 && args.first().is_some_and(|r| ast_is_local(r, s)) =>
         {
             // leitura de `s`: válida em qualquer posição
-            args[1..].iter().all(|a| linear_ok(a, s, pos, false))
+            args[1..].iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
-        Ast::Call { args, .. } => args.iter().all(|a| linear_ok(a, s, pos, false)),
+        // ADR-0010: chamada a função linear consumindo `s` no seu parâmetro linear;
+        // válida só em cauda (o resultado vira o próximo `s`). Demais args podem LER
+        // `s` mas não escapá-lo/mutá-lo. O transiente threada pela função (dispatch
+        // em runtime de conj/assoc sobre T_TVEC).
+        Ast::Call { callee: Callee::Fn(name), args }
+            if lin.get(name).is_some_and(|&j| args.get(j).is_some_and(|a| ast_is_local(a, s))) =>
+        {
+            let j = lin[name];
+            tail && args.iter().enumerate().all(|(i, a)| i == j || linear_ok(a, s, pos, false, lin))
+        }
+        Ast::Call { args, .. } => args.iter().all(|a| linear_ok(a, s, pos, false, lin)),
         Ast::CallValue { f, args } => {
-            linear_ok(f, s, pos, false) && args.iter().all(|a| linear_ok(a, s, pos, false))
+            linear_ok(f, s, pos, false, lin) && args.iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
         Ast::Apply { f, fixed, coll } => {
-            linear_ok(f, s, pos, false)
-                && fixed.iter().all(|a| linear_ok(a, s, pos, false))
-                && linear_ok(coll, s, pos, false)
+            linear_ok(f, s, pos, false, lin)
+                && fixed.iter().all(|a| linear_ok(a, s, pos, false, lin))
+                && linear_ok(coll, s, pos, false, lin)
         }
         Ast::Recur(args) => args
             .iter()
             .enumerate()
-            .all(|(i, a)| linear_ok(a, s, pos, i == pos)),
+            .all(|(i, a)| linear_ok(a, s, pos, i == pos, lin)),
         Ast::If(t, then, els) => {
-            linear_ok(t, s, pos, false) && linear_ok(then, s, pos, tail) && linear_ok(els, s, pos, tail)
+            linear_ok(t, s, pos, false, lin)
+                && linear_ok(then, s, pos, tail, lin)
+                && linear_ok(els, s, pos, tail, lin)
         }
         Ast::Do(stmts) => stmts
             .iter()
             .enumerate()
-            .all(|(i, st)| linear_ok(st, s, pos, tail && i + 1 == stmts.len())),
+            .all(|(i, st)| linear_ok(st, s, pos, tail && i + 1 == stmts.len(), lin)),
         Ast::Let { slots, body } => {
-            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false)) && linear_ok(body, s, pos, tail)
+            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false, lin)) && linear_ok(body, s, pos, tail, lin)
         }
         Ast::Loop { slots, body } => {
-            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false)) && linear_ok(body, s, pos, false)
+            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false, lin))
+                && linear_ok(body, s, pos, false, lin)
         }
-        Ast::MakeFn { captures, .. } => captures.iter().all(|c| linear_ok(c, s, pos, false)),
-        Ast::MakeRecord { fields, .. } => fields.iter().all(|(_, v)| linear_ok(v, s, pos, false)),
-        Ast::VecLit(items) | Ast::SetLit(items) => items.iter().all(|i| linear_ok(i, s, pos, false)),
+        Ast::MakeFn { captures, .. } => captures.iter().all(|c| linear_ok(c, s, pos, false, lin)),
+        Ast::MakeRecord { fields, .. } => fields.iter().all(|(_, v)| linear_ok(v, s, pos, false, lin)),
+        Ast::VecLit(items) | Ast::SetLit(items) => {
+            items.iter().all(|i| linear_ok(i, s, pos, false, lin))
+        }
         Ast::MapLit(pairs) => pairs
             .iter()
-            .all(|(k, v)| linear_ok(k, s, pos, false) && linear_ok(v, s, pos, false)),
+            .all(|(k, v)| linear_ok(k, s, pos, false, lin) && linear_ok(v, s, pos, false, lin)),
         Ast::RegisterMethod { key, impl_fn, .. } => {
-            linear_ok(key, s, pos, false) && linear_ok(impl_fn, s, pos, false)
+            linear_ok(key, s, pos, false, lin) && linear_ok(impl_fn, s, pos, false, lin)
         }
-        Ast::RegisterMulti { dispatch_fn, .. } => linear_ok(dispatch_fn, s, pos, false),
+        Ast::RegisterMulti { dispatch_fn, .. } => linear_ok(dispatch_fn, s, pos, false, lin),
     }
+}
+/// Conta ocorrências de `Local(s)` em `e`.
+fn count_local(e: &Ast, s: u32) -> usize {
+    let mut n = 0;
+    fn go(e: &Ast, s: u32, n: &mut usize) {
+        match e {
+            Ast::Local(x) => {
+                if *x == s {
+                    *n += 1;
+                }
+            }
+            Ast::If(a, b, c) => {
+                go(a, s, n);
+                go(b, s, n);
+                go(c, s, n);
+            }
+            Ast::Do(v) | Ast::VecLit(v) | Ast::SetLit(v) | Ast::Recur(v) => {
+                v.iter().for_each(|x| go(x, s, n))
+            }
+            Ast::Let { slots, body } | Ast::Loop { slots, body } => {
+                slots.iter().for_each(|(_, i)| go(i, s, n));
+                go(body, s, n);
+            }
+            Ast::Call { args, .. } => args.iter().for_each(|a| go(a, s, n)),
+            Ast::CallValue { f, args } => {
+                go(f, s, n);
+                args.iter().for_each(|a| go(a, s, n));
+            }
+            Ast::Apply { f, fixed, coll } => {
+                go(f, s, n);
+                fixed.iter().for_each(|a| go(a, s, n));
+                go(coll, s, n);
+            }
+            Ast::MakeFn { captures, .. } => captures.iter().for_each(|c| go(c, s, n)),
+            Ast::MakeRecord { fields, .. } => fields.iter().for_each(|(_, v)| go(v, s, n)),
+            Ast::MapLit(p) => p.iter().for_each(|(k, v)| {
+                go(k, s, n);
+                go(v, s, n);
+            }),
+            Ast::RegisterMethod { key, impl_fn, .. } => {
+                go(key, s, n);
+                go(impl_fn, s, n);
+            }
+            Ast::RegisterMulti { dispatch_fn, .. } => go(dispatch_fn, s, n),
+            _ => {}
+        }
+    }
+    go(e, s, &mut n);
+    n
+}
+/// Toda saída (cauda) de um corpo de loop é derivada do acumulador `s` (a função
+/// retorna o acumulador)? `recur` diverge (não é saída).
+fn all_escapes_derived(e: &Ast, s: u32, lin: &LinMap) -> bool {
+    match e {
+        Ast::Recur(_) => true,
+        Ast::If(_, then, els) => all_escapes_derived(then, s, lin) && all_escapes_derived(els, s, lin),
+        Ast::Do(stmts) => stmts.last().is_none_or(|l| all_escapes_derived(l, s, lin)),
+        Ast::Let { body, .. } => all_escapes_derived(body, s, lin),
+        other => transient_producing(other, s, lin),
+    }
+}
+/// Sumário de linearidade (ADR-0010): posição do parâmetro que a função consome
+/// linearmente e devolve. Stage 1: corpo é um `loop` cujo slot é init a esse
+/// parâmetro, o parâmetro aparece só ali, o slot é usado linearmente e retornado.
+fn linear_param(m: &FnMethod, lin: &LinMap) -> Option<usize> {
+    if m.rest.is_some() {
+        return None;
+    }
+    let Ast::Loop { slots, body } = &m.body else {
+        return None;
+    };
+    for pi in 0..m.params.len() as u32 {
+        // slot cujo init é exatamente o parâmetro `pi`
+        let Some(acc_pos) = slots.iter().position(|(_, init)| ast_is_local(init, pi)) else {
+            continue;
+        };
+        let acc_slot = slots[acc_pos].0;
+        // `pi` aparece só uma vez em todo o corpo (aquele init) e os outros inits não o usam
+        if count_local(&m.body, pi) != 1 {
+            continue;
+        }
+        if linear_ok(body, acc_slot, acc_pos, true, lin) && all_escapes_derived(body, acc_slot, lin) {
+            return Some(pi as usize);
+        }
+    }
+    None
 }
 /// Reescreve conj/assoc enraizados em `s` para conj!/assoc! (segue a cadeia).
 fn rewrite_bang(e: &mut Ast, s: u32) {
@@ -1378,26 +1496,28 @@ fn rewrite_transient_value(e: &mut Ast, s: u32) {
         _ => rewrite_bang(e, s),
     }
 }
-/// Transforma o corpo: nas saídas (cauda) congela valores derivados de `s` com
-/// `persistent!`; nos recur do próprio slot reescreve conj/assoc → conj!/assoc!.
-fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool) {
+/// Transforma o corpo: nas saídas (cauda) congela valores que produzem o
+/// transiente com `persistent!`; nos recur do próprio slot reescreve conj/assoc →
+/// conj!/assoc! (chamadas a funções lineares threadam o transiente sem reescrita —
+/// conj/assoc dispatcham sobre T_TVEC em runtime, ADR-0010).
+fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) {
     match e {
         Ast::If(_, then, els) => {
-            transform_body(then, s, pos, tail);
-            transform_body(els, s, pos, tail);
+            transform_body(then, s, pos, tail, lin);
+            transform_body(els, s, pos, tail, lin);
         }
         Ast::Do(stmts) => {
             if let Some(last) = stmts.last_mut() {
-                transform_body(last, s, pos, tail);
+                transform_body(last, s, pos, tail, lin);
             }
         }
-        Ast::Let { body, .. } => transform_body(body, s, pos, tail),
+        Ast::Let { body, .. } => transform_body(body, s, pos, tail, lin),
         Ast::Recur(args) => {
             if let Some(a) = args.get_mut(pos) {
-                rewrite_transient_value(a, s); // desce em if/do/let (recur mantém transiente)
+                rewrite_transient_value(a, s);
             }
         }
-        other if tail && s_derived(other, s) => {
+        other if tail && transient_producing(other, s, lin) => {
             let mut inner = std::mem::replace(other, Ast::Nil);
             rewrite_bang(&mut inner, s);
             *other = Ast::Call {
@@ -1408,11 +1528,13 @@ fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool) {
         _ => {}
     }
 }
-fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast) {
+fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast, lin: &LinMap) {
     let n = slots.len();
     // Decide todos os slots elegíveis sobre o corpo ORIGINAL, depois transforma.
     let eligible: Vec<usize> = (0..n)
-        .filter(|&pos| matches!(slots[pos].1, Ast::VecLit(_)) && linear_ok(body, slots[pos].0, pos, true))
+        .filter(|&pos| {
+            matches!(slots[pos].1, Ast::VecLit(_)) && linear_ok(body, slots[pos].0, pos, true, lin)
+        })
         .collect();
     for pos in eligible {
         let s = slots[pos].0;
@@ -1421,7 +1543,76 @@ fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast) {
             callee: Callee::Prim(Prim::Transient),
             args: vec![init],
         };
-        transform_body(body, s, pos, true);
+        transform_body(body, s, pos, true, lin);
+    }
+}
+/// Percorre `e` (bottom-up) e lineariza cada `loop` usando os sumários `lin`.
+fn walk_and_linearize(e: &mut Ast, lin: &LinMap) {
+    match e {
+        Ast::Loop { slots, body } => {
+            for (_, init) in slots.iter_mut() {
+                walk_and_linearize(init, lin);
+            }
+            walk_and_linearize(body, lin);
+            linearize_loop(slots, body, lin);
+        }
+        Ast::If(a, b, c) => {
+            walk_and_linearize(a, lin);
+            walk_and_linearize(b, lin);
+            walk_and_linearize(c, lin);
+        }
+        Ast::Do(v) | Ast::VecLit(v) | Ast::SetLit(v) | Ast::Recur(v) => {
+            v.iter_mut().for_each(|x| walk_and_linearize(x, lin))
+        }
+        Ast::Let { slots, body } => {
+            slots.iter_mut().for_each(|(_, i)| walk_and_linearize(i, lin));
+            walk_and_linearize(body, lin);
+        }
+        Ast::Call { args, .. } => args.iter_mut().for_each(|a| walk_and_linearize(a, lin)),
+        Ast::CallValue { f, args } => {
+            walk_and_linearize(f, lin);
+            args.iter_mut().for_each(|a| walk_and_linearize(a, lin));
+        }
+        Ast::Apply { f, fixed, coll } => {
+            walk_and_linearize(f, lin);
+            fixed.iter_mut().for_each(|a| walk_and_linearize(a, lin));
+            walk_and_linearize(coll, lin);
+        }
+        Ast::MakeFn { captures, .. } => captures.iter_mut().for_each(|c| walk_and_linearize(c, lin)),
+        Ast::MakeRecord { fields, .. } => {
+            fields.iter_mut().for_each(|(_, v)| walk_and_linearize(v, lin))
+        }
+        Ast::MapLit(p) => p.iter_mut().for_each(|(k, v)| {
+            walk_and_linearize(k, lin);
+            walk_and_linearize(v, lin);
+        }),
+        Ast::RegisterMethod { key, impl_fn, .. } => {
+            walk_and_linearize(key, lin);
+            walk_and_linearize(impl_fn, lin);
+        }
+        Ast::RegisterMulti { dispatch_fn, .. } => walk_and_linearize(dispatch_fn, lin),
+        _ => {}
+    }
+}
+/// Post-pass de auto-transient (ADR-0009 rec.2 + ADR-0010): computa os sumários de
+/// linearidade das funções e lineariza os acumuladores de loop (intra e inter).
+fn optimize_transients(functions: &mut [Function], main_body: &mut [Ast]) {
+    // Sumários (stage 1: não-recursivos — um passe, sem chaining de lineares).
+    let mut lin: LinMap = HashMap::new();
+    for f in functions.iter() {
+        if f.methods.len() == 1 {
+            if let Some(pi) = linear_param(&f.methods[0], &HashMap::new()) {
+                lin.insert(f.name.clone(), pi);
+            }
+        }
+    }
+    for f in functions.iter_mut() {
+        for m in f.methods.iter_mut() {
+            walk_and_linearize(&mut m.body, &lin);
+        }
+    }
+    for stmt in main_body.iter_mut() {
+        walk_and_linearize(stmt, &lin);
     }
 }
 
