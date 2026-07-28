@@ -161,6 +161,9 @@ test-runtime:
 test-runtime-sanitize:
 	scripts/test-runtime-c.sh --sanitize
 
+fuzz-http:
+	scripts/fuzz-http.sh $(FUZZ_SECONDS)
+
 $(IR_AB_ANALYZER_TESTS): benchmarks/analyze-ir-ab.rs
 	mkdir -p "$(dir $@)"
 	$(RUSTC) --edition=2021 -D warnings --test "$<" -o "$@"

@@ -65,6 +65,9 @@ tags.
 - Add a subprocess start/serve/stop cycle gate (default 200, `CLJN_HTTP_CYCLES=1000`
   in CI) that verifies repeated full server lifecycles serve one request and exit
   cleanly with no crash or hang (ADR-0013 Gate 4 acceptance #5/#6).
+- Add a continuous libFuzzer target for the HTTP request parser
+  (`tests/fuzz/http_parse_fuzz.c`) with the `scripts/fuzz-http.sh` runner and the
+  `make fuzz-http` entry point, seeded from the deterministic corpus (ADR-0013 Gate 4).
 
 ### Changed
 
