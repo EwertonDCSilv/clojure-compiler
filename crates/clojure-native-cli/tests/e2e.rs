@@ -254,6 +254,73 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_server_subprocess_start_serve_stop_cycles() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #5/#6: repeated full start/serve/stop subprocess
+    // cycles complete with no crash or hang, each serving one request then exiting
+    // cleanly. Defaults to a fast count; CI sets CLJN_HTTP_CYCLES=1000.
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let cycles: u32 = std::env::var("CLJN_HTTP_CYCLES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let src = r#"(ns cyc.core
+  (:require [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]
+            [cljn.pedestal.service :as svc]))
+(defn -main []
+  (let [running (svc/start! (conn/create-connector (fn [r] (resp/ok "ok"))) {:port 0})]
+    (println (svc/server-port running))
+    (flush)
+    (svc/serve-one! running)
+    (http-server-close (get running :server))))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_cyc_e2e.clj");
+    let exe = dir.join("cljn_cyc_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for cycle in 0..cycles {
+        let mut child = Command::new(&exe)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn");
+        let mut reader = BufReader::new(child.stdout.take().unwrap());
+        let mut port_line = String::new();
+        reader.read_line(&mut port_line).unwrap();
+        let port: u16 = port_line.trim().parse().expect("porta");
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        assert!(
+            resp.starts_with("HTTP/1.1 200 OK"),
+            "ciclo {cycle}: resposta {resp:?}"
+        );
+        let status = child.wait().unwrap();
+        assert!(status.success(), "ciclo {cycle}: saída {status:?}");
+    }
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+}
+
+#[test]
 fn http_server_open_close_cycles_do_not_leak() {
     if !have_cc() {
         return;

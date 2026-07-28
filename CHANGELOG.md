@@ -62,6 +62,9 @@ tags.
   suite, exercising an adversarial corpus and every input prefix under ASan/UBSan via
   `make test-runtime-sanitize`, and an open/close-cycle descriptor-leak end-to-end
   test (ADR-0013 Gate 4 CI hardening).
+- Add a subprocess start/serve/stop cycle gate (default 200, `CLJN_HTTP_CYCLES=1000`
+  in CI) that verifies repeated full server lifecycles serve one request and exit
+  cleanly with no crash or hang (ADR-0013 Gate 4 acceptance #5/#6).
 
 ### Changed
 
