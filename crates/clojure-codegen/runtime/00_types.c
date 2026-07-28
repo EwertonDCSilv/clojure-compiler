@@ -31,6 +31,13 @@ typedef intptr_t Value;
 #define FIX(v)     ((intptr_t)(v) >> 1)
 #define IS_PTR(v)  (((v) & 7) == 0)
 
+/* Char: imediato tagged (low3=100), distinto de fixnum (bit0=1), ponteiros
+ * (low3=000) e demais imediatos (low3=010). Guarda o codepoint Unicode (<=21 bits).
+ * Sem alocação; transparente ao GC (IS_PTR falso). */
+#define IS_CHAR(v)  (((v) & 7) == 4)
+#define MK_CHAR(cp) ((Value)(((uintptr_t)(uint32_t)(cp) << 3) | 4u))
+#define CHAR_CP(v)  ((uint32_t)((uintptr_t)(v) >> 3))
+
 /* Intervalo de fixnum em alvo de 64 bits (fonte única — deve casar com o codegen). */
 #define FIXNUM_MIN (-((intptr_t)1 << 62))
 #define FIXNUM_MAX (((intptr_t)1 << 62) - 1)

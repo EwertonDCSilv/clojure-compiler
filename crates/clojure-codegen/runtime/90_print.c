@@ -71,6 +71,9 @@ static void sb_write_tree(SB *b, Value node, int is_map, int for_str, int *first
 }
 static void write_val(SB *b, Value v, int for_str) {
     if (IS_FIX(v)) { char t[32]; int n=snprintf(t,sizeof t,"%ld",(long)FIX(v)); sb_write(b,t,(size_t)n); return; }
+    /* Char: imprime o próprio caractere (UTF-8), como str; consistente com strings
+     * não-quotadas neste runtime (sem forma pr \x). */
+    if (IS_CHAR(v)) { char t[4]; int n=utf8_encode(CHAR_CP(v),t); sb_write(b,t,(size_t)n); return; }
     if (v == NIL) { if (!for_str) sb_str(b,"nil"); return; }
     if (v == TRUEV) { sb_str(b,"true"); return; }
     if (v == FALSEV) { sb_str(b,"false"); return; }

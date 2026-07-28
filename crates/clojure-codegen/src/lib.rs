@@ -226,6 +226,10 @@ struct Runtime {
     with_binding: FuncId,     // (id,nv,thunk)->valor do corpo
     read_line: FuncId,        // ()->string|nil (lê linha de *in*)
     string_reader: FuncId,    // (string)->reader
+    char_of: FuncId,          // (int|char)->char
+    int_of: FuncId,           // (char|int)->int
+    charp: FuncId,            // (x)->bool
+    read_char: FuncId,        // ()->char|nil
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -576,6 +580,15 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
                 .unwrap()
         },
         string_reader: una(m, "cljn_string_reader"),
+        char_of: una(m, "cljn_char"),
+        int_of: una(m, "cljn_int"),
+        charp: una(m, "cljn_charp"),
+        read_char: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_read_char", Linkage::Import, &s)
+                .unwrap()
+        },
         transient: una(m, "cljn_transient"),
         persistent_bang: una(m, "cljn_persistent_bang"),
         conj_bang: bin(m, "cljn_conj_bang"),
@@ -649,6 +662,10 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::Throw // diverge; resultado nunca materializa
             | Prim::Spit // devolve nil
             | Prim::FileExists // devolve boolean
+            | Prim::CharOf // devolve char (imediato)
+            | Prim::IntOf // devolve fixnum
+            | Prim::CharP // devolve boolean
+            | Prim::ReadChar // devolve char ou nil (imediatos)
     )
 }
 
@@ -2281,6 +2298,10 @@ impl<'a> FnGen<'a> {
             Prim::WithBinding => self.tern(self.rt.with_binding, args),
             Prim::ReadLine => Ok(self.call0(self.rt.read_line)),
             Prim::StringReader => self.una(self.rt.string_reader, args),
+            Prim::CharOf => self.una(self.rt.char_of, args),
+            Prim::IntOf => self.una(self.rt.int_of, args),
+            Prim::CharP => self.una(self.rt.charp, args),
+            Prim::ReadChar => Ok(self.call0(self.rt.read_char)),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

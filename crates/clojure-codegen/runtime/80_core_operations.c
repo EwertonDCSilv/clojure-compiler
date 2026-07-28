@@ -100,6 +100,22 @@ int cljn_equal_raw(Value a, Value b) {
 }
 Value cljn_eq(Value a, Value b) { return b2v(cljn_equal_raw(a,b)); }
 
+/* Char <-> inteiro (ADR-0007 / IO-1). (char n) inteiro->char; (int c) char->codepoint.
+ * Idempotentes no próprio tipo. Também emitido para literais de char \a. */
+Value cljn_char(Value x) {
+    if (IS_CHAR(x)) return x;
+    if (IS_FIX(x)) return MK_CHAR((uint32_t)FIX(x));
+    die("char: esperava inteiro ou char");
+    return NIL;
+}
+Value cljn_int(Value x) {
+    if (IS_CHAR(x)) return MK_FIX((intptr_t)CHAR_CP(x));
+    if (IS_FIX(x)) return x;
+    die("int: esperava char ou inteiro");
+    return NIL;
+}
+Value cljn_charp(Value x) { return b2v(IS_CHAR(x)); }
+
 int cljn_truthy(Value v) { return (v != NIL && v != FALSEV) ? 1 : 0; }
 Value cljn_not(Value v) { return b2v(!cljn_truthy(v)); }
 Value cljn_nilp(Value v) { return b2v(v == NIL); }

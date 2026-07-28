@@ -145,6 +145,10 @@ pub enum Prim {
     WithBinding,
     ReadLine,
     StringReader,
+    CharOf,
+    IntOf,
+    CharP,
+    ReadChar,
 }
 
 /// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
@@ -789,7 +793,11 @@ impl<'a> Analyzer<'a> {
                 "ponto flutuante ainda não é compilável (slice inteiro)",
                 f.span,
             )),
-            Form::Char(_) => Err(unsupported("char ainda não é compilável", f.span)),
+            Form::Char(c) => Ok(Ast::Call {
+                // Literal de char → (char <codepoint>); runtime devolve o imediato.
+                callee: Callee::Prim(Prim::CharOf),
+                args: vec![Ast::Int(*c as u32 as i64)],
+            }),
             Form::Keyword(n) => {
                 if n.ns.is_some() {
                     return Err(unsupported(
@@ -1786,6 +1794,10 @@ fn prim_of(name: &str) -> Option<Prim> {
         "file-exists?" => Prim::FileExists,
         "getenv" => Prim::Getenv,
         "read-line" => Prim::ReadLine,
+        "read-char" => Prim::ReadChar,
+        "char" => Prim::CharOf,
+        "int" => Prim::IntOf,
+        "char?" => Prim::CharP,
         _ => return None,
     })
 }
@@ -1809,6 +1821,9 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Slurp
         | Prim::FileExists
         | Prim::Getenv
+        | Prim::CharOf
+        | Prim::IntOf
+        | Prim::CharP
         | Prim::Vals => 1,
         Prim::Add
         | Prim::Sub
@@ -1844,6 +1859,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::VarGet // sintetizada (leitura de Var dinâmica)
         | Prim::WithBinding // sintetizada (desugar de binding)
         | Prim::ReadLine // 0-ária; use (fn [] (read-line)) como valor
+        | Prim::ReadChar // idem
         | Prim::StringReader // sintetizada (with-in-str)
         | Prim::Print => return None,
     })
@@ -1886,7 +1902,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::VarGet => n == 1,
         Prim::WithBinding => n == 3,
         Prim::ReadLine => n == 0,
+        Prim::ReadChar => n == 0,
         Prim::StringReader => n == 1,
+        Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

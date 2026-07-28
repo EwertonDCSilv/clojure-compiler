@@ -460,6 +460,33 @@ fn read_line_from_with_in_str() {
 }
 
 #[test]
+fn char_type_literals_conversion_and_read_char() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-1: Char como imediato tagged. Literais (nomeados/unicode),
+    // char/int, str, char?, igualdade, read-char (decodifica UTF-8, inclusive
+    // multibyte).
+    let src = r#"(ns ch.core)
+(defn read-chars [acc]
+  (let [c (read-char)]
+    (if (nil? c) acc (recur (conj acc c)))))
+(defn -main []
+  (println (int \A) (int \a) (char 66))
+  (println (= \Z (char (int \Z))) (= \a \a) (= \a \b) (= \A 65))
+  (println (char? \a) (char? 97) (char? "a"))
+  (println (str \h \i \! \space \é))
+  (println (with-in-str "aé" (read-chars []))))
+(-main)"#;
+    let expected = "65 97 B\ntrue true false false\ntrue false false\nhi! é\n[a é]\n";
+    assert_eq!(build_and_run("char_type", src), expected);
+    assert_eq!(
+        build_and_run_env("char_type_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;
