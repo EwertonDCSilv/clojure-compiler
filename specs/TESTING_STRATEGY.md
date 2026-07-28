@@ -94,8 +94,8 @@ tests/conformance/
 
 O inventário atual contém 460 casos:
 
-- 172 `active`: executados e bloqueantes;
-- 256 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 185 `active`: executados e bloqueantes;
+- 243 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.
@@ -115,8 +115,9 @@ Streams `.bin` são comparados byte a byte; mapas/sets são comparados estrutura
 newlines e caminhos temporários de expectativas textuais são normalizados.
 
 A matriz de I/O descrita em [IO_SPEC](IO_SPEC.md) acrescenta cenários normal, limite e
-erro para core/EDN e `cljn.*`. Somente o baseline de `print`/`println` está ativo; os
-demais casos são `xfail` e não afirmam implementação.
+erro para core/EDN e `cljn.*`. Há casos ativos para output, flush, redirecionamento,
+texto em arquivo, `read-string` e streams de string; as lacunas restantes continuam
+`xfail` e não afirmam implementação.
 
 `verify` compila o CLI release uma vez, reutiliza o artefato, executa no máximo quatro
 casos em paralelo e grava:

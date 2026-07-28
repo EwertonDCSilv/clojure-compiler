@@ -77,7 +77,7 @@ O runtime fornece:
 - alocação e GC mark-sweep;
 - strings, cons, vetores, maps, sets e records;
 - closures, aridade, `apply` e dispatch de protocolos;
-- operações de coleção e o baseline de stdout por `print`/`println`;
+- operações de coleção, streams, arquivos textuais e o reader de runtime;
 - slow paths de tipo, overflow e divisão.
 
 Fast paths numéricos e operações da shadow stack são gerados diretamente sempre que

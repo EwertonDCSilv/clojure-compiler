@@ -459,6 +459,22 @@ fn build_xfail_reason(
     value
 }
 
+#[allow(clippy::too_many_arguments)]
+fn build_active(
+    area: &'static str,
+    slug: &'static str,
+    body: &'static str,
+    desired: &'static str,
+    reason: &'static str,
+    tracking: &'static str,
+) -> Fixture {
+    let mut value = build_xfail(area, slug, body, desired, tracking);
+    value.status = "active";
+    value.class = "spec";
+    value.reason = reason;
+    value
+}
+
 fn native_build_xfail(
     area: &'static str,
     slug: &'static str,
@@ -773,6 +789,16 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
     } else {
         "unsupported"
     };
+    let active = matches!(
+        (api.namespace, api.function, scenario),
+        ("clojure.core", "flush", "normal")
+            | ("clojure.core", "read-string", "normal" | "boundary")
+            | ("clojure.core", "slurp", "normal" | "boundary")
+            | ("clojure.core", "spit", "normal")
+            | ("clojure.core", "with-in-str", "normal" | "boundary")
+            | ("clojure.core", "with-open", "boundary")
+            | ("clojure.core", "with-out-str", "normal" | "boundary")
+    );
     let mut value = fixture(
         'C',
         leak(format!("{}/{}", api.directory, function_slug)),
@@ -782,12 +808,16 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
             namespace_slug, function_slug, scenario
         )),
         leak(format!("stdlib/{}", api.directory)),
-        "xfail",
+        if active { "active" } else { "xfail" },
         class,
         "build-run",
         oracle,
         scenario == "boundary",
-        "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet.",
+        if active {
+            "Implemented by the current native clojure.core I/O path."
+        } else {
+            "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+        },
         "specs/IO_SPEC.md",
         Some(api.namespace),
         body,
@@ -1828,20 +1858,22 @@ fn fixtures() -> Vec<Fixture> {
             "specs/IO_SPEC.md#standard-streams-and-process-context",
         ),
         with_expected_stderr(
-            build_xfail(
+            build_active(
                 "io/dynamic-bindings",
                 "stderr-redirection",
                 "(ns b.io.stderr)\n(defn -main []\n  (binding [*out* *err*] (println \"problem\"))\n  (println \"ok\"))\n(-main)\n",
                 "ok\n",
+                "Implemented by the current native standard-stream and dynamic-binding path.",
                 "specs/IO_SPEC.md#standard-streams-and-process-context",
             ),
             "problem\n",
         ),
-        build_xfail(
+        build_active(
             "io/dynamic-bindings",
             "flush-on-newline-disabled",
             "(ns b.io.flush-binding)\n(defn -main []\n  (binding [*flush-on-newline* false] (println \"buffered\") (flush)))\n(-main)\n",
             "buffered\n",
+            "Implemented by the current native standard-stream and dynamic-binding path.",
             "specs/IO_SPEC.md#standard-streams-and-process-context",
         ),
         build_xfail(

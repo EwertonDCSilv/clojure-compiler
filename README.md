@@ -172,7 +172,7 @@ invalid conformance fixtures are excluded, while both bootstrap cores, examples,
 algorithm benchmarks, and the JVM oracle are checked with warnings treated as errors.
 
 The executable compatibility matrix currently contains 460 cases across levels A–E:
-172 active, 256 expected failures, and 32 pending inventory entries. Levels D and E now
+185 active, 243 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
 target and 13 official Exercism concept exemplars. The matrix also inventories the complete proposed I/O surface as expected
@@ -257,9 +257,10 @@ build; the other 106 have a versioned first-blocker classification.
   remain incomplete.
 - Multimethod dispatch requires an explicit function and supports equality plus
   `:default`; hierarchy dispatch through `derive`/`isa?` is not implemented.
-- General stdin, files, filesystem operations, runtime EDN reading, and stream
-  redirection are specified but not implemented; current native output is limited to
-  the active `print`/`println` baseline.
+- Native I/O now covers `print`/`println`, flushing, dynamic output redirection,
+  `slurp`/`spit`, `read-string`, and in-memory `with-in-str`/`with-out-str` paths.
+  General stdin, binary/filesystem operations, full EDN options, and the remaining
+  lifecycle/error cases are still incomplete.
 - Native compilation targets the host and invokes a system C linker.
 - The GC is single-threaded and non-moving. Rooting is still eager; a planned phase
   will place roots from liveness information at allocation safepoints.

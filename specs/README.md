@@ -50,7 +50,7 @@ Em 2026-07-27, o workspace já possui um corte vertical funcional:
   de tradução e uma única ABI.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
-[`tests/conformance/`](../tests/conformance) possui 460 casos: 172 ativos, 256 falhas
+[`tests/conformance/`](../tests/conformance) possui 460 casos: 185 ativos, 243 falhas
 esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
@@ -77,7 +77,8 @@ As specs descrevem tanto o que existe quanto o alvo futuro; marcações de fase 
 oferece bignums, ratios, ponto flutuante compilado, macros definidas pelo usuário,
 lazy-seq, namespaces dinâmicos, projetos multi-arquivo ou interop Java. Exceções ainda
 não têm hierarquia tipada e multimétodos ainda não usam hierarquias. O gate geral de
-I/O também permanece proposto: somente `print`/`println` estão ativos.
+O gate completo de I/O permanece proposto, mas output, flush, redirecionamento,
+`slurp`/`spit`, `read-string` e streams de string já têm casos ativos.
 
 ## Como ler estes documentos
 
@@ -157,7 +158,7 @@ fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
 | Otimização | fast paths inteiros, stores diretos, auto-transient intra/interprocedural inicial e hoisting de literais | safepoints, escape geral e otimização do IR |
 | Coleções | lista, trie vetorial, HAMT, sorted map/set por LLRB e transients iniciais | CHAMP e transients com edit tokens |
 | Operações de coleção | dispatch fechado por tag para `assoc`/`nth` | capabilities extensíveis com fast paths nativos |
-| I/O | `print`/`println` diretos no stdout | streams dinâmicos, arquivos, filesystem e readers conforme IO_SPEC |
+| I/O | output, flush, redirecionamento, texto em arquivo e streams de string | filesystem amplo, binários e reader/EDN completo conforme IO_SPEC |
 | Plataforma | compilação e link para o host | matriz multiplataforma ampliada |
 
 ## Convenções

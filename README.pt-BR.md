@@ -171,7 +171,7 @@ dois cores de bootstrap, exemplos, benchmarks de algoritmos e o oracle JVM são
 verificados com warnings tratados como erro.
 
 A matriz executável de compatibilidade contém atualmente 460 casos nos níveis A–E:
-172 ativos, 256 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
+185 ativos, 243 falhas esperadas e 32 itens pendentes de inventário. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
 lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
 World em Pedestal e 13 exemplares conceituais oficiais do Exercism. A matriz também
@@ -258,9 +258,10 @@ compilam; as outras 106 possuem classificação versionada do primeiro bloqueado
   incompletos.
 - Multimétodos exigem uma função de dispatch explícita e suportam igualdade mais
   `:default`; dispatch por hierarquia com `derive`/`isa?` ainda não existe.
-- Stdin geral, arquivos, operações de filesystem, reader EDN em runtime e
-  redirecionamento de streams estão especificados, mas não implementados; a saída
-  nativa atual limita-se ao baseline ativo de `print`/`println`.
+- O I/O nativo já cobre `print`/`println`, flush, redirecionamento dinâmico de saída,
+  `slurp`/`spit`, `read-string` e os caminhos em memória de
+  `with-in-str`/`with-out-str`. Stdin geral, operações binárias/de filesystem, opções
+  EDN completas e os demais casos de lifecycle/erro continuam incompletos.
 - A compilação nativa usa o host e invoca um linker C do sistema.
 - O GC é single-thread e não móvel. O rooting ainda é eager; uma fase planejada usará
   liveness para posicionar roots nos safepoints de alocação.

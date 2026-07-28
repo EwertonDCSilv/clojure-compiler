@@ -174,15 +174,16 @@ exceções, `ex-info`/`ex-data` e stack trace de fonte também permanecem futuro
 
 ## I/O e recursos externos
 
-O runtime executável atual oferece somente a saída direta usada por `print` e
-`println`. Ele ainda não possui handles gerais, stdin, redirecionamento, arquivos,
-filesystem, exceções de I/O ou reader em runtime.
+O runtime executável atual oferece output, flush, redirecionamento dinâmico,
+`slurp`/`spit`, `read-string` e streams de string. Handles e arquivos textuais já
+atendem esses caminhos, mas stdin geral, binários, filesystem amplo, EDN completo e
+parte dos erros/lifecycles ainda não estão cobertos pelo gate.
 
-O contrato futuro está em [IO_SPEC](IO_SPEC.md): handles abertos serão objetos GC
+O contrato completo está em [IO_SPEC](IO_SPEC.md): handles abertos são objetos GC
 ligados a um registro explícito de recursos externos; buffers e syscalls permanecerão
-atrás da ABI C; `close!` removerá o registro. Finalizers não serão requisito de
-correção. A base genérica de unwind já existe; tipos de exceção de I/O, `ex-data`, Vars
-dinâmicas e `binding` continuam dependências bloqueantes.
+atrás da ABI C; `close!` remove o registro. Finalizers não são requisito de correção.
+A base genérica de unwind, Vars dinâmicas e `binding` já existem; a matriz restante
+continua registrando os contratos ainda não promovidos.
 
 ## Estado futuro
 

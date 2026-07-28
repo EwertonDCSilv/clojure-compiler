@@ -1,10 +1,11 @@
 # Gate nativo de I/O
 
-Status: **proposto**. Este documento define o contrato necessário para declarar o
-compilador `I/O-ready`; ele não afirma que a superfície descrita já está implementada.
-A classificação executável continua sendo a matriz em
-[`tests/conformance/`](../tests/conformance): hoje somente o baseline de
-`print`/`println` é `active`, e as lacunas com caminho de teste são `xfail`.
+Status: **parcialmente implementado**. Este documento define o contrato necessário
+para declarar o compilador `I/O-ready`; ele não afirma que toda a superfície descrita
+já está implementada. A classificação executável continua sendo a matriz em
+[`tests/conformance/`](../tests/conformance): output, flush, redirecionamento,
+`slurp`/`spit`, `read-string` e streams de string possuem casos `active`, enquanto as
+lacunas com caminho de teste permanecem `xfail`.
 
 ## Escopo do primeiro gate
 

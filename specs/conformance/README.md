@@ -10,10 +10,11 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **460 cases** — 172 active, 256 expected failures, and 32 pending.
-The I/O inventory is intentionally dominated by `xfail`: only the explicit
-`print`/`println` baseline is active, so these counts do not claim that the proposed
-I/O gate is delivered.
+Current inventory: **460 cases** — 185 active, 243 expected failures, and 32 pending.
+The I/O inventory remains intentionally incremental. Output, flushing, dynamic
+redirection, `slurp`/`spit`, `read-string`, and string-backed streams have active
+coverage; the remaining `xfail` cases keep the full proposed I/O gate from being
+reported as delivered.
 
 The 13 official Exercism concept exemplars are included at Level D as an external
 language/stdlib corpus: 1 is active and 12 are `xfail`. They verify observable support
