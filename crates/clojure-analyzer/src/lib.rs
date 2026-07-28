@@ -323,6 +323,8 @@ pub enum Prim {
     StrSplit,
     /// Parse raw HTTP request bytes into a request map (ADR-0013 Gate 4).
     ParseHttpRequest,
+    /// Serialize a response map into raw HTTP/1.1 response bytes (ADR-0013 Gate 4).
+    SerializeHttpResponse,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2352,6 +2354,7 @@ fn prim_of(name: &str) -> Option<Prim> {
         "bytes?" => Prim::BytesP,
         "str-split" => Prim::StrSplit,
         "parse-http-request" => Prim::ParseHttpRequest,
+        "serialize-http-response" => Prim::SerializeHttpResponse,
         _ => return None,
     })
 }
@@ -2386,6 +2389,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::SlurpBytes
         | Prim::ReadString
         | Prim::ParseHttpRequest
+        | Prim::SerializeHttpResponse
         | Prim::WriterOpen
         | Prim::ReaderOpen
         | Prim::Close
@@ -2499,7 +2503,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
-        Prim::ParseHttpRequest => n == 1,
+        Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
         Prim::Bget | Prim::SpitBytes | Prim::StrSplit => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,

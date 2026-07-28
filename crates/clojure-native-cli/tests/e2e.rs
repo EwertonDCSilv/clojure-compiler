@@ -260,6 +260,32 @@ fn http_request_parser_valid_and_malformed() {
 }
 
 #[test]
+fn http_response_serializer_bytes_and_validation() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 §5: response serializer emits deterministic HTTP/1.1 bytes
+    // (computed Content-Length, Connection: close) and revalidates status/headers.
+    let src = r#"(ns s.core)
+(defn kind [f] (try (do (f) :ok) (catch E e (get e :kind))))
+(defn -main []
+  (print (serialize-http-response {:status 200 :headers {:content-type "text/plain"} :body "hi"}))
+  (println "|")
+  (print (serialize-http-response {:status 204 :headers {} :body nil}))
+  (println "|")
+  (println (kind (fn [] (serialize-http-response {:status 999 :headers {} :body nil})))
+           (kind (fn [] (serialize-http-response {:status 200 :headers {:x "a\r\nb"} :body nil})))
+           (kind (fn [] (serialize-http-response {:status 200 :headers {:content-length "5"} :body nil})))))
+(-main)"#;
+    let expected = "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi|\nHTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n|\n:invalid-status :invalid-header :reserved-header\n";
+    assert_eq!(build_and_run("http_serializer", src), expected);
+    assert_eq!(
+        build_and_run_env("http_serializer_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn router_connector_full_p1_lifecycle() {
     if !have_cc() {
         return;

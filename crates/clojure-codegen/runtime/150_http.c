@@ -165,3 +165,116 @@ Value cljn_parse_http_request(Value sv) {
     gc_disabled--;
     return req;
 }
+
+/* Reason phrase for a status code (empty when unknown; the status is authoritative). */
+static const char *http_reason(int64_t s) {
+    switch (s) {
+        case 200: return "OK";
+        case 201: return "Created";
+        case 202: return "Accepted";
+        case 204: return "No Content";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 303: return "See Other";
+        case 304: return "Not Modified";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 408: return "Request Timeout";
+        case 413: return "Payload Too Large";
+        case 431: return "Request Header Fields Too Large";
+        case 500: return "Internal Server Error";
+        case 503: return "Service Unavailable";
+        default: return "";
+    }
+}
+static void sb_num(SB *b, int64_t x) {
+    char t[24];
+    int n = snprintf(t, sizeof t, "%ld", (long)x);
+    sb_write(b, t, (size_t)n);
+}
+static void http_ser_throw(const char *kind) {
+    Value m = cljn_map_alloc(3);
+    cljn_map_set(m, 0, cljn_kw("cljn.error/domain", 17), cljn_kw("http", 4));
+    cljn_map_set(m, 1, cljn_kw("kind", 4), cljn_kw(kind, (long)strlen(kind)));
+    cljn_map_set(m, 2, cljn_kw("operation", 9), cljn_kw("serialize", 9));
+    cljn_throw(m);
+}
+
+/* (serialize-http-response resp) -> string com os bytes da resposta HTTP/1.1.
+ * Revalida status/headers/corpo, computa Content-Length e força Connection: close
+ * (ADR-0013 §5). Emite os headers da aplicação na ordem do array-map (determinística
+ * para <=8 headers); ordenação lexical e HAMT grande são refinamentos (Gate 5).
+ * Não confia na normalização em Clojure. GC: região sem-GC; `resp` rooteado. */
+Value cljn_serialize_http_response(Value resp) {
+    int rt = obj_type(resp);
+    if (rt != T_MAP && rt != T_HMAP) die("serialize-http-response: esperava mapa");
+    gc_disabled++;
+    Value status_v = cljn_map_get(resp, cljn_kw("status", 6));
+    if (!IS_FIX(status_v)) http_ser_throw("invalid-status");
+    int64_t status = FIX(status_v);
+    if (status < 100 || status > 599) http_ser_throw("invalid-status");
+
+    Value body = cljn_map_get(resp, cljn_kw("body", 4));
+    const char *body_data = NULL;
+    int64_t body_len = 0;
+    if (body == NIL) {
+        /* no body */
+    } else if (obj_type(body) == T_STR) {
+        body_data = ((Str *)body)->data;
+        body_len = (int64_t)((Str *)body)->len;
+    } else if (obj_type(body) == T_BYTES) {
+        body_data = (const char *)((Bytes *)body)->data;
+        body_len = ((Bytes *)body)->len;
+    } else {
+        http_ser_throw("invalid-body");
+    }
+
+    SB b;
+    sb_init(&b);
+    sb_str(&b, "HTTP/1.1 ");
+    sb_num(&b, status);
+    sb_putc(&b, ' ');
+    sb_str(&b, http_reason(status));
+    sb_str(&b, "\r\n");
+
+    /* Application headers (array-map only in P1). */
+    Value headers = cljn_map_get(resp, cljn_kw("headers", 7));
+    if (headers != NIL) {
+        if (obj_type(headers) != T_MAP) { free(b.p); http_ser_throw("unsupported-headers"); }
+        Map *hm = (Map *)headers;
+        for (int64_t k = 0; k < hm->n; k++) {
+            Value hk = hm->kv[2 * k];
+            Value hv = hm->kv[2 * k + 1];
+            if (obj_type(hk) != T_KW || obj_type(hv) != T_STR) { free(b.p); http_ser_throw("invalid-header"); }
+            Str *kn = (Str *)hk;
+            Str *vs = (Str *)hv;
+            /* Reject framing headers the serializer owns, and CR/LF/NUL injection. */
+            if ((kn->len == 14 && memcmp(kn->data, "content-length", 14) == 0) ||
+                (kn->len == 17 && memcmp(kn->data, "transfer-encoding", 17) == 0)) {
+                free(b.p); http_ser_throw("reserved-header");
+            }
+            for (size_t j = 0; j < kn->len; j++)
+                if (!http_token_char((unsigned char)kn->data[j])) { free(b.p); http_ser_throw("invalid-header"); }
+            for (size_t j = 0; j < vs->len; j++) {
+                char c = vs->data[j];
+                if (c == '\r' || c == '\n' || c == 0) { free(b.p); http_ser_throw("invalid-header"); }
+            }
+            sb_write(&b, kn->data, kn->len);
+            sb_str(&b, ": ");
+            sb_write(&b, vs->data, vs->len);
+            sb_str(&b, "\r\n");
+        }
+    }
+    sb_str(&b, "content-length: ");
+    sb_num(&b, body_len);
+    sb_str(&b, "\r\nconnection: close\r\n\r\n");
+    if (body_len) sb_write(&b, body_data, (size_t)body_len);
+
+    Value out = cljn_str_from(b.p, (long)b.len);
+    free(b.p);
+    gc_disabled--;
+    return out;
+}
