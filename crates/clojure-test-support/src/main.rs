@@ -1,3 +1,11 @@
+//! `clojure-conformance` command-line interface.
+//!
+//! The executable exposes deterministic fixture verification and listing as
+//! normal offline operations. JVM comparison and blessing are explicit oracle
+//! commands that require the pinned Clojure classpath. All commands delegate
+//! schema, isolation, comparison, checksum, and report behavior to
+//! `clojure_test_support`.
+
 use clojure_test_support::{
     human_summary, list_cases, parse_level, parse_status, run_oracle, verify, Filters, OracleMode,
     OracleOptions, VerifyOptions, MAX_JOBS,

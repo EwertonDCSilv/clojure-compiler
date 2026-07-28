@@ -1,127 +1,142 @@
-# Pipeline do compilador
+# Compiler Pipeline
 
-O caminho executável atual é:
+The current executable path is:
 
 ```text
-Reader → expansão conhecida → Analyzer → Codegen Cranelift → objeto → link com runtime C
+Reader -> known expansion -> Analyzer -> Cranelift codegen -> object -> C runtime link
 ```
 
-HIR/LIR próprios, loader multi-arquivo e um macroexpander completo continuam sendo
-evoluções planejadas, não etapas presentes no workspace.
+This page indexes the implemented stages. HIR/LIR layers, a multi-file namespace
+loader, and a general macroexpander are **Planned**, not implicit stages in the
+current workspace.
 
 ## 1. Reader
 
-O `clojure-reader` recebe UTF-8 e produz forms com spans.
+[`clojure-reader`](../crates/clojure-reader/src/lib.rs) accepts UTF-8 text and
+produces [`clojure-syntax`](../crates/clojure-syntax/src/lib.rs) forms carrying
+byte spans into a [`SourceMap`](../crates/clojure-span/src/lib.rs).
 
-- Espaços, vírgulas, comentários e shebang são tratados como trivia.
-- Há literais de nil, boolean, inteiro, float, string, símbolo e keyword.
-- Listas, vetores, maps e sets podem ser aninhados.
-- Reader macros cobrem quote, syntax-quote, unquote, deref, var-quote, função anônima,
-  metadata e discard.
-- Delimitadores, escapes e tokens inválidos produzem diagnósticos determinísticos.
+- Whitespace, commas, comments, and a leading shebang are trivia.
+- Literals cover nil, booleans, integers, floats, strings, symbols, and keywords.
+- Lists, vectors, maps, and sets may nest.
+- Reader macros cover quote, syntax quote, unquote, dereference, var quote,
+  anonymous functions, metadata, and discard.
+- Invalid delimiters, escapes, and tokens produce deterministic diagnostics.
 
-O reconhecimento pelo reader não implica execução nativa: floats, por exemplo, são
-lidos, mas ainda não fazem parte da representação numérica compilada.
+Reader recognition does not imply native execution support. A form may parse
+successfully and still be rejected by analysis or lowering.
 
-## 2. Expansão
+## 2. Known expansion
 
-O analyzer executa um pré-passo para o conjunto de macros de core conhecido:
+The analyzer first expands the implemented core macro set:
 
 ```text
 when  when-not  if-not  cond  and  or  ->  ->>
 ```
 
-As expansões viram formas especiais antes da análise. `and` e `or` preservam
-short-circuit e evitam avaliação dupla. `defmacro` de usuário, ambiente `&form`/`&env`,
-macroexpansão entre namespaces e execução arbitrária de macros no interpretador ainda
-não estão no caminho compilado.
+Expansion produces special forms before semantic analysis. `and` and `or`
+preserve short-circuiting and single evaluation. **Planned:** user `defmacro`,
+`&form`/`&env`, cross-namespace expansion, and arbitrary bootstrap macro
+execution are tracked by [ADR-0004](adr/0004-macro-execution.md).
 
 ## 3. Analyzer
 
-O `clojure-analyzer`:
+[`clojure-analyzer`](../crates/clojure-analyzer/src/lib.rs):
 
-- resolve slots locais e capturas léxicas, inclusive capturas transitivas;
-- valida aridades fixas, múltiplas e variádicas;
-- valida `recur` em tail position e sua aridade;
-- reconhece primitivas, chamadas diretas e indiretas;
-- analisa literais de coleção;
-- sintetiza closures e wrappers de primitivas como valores;
-- registra records, protocolos e implementações de `extend-type`;
-- calcula o primeiro sumário conservador de parâmetros lineares entre funções de topo;
-- promove acumuladores frescos de vetor em `loop` para transients quando todos os usos
-  preservam unicidade;
-- rejeita forms fora do subconjunto com diagnóstico.
+- resolves local slots and direct or transitive lexical captures;
+- validates fixed, multiple, and variadic arities;
+- validates `recur` target, tail position, and arity;
+- distinguishes primitives, direct calls, and indirect calls;
+- analyzes collection literals and synthesizes closures;
+- represents primitive functions when they flow as values;
+- records records, protocols, extensions, and multimethod declarations;
+- computes conservative summaries for linear top-level parameters;
+- promotes fresh, uniquely used vector loop accumulators to transients; and
+- rejects forms outside the compiled subset with spanned diagnostics.
 
-A saída atual é `Program`/`Expr` analisado consumido diretamente pelo codegen. Uma
-camada HIR/LIR ANF permanece desejável quando otimizações de liveness, DCE, inlining ou
-especialização exigirem uma representação intermediária estável.
+The result is the documented `Program`/`Expr` AST consumed directly by codegen.
+There is no stable HIR/LIR boundary today. The interprocedural transform covers
+the chained-accumulator pattern in
+[ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md). General escape
+analysis, tuple out-slots, scalar replacement, and a dedicated optimization IR
+remain **Planned**.
 
-O transform interprocedural entregue cobre o padrão B da ADR-0010 (acumulador
-encadeado). Tuplas de retorno em out-slots, análise geral de escape e scalar replacement
-continuam planejados.
+## 4. Code generation
 
-## 4. Codegen
+[`clojure-codegen`](../crates/clojure-codegen/src/lib.rs) lowers analyzed
+functions to Cranelift IR and emits one host object.
 
-O `clojure-codegen` traduz cada função para Cranelift IR e emite um objeto nativo.
+- Every function has the `(self, argc, argv)` ABI.
+- `loop`/`recur` becomes a branch to the target block.
+- Closures carry a code pointer, arity information, and captured `Value`s.
+- Higher-order calls use indirect-call signatures.
+- Common integer arithmetic and comparisons have guarded fast paths.
+- General or invalid cases call checked C ABI slow paths.
+- Each function owns a fixed shadow-stack root frame.
+- Heap values live across allocation remain in root slots.
+- Immediate-only vector literals use a permanently rooted site cache.
 
-- Convenção de função: `(self, argc, argv)`.
-- `loop/recur` vira branch para o bloco alvo.
-- Closures carregam ponteiro de código, aridade e capturas.
-- Chamadas HOF usam `call_indirect`.
-- `+`, `-`, `*`, `quot`, `mod`, `inc`, `dec` e comparações inteiras possuem fast paths
-  com guard de tag e checagem de overflow.
-- Casos inválidos usam slow paths ABI C.
-- Loads/stores de roots são emitidos diretamente na shadow stack.
-- Vetores literais constantes de imediatos são construídos no primeiro uso e carregados
-  de um cache por site nas avaliações seguintes.
+`CodegenOptions` accepts `none`, `speed`, and `speed-and-size`. The CLI currently
+defaults to `none`; benchmark methodology records the selected level explicitly.
 
-`CodegenOptions` aceita `none`, `speed` e `speed-and-size`. A CLI mantém `none` como
-padrão porque o gate Cormen registrou regressão para `speed` no IR atual. O nível
-selecionado é parte da metodologia dos benchmarks.
+## 5. Runtime and link
 
-## 5. Runtime e link
+The fragments in
+[`crates/clojure-codegen/runtime/`](../crates/clojure-codegen/runtime/) are
+amalgamated in the order documented by
+[`runtime_all.c`](../crates/clojure-codegen/runtime/runtime_all.c). The C driver
+selected by `CC` (or `cc`) compiles that translation unit and links it with the
+Cranelift object. [`runtime.c`](../crates/clojure-codegen/runtime.c) exposes the
+same amalgamation to direct C runtime tests.
 
-Os módulos em `crates/clojure-codegen/runtime/` são amalgamados, na ordem declarada pelo
-codegen, e compilados como uma única unidade pelo compilador definido em `CC` ou por
-`cc`. `crates/clojure-codegen/runtime.c` oferece a mesma unidade para ferramentas C
-diretas. A CLI liga o objeto C ao objeto Cranelift e produz um executável do host.
+The runtime implements:
 
-O runtime implementa:
+- tagged values and the uniform call ABI;
+- precise mark-sweep collection with a shadow stack;
+- closures, arity checks, `apply`, and protocol dispatch;
+- strings, printing, and structural equality;
+- persistent and transient collections, records, and sorted collections;
+- exceptions, multimethods, and fatal runtime checks;
+- dynamic I/O, string/file readers and writers, byte arrays, filesystem
+  operations, command arguments, file metadata, and runtime form reading; and
+- permanent roots for cached constants.
 
-- ABI de valores e chamadas;
-- GC mark-sweep com shadow stack;
-- strings e impressão;
-- listas, vetores, maps, sets e records;
-- closures, `apply` e dispatch de protocolos;
-- operações de coleção e slow paths numéricos.
-- cache de literais constantes registrado como raiz permanente do GC.
+`ABI:` and `GC:` comments in the Rust codegen and C fragments are the
+authoritative cross-language contracts. The final executable contains no JVM or
+`.class` bytecode.
 
-O executável final não contém JVM nem bytecode `.class`.
+## 6. Compiled core
 
-## 6. Core compilado
+Before user code, the CLI loads
+[`core_compiled.clj`](../crates/clojure-native-cli/src/core_compiled.clj).
+Its 26 documented functions use only the subset accepted by this pipeline.
+Collection transforms are eager rather than Clojure/JVM lazy sequences, and
+their docstrings state current arity and semantic limits.
 
-Antes do código do usuário, o CLI carrega
-`crates/clojure-native-cli/src/core_compiled.clj`. As 26 funções desse arquivo usam
-somente o subconjunto que o próprio compilador aceita, exercitando o bootstrap
-progressivo.
+## 7. Diagnostics and failure boundaries
 
-## 7. Diagnósticos
+The reader and analyzer use source spans to render file, line, and display
+column through
+[`clojure-diagnostics`](../crates/clojure-diagnostics/src/lib.rs). Build errors
+include malformed forms, unavailable symbols or primitives, invalid `recur`,
+and host linker failures. CLI-visible messages remain Portuguese.
 
-Reader e analyzer usam spans para reportar arquivo, linha e coluna. Erros de build
-incluem forms malformadas, símbolo/primitiva indisponível, `recur` inválido e falha do
-linker.
+Explicitly thrown values cross native `try`/`catch`/`finally`. Several runtime
+type, arity, arithmetic, and bounds violations still use fatal process errors.
+Typed catch hierarchies, source stack traces, and conversion of all fatal
+runtime checks into catchable values are **Planned**; see
+[`RUNTIME_SPEC.md`](RUNTIME_SPEC.md#erros).
 
-O runtime nativo atualmente encerra o programa com mensagem para erro de tipo, aridade,
-overflow, divisão ou índice. Valores lançados explicitamente já atravessam
-`try`/`catch`/`finally`; catches tipados, tradução desses erros fatais e stack traces de
-fonte permanecem futuros. Consulte [RUNTIME_SPEC.md](RUNTIME_SPEC.md#erros).
+## Planned evolution
 
-## Evolução planejada
+1. Compute liveness and retain roots only across safepoints.
+2. Introduce an explicit IR when it materially simplifies optimization.
+3. Extend escape and uniqueness analysis beyond current vector patterns.
+4. Execute user macros deterministically through the bootstrap path.
+5. Add multi-file namespace loading and dependency graphs.
+6. Add measured compiler-owned optimization before relying on Cranelift cleanup.
 
-1. introduzir liveness e rooting somente nos safepoints;
-2. criar uma IR explícita quando isso reduzir complexidade no codegen;
-3. ampliar escape/unicidade para tuplas de retorno e outros valores efêmeros;
-4. executar macros de usuário de forma determinística no bootstrap;
-5. adicionar loader e grafo de namespaces multi-arquivo;
-6. ampliar otimizações próprias antes de depender do Cranelift para remover trabalho
-   desnecessário.
+Documentation requirements for every stage are defined in
+[`DOCUMENTATION_STYLE.md`](DOCUMENTATION_STYLE.md), and the delivery baseline is
+recorded in
+[`COMPILER_DOCUMENTATION_PLAN.md`](COMPILER_DOCUMENTATION_PLAN.md).

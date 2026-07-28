@@ -1,14 +1,16 @@
-//! `clojure-native` — CLI para leitura, interpretação e compilação AOT.
+//! `clojure-native` command-line frontend.
 //!
-//! `read` produz um dump determinístico das forms, `eval` e `run` usam o
-//! interpretador de bootstrap, e `build` gera um objeto com Cranelift e o linka ao
-//! runtime C embutido para produzir um executável nativo.
+//! `read` emits a deterministic form dump; `eval` and `run` execute through the
+//! bootstrap interpreter; and `build` reads the compiled core and user source
+//! as one program, analyzes it, emits a Cranelift object, and links it with the
+//! embedded C runtime. Temporary object and runtime-source files are removed
+//! after the host C compiler exits. User-facing diagnostics remain Portuguese.
 
 use clojure_interp::Interp;
 use clojure_span::SourceMap;
 use std::process::ExitCode;
 
-/// `clojure.core` no subconjunto compilável, pré-carregado em todo `build`.
+/// Compilable `clojure.core` subset prepended to every native build.
 const CORE_COMPILED: &str = include_str!("core_compiled.clj");
 
 fn main() -> ExitCode {
@@ -124,9 +126,8 @@ fn cmd_run(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // Semântica de script: as forms de topo executam na ordem (como o exemplo da
-    // Fase 5, que chama `(-main)` no topo). Programas que preferem o modelo "main"
-    // podem passar `--main` para invocar `-main` explicitamente.
+    // Script forms execute from top to bottom. `--main` adds an explicit
+    // zero-argument call to `-main` after all top-level forms have run.
     if let Err(e) = it.eval_source(path, &text) {
         print!("{}", it.take_output());
         report(&e);
@@ -144,8 +145,8 @@ fn cmd_run(args: &[String]) -> ExitCode {
 }
 
 fn cmd_build(args: &[String]) -> ExitCode {
-    // Parse simples: primeiro não-flag é o arquivo; as demais opções configuram
-    // a saída e o backend.
+    // The first positional argument is the source file; flags configure the
+    // output path and Cranelift optimization level.
     let mut path = None;
     let mut output = None;
     let mut optimization_level = None;
@@ -201,12 +202,12 @@ fn cmd_build(args: &[String]) -> ExitCode {
     });
 
     let mut sm = SourceMap::new();
-    // 0) core.clj compilável (bootstrap): map/filter/reduce/range/... disponíveis
-    //    sem o usuário defini-los (ADR-0005).
+    // Stage 0: prepend the compiled bootstrap core so its collection functions
+    // are available without user declarations (ADR-0005).
     let core_id = sm.add("clojure/core.clj", CORE_COMPILED);
     let id = sm.add(path.clone(), text.clone());
 
-    // 1) Reader (core + usuário).
+    // Stage 1: read core and user forms with distinct source identities.
     let mut forms = match clojure_reader::read_all(core_id, CORE_COMPILED) {
         Ok(f) => f,
         Err(d) => {
@@ -221,7 +222,7 @@ fn cmd_build(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
-    // 2) Analyzer.
+    // Stage 2: resolve and validate the combined program.
     let program = match clojure_analyzer::analyze(&forms) {
         Ok(p) => p,
         Err(d) => {
@@ -229,7 +230,7 @@ fn cmd_build(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // 3) Codegen → objeto.
+    // Stage 3: lower the analyzed program to a host object.
     let codegen_options = optimization_level.map_or_else(
         clojure_codegen::CodegenOptions::default,
         |optimization_level| clojure_codegen::CodegenOptions { optimization_level },
@@ -242,7 +243,8 @@ fn cmd_build(args: &[String]) -> ExitCode {
         }
     };
 
-    // 4) Escreve objeto + runtime C e linka com `cc`.
+    // Stage 4: materialize the object and amalgamated runtime, then ask the host
+    // C compiler driver to link the final executable.
     let tmp = std::env::temp_dir();
     let obj_path = tmp.join(format!("{out_name}.o"));
     let rt_path = tmp.join(format!("{out_name}.cljn_runtime.c"));

@@ -1,7 +1,14 @@
-//! Executable conformance-suite support for the native Clojure compiler.
+//! Execution engine and manifest model for the compiler conformance suite.
 //!
-//! The crate deliberately has no JVM or network dependency. JVM comparison is
-//! exposed as an explicit, manual oracle operation.
+//! A conformance case is a directory containing a strict `case.toml` manifest,
+//! source files, and committed expectations. [`discover_cases`] validates that
+//! schema, while [`verify`] copies each selected case to an isolated temporary
+//! directory, invokes the native compiler, and compares process output and
+//! filesystem effects with the fixture.
+//!
+//! Normal verification is deterministic and has no JVM or network dependency.
+//! [`run_oracle`] is a separate maintainer operation for checking or refreshing
+//! eligible expectations against the pinned Clojure/JVM implementation.
 
 use clojure_span::SourceMap;
 use clojure_syntax::Form;
@@ -18,15 +25,23 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use wait_timeout::ChildExt;
 
+/// Maximum number of case workers accepted by [`verify`].
 pub const MAX_JOBS: usize = 4;
+/// Name of the fixture-integrity manifest stored at the suite root.
 pub const CHECKSUM_FILE: &str = "checksums.sha256";
 
+/// Progressive conformance tier assigned to a case.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Level {
+    /// Reader and surface-syntax behavior.
     A,
+    /// Core language semantics.
     B,
+    /// Compiled standard-library behavior.
     C,
+    /// Pure third-party library behavior.
     D,
+    /// Ecosystem and application-level behavior.
     E,
 }
 
@@ -42,101 +57,153 @@ impl Level {
     }
 }
 
+/// Lifecycle state of a conformance case.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CaseStatus {
+    /// Required behavior that must pass.
     Active,
+    /// Known failure that must continue to fail until explicitly promoted.
     Xfail,
+    /// Declared coverage that is not executed yet.
     Pending,
 }
 
+/// Source or intent of a conformance expectation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CaseClass {
+    /// Behavior required by the language specification or project contract.
     Spec,
+    /// Behavior copied from an official Clojure test or example.
     Official,
+    /// Intentional difference from Clojure/JVM.
     ExpectedDiff,
+    /// Capability outside the native compiler's supported surface.
     Unsupported,
 }
 
+/// Compiler operation exercised by a case.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Target {
+    /// Parse forms and compare their structural representation.
     Reader,
+    /// Build a native executable, run it, and compare its effects.
     BuildRun,
+    /// Build a source file and compare the expected diagnostic failure.
     BuildError,
+    /// Build and run a multi-file project fixture.
     Project,
 }
 
+/// Relationship between a committed expectation and Clojure/JVM.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Oracle {
+    /// The JVM result must equal the committed expectation.
     Equal,
+    /// A documented JVM/native difference is expected.
     ExpectedDiff,
+    /// The case cannot be meaningfully evaluated by the JVM oracle.
     NotApplicable,
 }
 
+/// A symbolic link to create or require relative to a case sandbox.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SymlinkFixture {
+    /// Relative link path.
     pub path: String,
+    /// Link target as stored in the symbolic link.
     pub target: String,
 }
 
+/// Process and filesystem settings for an executable case.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunConfig {
+    /// Command-line arguments passed after the generated executable path.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Additional environment variables for the generated executable.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Optional UTF-8 data written to standard input.
     #[serde(default)]
     pub stdin: Option<String>,
+    /// Expected process exit code.
     #[serde(default)]
     pub expected_exit: i32,
+    /// Optional platform allowlist using the suite's platform identifiers.
     #[serde(default)]
     pub platforms: Vec<String>,
+    /// Symbolic links created before the executable runs.
     #[serde(default)]
     pub setup_symlinks: Vec<SymlinkFixture>,
+    /// Symbolic links that must exist after the executable exits.
     #[serde(default)]
     pub expected_symlinks: Vec<SymlinkFixture>,
 }
 
+/// Validated contents of a fixture's `case.toml`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaseManifest {
+    /// Globally unique, stable case identifier.
     pub id: String,
+    /// Progressive conformance tier.
     pub level: Level,
+    /// Slash-separated feature area used for filtering and reporting.
     pub area: String,
+    /// Lifecycle state controlling pass/fail interpretation.
     pub status: CaseStatus,
+    /// Provenance or compatibility class.
     pub class: CaseClass,
+    /// Compiler operation exercised by the fixture.
     pub target: Target,
+    /// Required relationship with the optional JVM oracle.
     pub oracle: Oracle,
+    /// Per-process timeout in milliseconds.
     pub timeout_ms: u64,
+    /// Whether generated programs run with the runtime's GC stress mode enabled.
     pub gc_stress: bool,
+    /// Human-readable rationale, required for non-active cases.
     pub reason: String,
+    /// Issue, specification, or source reference that tracks the case.
     pub tracking: String,
+    /// Optional project namespace used by namespace filters.
     #[serde(default)]
     pub namespace: Option<String>,
+    /// Execution settings; defaults are used by non-executable cases.
     #[serde(default)]
     pub run: RunConfig,
 }
 
+/// A discovered manifest together with its fixture directory.
 #[derive(Clone, Debug)]
 pub struct Case {
+    /// Parsed and validated manifest.
     pub manifest: CaseManifest,
+    /// Absolute or caller-relative directory containing the fixture.
     pub directory: PathBuf,
 }
 
+/// Optional selectors applied after fixture discovery and validation.
 #[derive(Clone, Debug, Default)]
 pub struct Filters {
+    /// Exact level to retain.
     pub level: Option<Level>,
+    /// Substring that must occur in the case area.
     pub area: Option<String>,
+    /// Exact lifecycle status to retain.
     pub status: Option<CaseStatus>,
+    /// Substring that must occur in the optional namespace.
     pub namespace: Option<String>,
 }
 
 impl Filters {
+    /// Returns whether `case` satisfies every configured selector.
     pub fn matches(&self, case: &Case) -> bool {
         let level_matches = match self.level {
             Some(value) => value == case.manifest.level,
@@ -159,58 +226,97 @@ impl Filters {
     }
 }
 
+/// Paths, concurrency, and selection settings for [`verify`].
 #[derive(Clone, Debug)]
 pub struct VerifyOptions {
+    /// Root directory containing level directories and [`CHECKSUM_FILE`].
     pub root: PathBuf,
+    /// Native compiler executable used for build targets.
     pub compiler: PathBuf,
+    /// Directory that receives JSON and text reports.
     pub report_directory: PathBuf,
+    /// Worker count in the inclusive range `1..=MAX_JOBS`.
     pub jobs: usize,
+    /// Case selectors applied before execution.
     pub filters: Filters,
 }
 
+/// Interpreted outcome of one conformance case.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResultKind {
+    /// Required behavior matched its expectation.
     Pass,
+    /// An `xfail` or declared difference failed as expected.
     ExpectedFailure,
+    /// The case is declared but not executable.
     Pending,
+    /// The case does not target the current platform.
     Skipped,
+    /// Required behavior did not match its expectation.
     Fail,
+    /// An expected failure passed and should be reviewed for promotion.
     UnexpectedPass,
 }
 
+/// Machine-readable result for one case.
 #[derive(Clone, Debug, Serialize)]
 pub struct CaseReport {
+    /// Stable case identifier.
     pub id: String,
+    /// Conformance tier copied from the manifest.
     pub level: Level,
+    /// Feature area copied from the manifest.
     pub area: String,
+    /// Declared lifecycle status.
     pub status: CaseStatus,
+    /// Outcome after applying status semantics.
     pub result: ResultKind,
+    /// Wall-clock case duration in milliseconds.
     pub duration_ms: u128,
+    /// Concise comparison or execution explanation.
     pub message: String,
+    /// Stable diagnostic category when one can be extracted.
     pub error_category: Option<String>,
 }
 
+/// Aggregate counters for a verification or oracle run.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Summary {
+    /// Number of selected cases.
     pub total: usize,
+    /// Number of selected active cases.
     pub active: usize,
+    /// Number of selected expected-failure cases.
     pub xfail: usize,
+    /// Number of selected pending cases.
     pub pending: usize,
+    /// Number of passing cases.
     pub passed: usize,
+    /// Number of failures matching an `xfail` or expected difference.
     pub expected_failures: usize,
+    /// Number of cases excluded by their platform allowlist.
     pub skipped: usize,
+    /// Number of required cases that failed.
     pub failed: usize,
+    /// Number of expected failures that now pass.
     pub unexpected_passes: usize,
+    /// Wall-clock duration of the complete run in milliseconds.
     pub duration_ms: u128,
 }
 
+/// Versioned report emitted by verification and oracle operations.
 #[derive(Clone, Debug, Serialize)]
 pub struct VerifyReport {
+    /// Report-schema revision for downstream consumers.
     pub schema_version: u32,
+    /// SHA-256 digest of the committed checksum manifest.
     pub checksum: String,
+    /// Whether there are zero failures and zero unexpected passes.
     pub success: bool,
+    /// Aggregate counters and duration.
     pub summary: Summary,
+    /// Per-case results sorted by case identifier.
     pub cases: Vec<CaseReport>,
 }
 
@@ -235,6 +341,12 @@ enum MatchResult {
     Mismatch(String, Option<String>),
 }
 
+/// Parses a conformance level accepted by the command-line interface.
+///
+/// # Errors
+///
+/// Returns a message when `value` is not one of `A` through `E`,
+/// case-insensitively.
 pub fn parse_level(value: &str) -> Result<Level, String> {
     match value.to_ascii_uppercase().as_str() {
         "A" => Ok(Level::A),
@@ -248,6 +360,11 @@ pub fn parse_level(value: &str) -> Result<Level, String> {
     }
 }
 
+/// Parses a manifest lifecycle status.
+///
+/// # Errors
+///
+/// Returns a message unless `value` is `active`, `xfail`, or `pending`.
 pub fn parse_status(value: &str) -> Result<CaseStatus, String> {
     match value {
         "active" => Ok(CaseStatus::Active),
@@ -259,6 +376,16 @@ pub fn parse_status(value: &str) -> Result<CaseStatus, String> {
     }
 }
 
+/// Recursively discovers and validates every `case.toml` below `root`.
+///
+/// Discovery order is deterministic. The function rejects an empty suite,
+/// duplicate identifiers, unknown TOML fields, invalid paths, inconsistent
+/// target files, and manifests stored under the wrong level directory.
+///
+/// # Errors
+///
+/// Returns all manifest-validation errors joined by newlines, or an I/O error
+/// if the suite cannot be traversed.
 pub fn discover_cases(root: &Path) -> Result<Vec<Case>, String> {
     if !root.is_dir() {
         return Err(format!(
@@ -479,6 +606,14 @@ fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, String> {
     Ok(base.join(relative))
 }
 
+/// Discovers the complete suite and returns cases selected by `filters`.
+///
+/// Validation always covers the complete suite, including filtered-out cases.
+///
+/// # Errors
+///
+/// Propagates discovery and manifest-validation failures from
+/// [`discover_cases`].
 pub fn list_cases(root: &Path, filters: &Filters) -> Result<Vec<Case>, String> {
     discover_cases(root).map(|cases| {
         cases
@@ -488,6 +623,20 @@ pub fn list_cases(root: &Path, filters: &Filters) -> Result<Vec<Case>, String> {
     })
 }
 
+/// Executes selected fixtures and writes versioned JSON and text reports.
+///
+/// The checksum and every manifest are validated before worker threads start.
+/// Each executable case runs in an isolated temporary directory. Reports are
+/// sorted by identifier, so worker scheduling cannot affect serialized output.
+///
+/// An `xfail` that passes is reported as [`ResultKind::UnexpectedPass`] and
+/// makes [`VerifyReport::success`] false; callers must promote it explicitly.
+///
+/// # Errors
+///
+/// Returns an error for invalid options, checksum or fixture failures, process
+/// setup failures, and report I/O errors. A compiler or expectation mismatch is
+/// represented in the returned report instead.
 pub fn verify(options: &VerifyOptions) -> Result<VerifyReport, String> {
     if !(1..=MAX_JOBS).contains(&options.jobs) {
         return Err(format!(
@@ -1130,6 +1279,10 @@ fn output_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// Converts CRLF and lone carriage returns to line feeds.
+///
+/// This is the only platform-dependent normalization applied before textual
+/// fixture comparison.
 pub fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
@@ -1140,6 +1293,14 @@ fn normalize_text(text: &str, case: &Case) -> String {
         .replace('\\', "/")
 }
 
+/// Compares two sequences of Clojure forms after structural canonicalization.
+///
+/// Map entries and set elements are sorted during canonicalization, while
+/// sequence order and metadata remain significant.
+///
+/// # Errors
+///
+/// Returns a rendered reader diagnostic if either input is not valid forms.
 pub fn structurally_equal(expected: &str, actual: &str) -> Result<bool, String> {
     let expected = parse_forms("<expected>", expected)?;
     let actual = parse_forms("<actual>", actual)?;
@@ -1209,6 +1370,10 @@ fn canonical_sequence(kind: &str, items: &[clojure_syntax::SForm]) -> String {
     )
 }
 
+/// Extracts the stable category used in conformance reports.
+///
+/// Timeout text has precedence, followed by the first `[Edddd]` compiler
+/// diagnostic code. Other non-empty output is classified as `runtime-error`.
 pub fn error_category(stderr: &str) -> Option<String> {
     if stderr.to_ascii_lowercase().contains("timed out") {
         return Some("timeout".to_string());
@@ -1299,6 +1464,14 @@ fn write_report(report_directory: &Path, stem: &str, report: &VerifyReport) -> R
         .map_err(|error| format!("cannot write text report: {error}"))
 }
 
+/// Computes SHA-256 entries for every regular file inside discovered cases.
+///
+/// Paths use `/` separators and are relative to `root`. The top-level checksum
+/// manifest itself is excluded because it is outside every case directory.
+///
+/// # Errors
+///
+/// Returns an error when cases are invalid or a fixture file cannot be read.
 pub fn checksum_entries(root: &Path) -> Result<BTreeMap<String, String>, String> {
     let cases = discover_cases(root)?;
     let mut files = Vec::new();
@@ -1335,6 +1508,15 @@ fn collect_case_files(directory: &Path, output: &mut Vec<PathBuf>) -> io::Result
     Ok(())
 }
 
+/// Rewrites [`CHECKSUM_FILE`] from the current fixture contents.
+///
+/// The return value is the SHA-256 digest of the serialized checksum manifest.
+/// This mutating operation is intended for explicit fixture maintenance.
+///
+/// # Errors
+///
+/// Returns an error if cases cannot be discovered, files cannot be hashed, or
+/// the checksum manifest cannot be written.
 pub fn update_checksums(root: &Path) -> Result<String, String> {
     let entries = checksum_entries(root)?;
     let contents = entries
@@ -1346,6 +1528,14 @@ pub fn update_checksums(root: &Path) -> Result<String, String> {
     Ok(hex_digest(contents.as_bytes()))
 }
 
+/// Verifies fixture contents against the committed checksum manifest.
+///
+/// The return value is the SHA-256 digest of the manifest text itself.
+///
+/// # Errors
+///
+/// Returns an error for malformed entries or any missing, stale, or changed
+/// fixture path.
 pub fn verify_checksums(root: &Path) -> Result<String, String> {
     let checksum_path = root.join(CHECKSUM_FILE);
     let text = fs::read_to_string(&checksum_path)
@@ -1417,22 +1607,44 @@ fn hex_digest(bytes: &[u8]) -> String {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Operation performed by the optional Clojure/JVM oracle.
 pub enum OracleMode {
+    /// Compare JVM results with committed expectations without modifying them.
     Check,
+    /// Replace eligible committed expectations with JVM results.
     Bless,
 }
 
+/// Paths, JVM configuration, and selectors for [`run_oracle`].
 #[derive(Clone, Debug)]
 pub struct OracleOptions {
+    /// Whether expectations are checked or rewritten.
     pub mode: OracleMode,
+    /// Conformance suite root.
     pub root: PathBuf,
+    /// Directory that receives oracle JSON and text reports.
     pub report_directory: PathBuf,
+    /// Classpath containing the pinned Clojure/JVM distribution.
     pub classpath: String,
+    /// Java launcher executable.
     pub java: PathBuf,
+    /// Clojure helper script invoked in the JVM process.
     pub helper: PathBuf,
+    /// Case selectors applied before oracle eligibility rules.
     pub filters: Filters,
 }
 
+/// Runs the explicit Clojure/JVM comparison or blessing workflow.
+///
+/// Pending cases, cases with [`Oracle::NotApplicable`], and targets other than
+/// reader or build-and-run are skipped. The function verifies the oracle's
+/// Clojure version before processing fixtures.
+///
+/// # Errors
+///
+/// Returns an error for missing JVM configuration, a version mismatch, fixture
+/// validation failures, process failures, unsafe blessing targets, or report
+/// I/O errors. Per-case semantic differences are represented in the report.
 pub fn run_oracle(options: &OracleOptions) -> Result<VerifyReport, String> {
     if options.classpath.trim().is_empty() {
         return Err(
@@ -1688,6 +1900,7 @@ fn oracle_result(
     }
 }
 
+/// Formats a one-line, stable human summary of a verification report.
 pub fn human_summary(report: &VerifyReport) -> String {
     let summary = &report.summary;
     format!(

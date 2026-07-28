@@ -1,6 +1,9 @@
-//! Testes end-to-end do compilador nativo: compila um `.clj` para binário nativo
-//! via a CLI `build` e executa o resultado, comparando a saída. Requer um C
-//! compiler (`cc`) disponível — parte da matriz de build (specs/TESTING_STRATEGY.md).
+//! End-to-end contracts for native compilation.
+//!
+//! The tests invoke the public `build` command on temporary `.clj` sources,
+//! execute the resulting host binaries, and compare observable output. They
+//! require the C compiler driver selected by `CC`, as specified by
+//! `specs/TESTING_STRATEGY.md`.
 
 use std::process::Command;
 
@@ -16,17 +19,17 @@ fn have_cc() -> bool {
         .unwrap_or(false)
 }
 
-/// Compila `src` e devolve o stdout do binário nativo resultante.
+/// Builds `src`, runs the resulting native program, and returns its stdout.
 fn build_and_run(name: &str, src: &str) -> String {
     build_and_run_with_options(name, src, &[], &[])
 }
 
-/// Igual, mas com variáveis de ambiente na execução (ex.: CLJN_GC_STRESS).
+/// Builds and runs `src` with additional runtime environment variables.
 fn build_and_run_env(name: &str, src: &str, env: &[(&str, &str)]) -> String {
     build_and_run_with_options(name, src, &[], env)
 }
 
-/// Igual, mas passando argumentos de linha de comando ao binário (*command-line-args*).
+/// Builds and runs `src` with native command-line arguments.
 fn build_and_run_argv(name: &str, src: &str, argv: &[&str]) -> String {
     let dir = std::env::temp_dir();
     let clj = dir.join(format!("{name}.clj"));
@@ -171,8 +174,8 @@ fn compiles_loop_recur() {
     if !have_cc() {
         return;
     }
-    // `conta` faz 1_000_000 de iterações via recur-para-fn: se fosse recursão
-    // nativa estouraria a pilha; passar prova que recur é um backedge de loop.
+    // `conta` performs 1,000,000 iterations through function-targeting `recur`.
+    // Completion demonstrates that lowering uses a loop backedge, not recursion.
     let src = r#"(ns l.core)
 (defn soma [n] (loop [i 0 acc 0] (if (> i n) acc (recur (inc i) (+ acc i)))))
 (defn conta [n acc] (if (= n 0) acc (recur (dec n) (inc acc))))
@@ -188,8 +191,8 @@ fn rooting_elision_preserves_gc_safety() {
     if !have_cc() {
         return;
     }
-    // ADR-0006 Fases 4-5: a elisão de root para imediatos/Locals não pode soltar
-    // valores heap vivos. Casos sentinela do spec, sob coleta a cada alocação.
+    // ADR-0006 phases 4-5: root elision for immediates and locals must not drop
+    // live heap values. These specification sentinels collect on every allocation.
     let src = r#"(ns re.core)
 ;; heap `x` vivo enquanto o outro operando aloca
 (defn s1 [] (cons (list 1 2 3) (list 4 5 6)))
@@ -223,7 +226,7 @@ fn fixnum_fast_paths_correct() {
     if !have_cc() {
         return;
     }
-    // Correção dos fast paths: negativos, zero, comparações, inc/dec, mistura.
+    // Fast-path coverage: negatives, zero, comparisons, inc/dec, and mixtures.
     let src = r#"(ns n.core)
 (defn -main []
   (println (+ 2 3) (+ -5 2) (- 10 3 4) (inc -1) (dec 0))
@@ -232,7 +235,7 @@ fn fixnum_fast_paths_correct() {
 (-main)"#;
     let expected = "5 -3 3 0 -1\ntrue false true true false\nsoma: 499500\n";
     assert_eq!(build_and_run("cljn_e2e_fix", src), expected);
-    // sob GC-stress (fast path não deve interferir no rooting dos temporários)
+    // GC stress ensures fast paths do not interfere with temporary rooting.
     assert_eq!(
         build_and_run_env("cljn_e2e_fix_gc", src, &[("CLJN_GC_STRESS", "1")]),
         expected
@@ -270,7 +273,7 @@ fn compiles_large_hash_map() {
     if !have_cc() {
         return;
     }
-    // Mapa pequeno preserva ordem (array-map); grande promove a HAMT (O(log n)).
+    // Small maps preserve array-map order; larger maps promote to HAMT lookup.
     let src = r#"(ns h.core)
 (defn build [n] (loop [i 0 m {}] (if (< i n) (recur (inc i) (assoc m i (* i i))) m)))
 (defn -main []
@@ -293,7 +296,7 @@ fn compiles_large_hash_set() {
     if !have_cc() {
         return;
     }
-    // Set pequeno é array (O(n)); grande promove a HAMT (O(log n)) via conj > 8 elems.
+    // Small sets are arrays (O(n)); `conj` beyond eight entries promotes to HAMT.
     let src = r#"(ns hs.core)
 (defn build [n] (loop [i 1 s #{}] (if (<= i n) (recur (inc i) (conj s i)) s)))
 (defn -main []
@@ -320,9 +323,9 @@ fn compiles_associative_indexed_dispatch() {
     if !have_cc() {
         return;
     }
-    // ADR-0008: assoc variádico (dobra sobre AssocOne), nth aridade 2/3 com
-    // not-found e fallback sequencial, e capability dispatch para tipo sem tag
-    // embutida (Set) via extend-type com nomes reservados.
+    // ADR-0008: variadic `assoc` folds over AssocOne; `nth` supports arity 2/3,
+    // not-found and sequential fallbacks, and reserved-name capability dispatch
+    // for a type without an inline tag (`Set`).
     let src = r#"(ns ai.core)
 (defrecord Pt [x y])
 (extend-type Set
@@ -356,8 +359,8 @@ fn compiles_transients() {
     if !have_cc() {
         return;
     }
-    // transient/persistent!/conj!/assoc!/dissoc!: construção em lote mutável.
-    // Vetor transiente é estrutural (compartilha a trie); mapa/set via caixa.
+    // `transient`/`persistent!` and mutating collection operations support batch
+    // construction. Vectors share trie structure; maps and sets use a value box.
     let src = r#"(ns tr.core)
 (defn bvec [n] (loop [i 0 t (transient [])] (if (< i n) (recur (+ i 1) (conj! t i)) (persistent! t))))
 (defn bmap [n] (loop [i 0 t (transient {})] (if (< i n) (recur (+ i 1) (assoc! t i (* i i))) (persistent! t))))
@@ -382,8 +385,8 @@ fn native_io_slurp_spit_getenv() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 (subconjunto): slurp/spit/file-exists?/getenv por primitivas ABI;
-    // erros do SO viram mapas ex-data capturáveis via try/catch.
+    // ADR-0007 subset: slurp/spit/file-exists?/getenv use ABI primitives.
+    // Operating-system failures become ex-data maps catchable by `try`/`catch`.
     let src = r#"(ns io.core)
 (defn -main []
   (spit "/tmp/cljn_e2e_io.txt" "abc\ndef\n")
@@ -413,8 +416,8 @@ fn with_out_str_captures_and_restores_out() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-0: *out* é Var dinâmica; with-out-str rebinda para um Writer de
-    // string. Restaura *out* no retorno e também quando o corpo lança (repropaga).
+    // ADR-0007 / IO-0: `*out*` is dynamic. `with-out-str` binds a string writer
+    // and restores the prior value both on return and while propagating throws.
     let src = r#"(ns wos.core)
 (defn -main []
   (let [s (with-out-str (print "ab") (print 42) (println))]
@@ -438,8 +441,8 @@ fn binding_rebinds_and_restores_dynamic_vars() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-0: `binding` rebinda Vars dinâmicas; a Var lida como valor;
-    // restaura no retorno, no valor do corpo e após exceção.
+    // ADR-0007 / IO-0: `binding` rebinds dynamic Vars; a Var is readable as a value.
+    // Binding restoration preserves normal results and exceptional control flow.
     let src = r#"(ns bind.core)
 (defn -main []
   (println *flush-on-newline*)
@@ -462,8 +465,8 @@ fn read_line_from_with_in_str() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-0: *in* é Var dinâmica; with-in-str rebinda para um Reader de
-    // string; read-line devolve a linha (sem \n) e nil no fim.
+    // ADR-0007 / IO-0: `*in*` is dynamic; `with-in-str` binds a string reader.
+    // `read-line` removes the newline and returns nil at end of input.
     let src = r#"(ns rl.core)
 (defn read-all [acc]
   (let [l (read-line)]
@@ -487,9 +490,8 @@ fn char_type_literals_conversion_and_read_char() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-1: Char como imediato tagged. Literais (nomeados/unicode),
-    // char/int, str, char?, igualdade, read-char (decodifica UTF-8, inclusive
-    // multibyte).
+    // ADR-0007 / IO-1: Char is a tagged immediate. Cover named and Unicode
+    // literals, conversions, predicates, equality, and multibyte UTF-8 reading.
     let src = r#"(ns ch.core)
 (defn read-chars [acc]
   (let [c (read-char)]
@@ -514,7 +516,7 @@ fn path_helpers_join_name_parent() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-1: helpers de caminho POSIX (puramente textuais).
+    // ADR-0007 / IO-1: POSIX-style path helpers are purely textual.
     let src = r#"(ns p.core)
 (defn -main []
   (println (path-join "/a/b" "c.txt") (path-join "/a/b/" "c") (path-join "x" "y") (path-join "/a" "/abs"))
@@ -535,8 +537,8 @@ fn bytes_type_and_binary_io() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-1: Bytes (array binário) + slurp-bytes/spit-bytes; count/bget;
-    // roundtrip via bytes->string; erro do SO como ex-data.
+    // ADR-0007 / IO-1: byte arrays, binary slurp/spit, `count`, and `bget`;
+    // bytes-to-string round trips and OS errors become ex-data.
     let src = r#"(ns by.core)
 (defn -main []
   (let [b (bytes "Aé!")]
@@ -559,7 +561,7 @@ fn read_string_edn_reader() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-5: read-string lê um valor EDN (subconjunto) em runtime.
+    // ADR-0007 / IO-5: runtime `read-string` parses the supported EDN subset.
     let src = r##"(ns rs.core)
 (defn -main []
   (println (read-string "42") (read-string "-7") (read-string "nil") (read-string "true"))
@@ -584,8 +586,8 @@ fn file_streams_and_with_open() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-2/3: writer/reader de arquivo + with-open (fecha via
-    // try/finally, inclusive em exceção); integram com *out*/*in*.
+    // ADR-0007 / IO-2/3: file readers/writers and `with-open` close through
+    // `try`/`finally`, including exceptions, and integrate with `*out*`/`*in*`.
     let src = r##"(ns wo.core)
 (defn read-lines [acc]
   (let [l (read-line)]
@@ -615,7 +617,7 @@ fn command_line_args_and_file_metadata() {
     if !have_cc() {
         return;
     }
-    // *command-line-args* (args após o nome do programa) + file-size/file-modified.
+    // `*command-line-args*` excludes argv[0]; file metadata exposes size and mtime.
     let src = r#"(ns a.core)
 (defn -main []
   (println (count *command-line-args*) *command-line-args* (first *command-line-args*))
@@ -639,7 +641,7 @@ fn filesystem_operations() {
     if !have_cc() {
         return;
     }
-    // ADR-0007 / IO-4: mkdir(s)/list-dir/delete-file/rename/directory?/file?.
+    // ADR-0007 / IO-4: directory creation/listing, deletion, rename, and predicates.
     let src = r#"(ns fs.core)
 (defn -main []
   (let [root "/tmp/cljn_e2e_fs"]
@@ -672,9 +674,9 @@ fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;
     }
-    // ADR-0009: literais de vetor com elementos imediatos são imutáveis → o mesmo
-    // objeto cacheado é reusado. Deve ser transparente: reuso repetido, uso como
-    // acumulador transiente (compartilha e copia-on-write), leituras e igualdade.
+    // ADR-0009: vector literals containing only immediates are immutable, so one
+    // cached object is reused. Transient copy-on-write, reads, and equality must
+    // make reuse observationally transparent.
     let src = r#"(ns ch.core)
 (defn fresh [] [10 20 30])
 (defn fill [] (loop [i 0 v [0 0 0]] (if (< i 6) (recur (inc i) (assoc v (mod i 3) (+ (nth v (mod i 3)) 1))) v)))
@@ -697,10 +699,9 @@ fn interprocedural_uniqueness_preserves_semantics() {
     if !have_cc() {
         return;
     }
-    // ADR-0010: um acumulador de loop passado a um helper LINEAR (que o consome e
-    // devolve) é threaded como transiente; conj/assoc dispatcham sobre T_TVEC em
-    // runtime. A análise de unicidade DEVE cancelar quando o acumulador é aliased
-    // (guardado noutra estrutura) ou passado a um helper não-linear.
+    // ADR-0010: a loop accumulator passed to a linear helper and returned from it
+    // is threaded as a transient. Uniqueness analysis must cancel after aliasing
+    // or a non-linear helper call.
     let src = r#"(ns iu.core)
 ;; helper linear (consome e devolve o acumulador) — deve threadar o transiente
 (defn step [acc lim] (loop [i 0 r acc] (if (>= i lim) r (recur (inc i) (assoc r (mod i 4) (+ (nth r (mod i 4)) i))))))
@@ -727,8 +728,8 @@ fn core_vector_builders_use_transients() {
     if !have_cc() {
         return;
     }
-    // mapv/into constroem via transiente estrutural (acumulador linear no core).
-    // Semântica idêntica; `into` continua genérico (vetor / lista via caixa).
+    // `mapv` and `into` use structural transients for linear core accumulators.
+    // Semantics remain identical; `into` stays generic for vectors and boxed lists.
     let src = r#"(ns cv.core)
 (defn -main []
   (println (mapv (fn [x] (* x x)) (range 8)))
@@ -750,11 +751,9 @@ fn auto_transient_loop_accumulators() {
     if !have_cc() {
         return;
     }
-    // ADR-0009: acumuladores de loop com init de vetor literal, usados de forma
-    // linear, viram transientes automaticamente (semântica idêntica). Cobre os
-    // padrões que exercitam o transform: conj no recur, conj num ramo de `if`
-    // (regressão do bug de descida), bare-unchanged, assoc, escape encadeado e
-    // leituras via nth/count.
+    // ADR-0009: linear loop accumulators initialized from vector literals become
+    // transients without semantic change. Cover `conj` in `recur` and `if`, an
+    // unchanged accumulator, `assoc`, chained escape, fallback, and read access.
     let src = r#"(ns at.core)
 (defn buildv [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (conj v (* i i))) v)))
 (defn evens [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (if (= 0 (mod i 2)) (conj v i) v)) v)))
@@ -779,9 +778,9 @@ fn structural_transients_preserve_persistence() {
     if !have_cc() {
         return;
     }
-    // Transient estrutural: `transient` compartilha a trie do vetor persistente e
-    // muta in-place só nós próprios (copy-on-write dos compartilhados). O vetor
-    // original NUNCA pode ser alterado; transientes independentes não interferem.
+    // A structural transient initially shares the persistent vector trie.
+    // In-place mutation is limited to owned nodes; shared nodes copy on write.
+    // The persistent source and independent transients must never interfere.
     let src = r#"(ns st.core)
 (defn build [n] (loop [i 0 v []] (if (< i n) (recur (+ i 1) (conj v (* i 10))) v)))
 (defn -main []
@@ -811,8 +810,8 @@ fn compiles_multimethods() {
     if !have_cc() {
         return;
     }
-    // defmulti/defmethod: dispatch por (dispatch-fn args), casado por = sobre o
-    // valor. Cobre keyword, número, multi-argumento e :default.
+    // `defmulti` dispatches on `(dispatch-fn args)` and matches with equality.
+    // Cover keyword, numeric, multi-argument, and `:default` dispatch values.
     let src = r#"(ns mm.core)
 (defmulti area (fn [s] (get s :shape)))
 (defmethod area :circle [s] (* 3 (* (get s :r) (get s :r))))
@@ -843,8 +842,8 @@ fn compiles_try_catch_finally() {
     if !have_cc() {
         return;
     }
-    // try/catch/finally + throw: catch-all liga o valor lançado; finally sempre
-    // roda; captura léxica no corpo/catch; try aninhado propaga ao handler externo.
+    // `try`/`catch`/`finally`: catch-all binds the thrown value, finally always
+    // runs, lexical captures survive, and nested throws reach the outer handler.
     let src = r#"(ns tc.core)
 (defn safe-div [a b]
   (try (if (= b 0) (throw "div0") (quot a b))
@@ -870,8 +869,8 @@ fn compiles_sorted_collections() {
     if !have_cc() {
         return;
     }
-    // Coleções ordenadas (árvore LLRB): iteração crescente é determinística,
-    // independente da ordem de inserção. Cobre get/contains/assoc/dissoc/seq/=.
+    // Ordered LLRB collections iterate deterministically regardless of insertion
+    // order. Exercise lookup, membership, updates, sequence, and equality.
     let src = r#"(ns so.core)
 (defn build [s i n] (if (> i n) s (recur (conj s (mod (* i 7) 101)) (+ i 1) n)))
 (defn -main []
@@ -955,8 +954,8 @@ fn compiled_stdlib_available() {
     if !have_cc() {
         return;
     }
-    // map/filter/reduce/range/into/mapv vêm do core.clj compilável, sem o usuário
-    // defini-los; `inc`/`+`/`even?` passados como valores (wrappers de primitiva).
+    // Collection functions come from compiled core without user definitions;
+    // primitive wrappers allow `inc`, `+`, and `even?` to flow as values.
     let src = r#"(ns s.core)
 (defn -main []
   (println (map inc (range 5)))
@@ -978,8 +977,8 @@ fn compiles_collections() {
     if !have_cc() {
         return;
     }
-    // Vetores, mapas (array-map), sets, keywords. Rodado também sob GC-stress:
-    // valida o rooting de acumuladores intermediários (keys/vals/rest).
+    // Vectors, array maps, sets, and keywords under GC stress validate rooting
+    // of intermediate accumulators used by `keys`, `vals`, and `rest`.
     let src = r#"(ns c.core)
 (defn -main []
   (println [1 2 3 (+ 2 2)])
@@ -1014,7 +1013,7 @@ fn compiles_closures_and_hof() {
   (println (((fn [a] (fn [b] (+ a b))) 3) 4)))
 (-main)"#;
     let expected = "(1 4 9 16)\n(2 4 6)\n15\n7\n";
-    // roda em modo normal e sob GC-stress (valida tracing das capturas)
+    // Run normally and under GC stress to validate capture tracing.
     assert_eq!(build_and_run("cljn_e2e_clos", src), expected);
     assert_eq!(
         build_and_run_env("cljn_e2e_clos_gc", src, &[("CLJN_GC_STRESS", "1")]),
@@ -1027,7 +1026,7 @@ fn compiles_core_macros() {
     if !have_cc() {
         return;
     }
-    // when/cond/and/or/-> expandidos no caminho compilado (ADR-0004).
+    // The compiled path expands `when`, `cond`, `and`, `or`, and `->` (ADR-0004).
     let src = r#"(ns m.core)
 (defn sinal [n] (cond (< n 0) "neg" (= n 0) "zero" :else "pos"))
 (defn -main []
@@ -1047,9 +1046,8 @@ fn gc_correctness_under_stress() {
     if !have_cc() {
         return;
     }
-    // CLJN_GC_STRESS=1 coleta a CADA alocação: se algum valor vivo não estiver
-    // rooteado no shadow-stack, seria liberado → saída errada/crash. Passar prova
-    // que o rooting preciso está correto.
+    // CLJN_GC_STRESS=1 collects at every allocation. Any unrooted live value
+    // would be reclaimed, producing wrong output or a crash.
     let src = r#"(ns g.core)
 (defn upto [n acc] (if (< n 0) acc (upto (dec n) (cons n acc))))
 (defn -main []
@@ -1069,8 +1067,8 @@ fn gc_reclaims_loop_garbage() {
     if !have_cc() {
         return;
     }
-    // Aloca ~2M cons descartáveis em loop. Sem coletor cresceria sem limite;
-    // com o mark-sweep completa com memória limitada (aqui só exigimos correção).
+    // Allocate about two million disposable cons cells. Mark-sweep must reclaim
+    // them; this contract checks completion and correctness rather than RSS.
     let src = r#"(ns b.core)
 (defn burn [n] (loop [i 0] (if (< i n) (do (count (cons i (list))) (recur (inc i))) i)))
 (defn -main [] (println (burn 2000000)))

@@ -1,141 +1,150 @@
-# Arquitetura
+# Architecture
 
-[Índice da documentação](README.md) · [Visão geral](overview.md) ·
-[Uso](usage.md) · [Especificações](../specs/README.md)
+[Documentation index](README.md) · [Overview](overview.md) ·
+[Usage](usage.md) · [Specifications](../specs/README.md) ·
+[Documentation style](../specs/DOCUMENTATION_STYLE.md)
 
-> Arquitetura auditada no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
-> Consulte [SNAPSHOT.md](SNAPSHOT.md).
+`clojure-compiler` is a Cargo workspace whose delivered executable is named
+`clojure-native`. This page is an index of component boundaries and executable
+behavior. Detailed type and function contracts live in the linked Rust modules
+and in the native runtime source.
 
-O `clojure-compiler` é um workspace Cargo. O executável entregue pelo workspace se chama
-`clojure-native`.
+## Workspace components
 
-## Crates principais
-
-| Crate | Responsabilidade |
+| Crate | Responsibility and internal reference |
 | --- | --- |
-| `clojure-span` | Posições e intervalos de código-fonte |
-| `clojure-diagnostics` | Erros determinísticos e renderização de diagnósticos |
-| `clojure-syntax` | Forms e estruturas sintáticas |
-| `clojure-reader` | Tokenização, reader macros e parsing |
-| `clojure-value` | Valores usados pelo interpretador |
-| `clojure-interp` | Interpretador de bootstrap |
-| `clojure-analyzer` | Resolução, macroexpansão, closures, `recur`, records e protocolos |
-| `clojure-codegen` | IR Cranelift, objeto nativo e runtime C embutido |
-| `clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
-| `clojure-test-support` | Runner, schema, checksums, oracle e relatórios de conformidade |
+| `clojure-span` | [UTF-8 source storage, byte spans, and display locations](../crates/clojure-span/src/lib.rs) |
+| `clojure-diagnostics` | [Stable diagnostic codes and deterministic rendering](../crates/clojure-diagnostics/src/lib.rs) |
+| `clojure-syntax` | [Spanned reader forms and metadata representation](../crates/clojure-syntax/src/lib.rs) |
+| `clojure-reader` | [Tokenization, reader macros, and form parsing](../crates/clojure-reader/src/lib.rs) |
+| `clojure-value` | [Bootstrap-interpreter values](../crates/clojure-value/src/lib.rs) |
+| `clojure-interp` | [Bootstrap evaluation and its boundary from the native ABI](../crates/clojure-interp/src/lib.rs) |
+| `clojure-analyzer` | [Expansion, lexical resolution, captures, `recur`, dispatch, and transient analysis](../crates/clojure-analyzer/src/lib.rs) |
+| `clojure-codegen` | [Cranelift lowering, GC frames, ABI imports, and object emission](../crates/clojure-codegen/src/lib.rs) |
+| `clojure-native-cli` | [`read`, `eval`, `run`, and the AOT build orchestration](../crates/clojure-native-cli/src/main.rs) |
+| `clojure-test-support` | [Fixture schema, isolation, comparisons, checksums, oracle, and reports](../crates/clojure-test-support/src/lib.rs) |
 
-## Fluxo de compilação
+## Compilation flow
 
 ```text
-fonte .clj
-   │
-   ▼
-reader ──► forms com spans
-   │
-   ▼
-macroexpansão + analyzer ──► programa analisado
-   │
-   ▼
-codegen Cranelift ──► objeto nativo
-   │
-   ▼
-cc + runtime C embutido ──► executável do host
+UTF-8 .clj source
+        |
+        v
+reader ------> spanned forms
+        |
+        v
+known expansion + analyzer ------> analyzed Program/Expr
+        |
+        v
+Cranelift codegen ------> host object
+        |
+        v
+system C driver + amalgamated runtime ------> native executable
 ```
 
-O CLI carrega primeiro o subconjunto compilável de `clojure.core`, analisa o core e o
-programa do usuário como uma unidade, gera o objeto e invoca o linker C do sistema.
+The CLI prepends the
+[compiled `clojure.core` subset](../crates/clojure-native-cli/src/core_compiled.clj)
+and analyzes it together with user forms. It then writes a temporary object and
+runtime translation unit, invokes the C compiler driver selected by `CC`, and
+removes those temporary files after linking. The precise stage contracts are
+indexed by [`COMPILER_PIPELINE.md`](../specs/COMPILER_PIPELINE.md).
 
-Depois da análise semântica, um pós-passe conservador identifica acumuladores frescos de
-vetor usados linearmente. O passe cobre loops locais e o primeiro padrão de parâmetro
-linear entre funções de topo; ele rebaixa para o caminho persistente quando encontra
-captura, alias ou chamada não reconhecida. O resultado continua sendo a mesma AST
-consumida pelo codegen — ainda não existe uma IR própria separada.
+After semantic analysis, a conservative post-pass recognizes fresh vector
+accumulators used linearly. It covers local loops and the initial
+interprocedural linear-parameter pattern. Capture, aliasing, or an unknown call
+forces the persistent path. The pass annotates the existing AST; there is no
+separate HIR or LIR today.
 
-## Modelo de valores e chamadas
+## Native value and call model
 
-No código compilado, fixnums são valores tagueados e os demais valores são ponteiros
-para objetos rastreados pelo GC. As operações inteiras mais frequentes (`+`, `-`, `*`,
-`quot`, `mod`, `inc`, `dec` e comparações) têm fast paths no código gerado, com guards
-de tipo e overflow. Casos inválidos seguem para funções verificadas do runtime.
+Compiled fixnums and other immediates use tagged `Value` words. Heap values are
+pointers to objects tracked by the native collector. Frequent integer
+operations have guarded Cranelift fast paths; type errors, overflow, and other
+general cases use checked C ABI functions.
 
-Todas as funções compiladas usam a convenção uniforme `(self, argc, argv)`. Isso permite
-aridades múltiplas, variádicas, closures, chamadas indiretas e `apply`. `loop/recur`
-vira um backedge nativo e não cresce a pilha.
+Every compiled function uses `(self, argc, argv)`. That uniform convention
+supports fixed, multiple, and variadic arities, closures, indirect calls, and
+`apply`. `loop`/`recur` lowers to a native backedge without growing the C stack.
+The source of truth for tags and layouts is
+[`00_types.c`](../crates/clojure-codegen/runtime/00_types.c); matching Rust
+declarations carry `ABI:` comments in the codegen module.
 
-## Coleções
+## Collections
 
-- Lista: células cons ligadas.
-- Vetor: trie bitmap persistente de 32 vias.
-- Mapa: array-map pequeno que promove para HAMT de 32 vias.
-- Set: array-set pequeno que promove para a representação HAMT.
-- Mapa/set ordenado: árvore LLRB persistente.
-- Record: nome nominal e campos com semântica associativa.
-- Transient: buffer mutável para vetor e caixa sobre o valor persistente para map/set.
+- Lists are linked cons cells.
+- Vectors are persistent 32-way bitmap tries.
+- Small maps and sets use compact arrays and promote to 32-way HAMTs.
+- Sorted maps and sets use persistent left-leaning red-black trees.
+- Records combine nominal identity with associative fields.
+- Vector transients own or copy trie nodes; map and set transients currently
+  wrap a persistent value in a mutable box.
 
-As estruturas persistentes usam path-copying e compartilhamento estrutural. CHAMP,
-edit tokens e transients com mutação in-place em nós de map/set continuam planejados.
-O core compilado usa o vetor transient estrutural em `mapv` e `into`; o analyzer também
-o seleciona para os acumuladores cuja unicidade consegue provar.
+Persistent updates use path copying and structural sharing. The compiled core
+uses transients in `mapv` and vector-targeted `into`; the analyzer can select
+the same path when it proves accumulator uniqueness. **Planned:** CHAMP,
+general escape analysis, and in-place map/set transients are tracked by the
+applicable specifications and ADRs.
 
-## Runtime e GC
+## Runtime, I/O, and GC
 
-O runtime C embutido fornece alocação, coleções, strings, impressão, exceções,
-dispatch de protocolos/multimétodos e slow paths. O coletor é mark-sweep preciso, não
-móvel e single-thread.
+The embedded C runtime implements allocation, strings, printing, functions,
+collections, records, transients, exceptions, multimethods, I/O, the runtime
+reader, and slow paths. It is split into ordered subsystem fragments under
+[`crates/clojure-codegen/runtime/`](../crates/clojure-codegen/runtime/).
+[`runtime_all.c`](../crates/clojure-codegen/runtime/runtime_all.c) documents the
+amalgamation order. The fragments still compile as one translation unit and do
+not introduce separate libraries, states, or ABIs.
 
-Fisicamente, o runtime está dividido em fragmentos ordenados por subsistema em
-`crates/clojure-codegen/runtime/`. O codegen os concatena com `include_str!` e o
-compilador C ainda recebe uma única unidade de tradução; portanto a modularização não
-cria bibliotecas, ABIs ou estados duplicados.
-
-Vetores literais não vazios compostos somente por fixnums, booleanos e `nil` recebem um
-ID de site. No primeiro uso, o codegen constrói o vetor e o registra no cache do runtime;
-usos seguintes carregam o mesmo valor. O cache é uma raiz permanente visitada pelo GC.
-Literais com elementos dinâmicos continuam seguindo a construção normal.
-
-Streams gerais, arquivos e readers de runtime ainda são alvo futuro. A fronteira
-proposta mantém handles e buffers atrás da ABI C, conforme
-[`IO_SPEC`](../specs/IO_SPEC.md) e
+Implemented I/O includes dynamic input and output bindings, string and file
+readers/writers, text and byte-array operations, filesystem helpers, command
+arguments, file metadata, and the supported runtime `read-string` subset.
+The contracts and remaining planned stages are in
+[`IO_SPEC.md`](../specs/IO_SPEC.md) and
 [`ADR-0007`](../specs/adr/0007-native-io-and-runtime-reader.md).
 
-Cada função compilada abre um frame na shadow stack. O codegen faz loads/stores diretos
-nos slots de roots e no stack pointer, em vez de chamar `gc_push`, `gc_popn` ou `gc_set`
-para cada expressão. A entrada e a saída do frame continuam delimitadas pelo runtime.
-O modo `CLJN_GC_STRESS=1` força coleta em toda alocação para validar rooting.
+The collector is precise, non-moving, single-threaded mark-sweep. Each compiled
+function opens a frame in the shadow stack. Codegen emits direct root-slot and
+stack-pointer accesses, while runtime entry/exit operations delimit the frame.
+Any heap value live across an allocating ABI call must remain rooted.
+`CLJN_GC_STRESS=1` collects at every allocation to exercise that contract.
 
-## Testes
+Immediate-only non-empty vector literals receive a site identifier. Their first
+evaluation constructs and registers the vector in a permanent runtime cache;
+later evaluations load the same rooted value. Literals containing dynamic
+elements follow normal construction.
 
-Além dos testes de cada crate, `clojure-test-support` descobre e executa os casos de
-[`tests/conformance/`](../tests/conformance). Casos `active` bloqueiam em divergências;
-`xfail` bloqueia se passar inesperadamente; `pending` valida schema e checksum sem
-executar. O runner reutiliza um único CLI release e limita a concorrência a quatro casos.
+## Verification architecture
 
-O [`Makefile`](../Makefile) mantém uma entrada estável sobre essas camadas:
+[`clojure-test-support`](../crates/clojure-test-support/src/lib.rs) discovers
+every case below [`tests/conformance/`](../tests/conformance), validates the
+strict manifest schema and fixture checksum, and then filters cases for
+execution. Executable cases run in isolated temporary directories with bounded
+parallelism and timeouts. Text, binary output, structural forms, exit status,
+and declared filesystem effects are compared as appropriate.
+
+An `active` mismatch fails. An `xfail` mismatch is expected, while an `xfail`
+that passes is an `unexpected-pass` and also fails the gate until promoted.
+`pending` cases are schema- and checksum-validated but not executed. JVM oracle
+comparison and blessing are explicit maintainer operations, never dependencies
+of normal verification.
+
+The [`Makefile`](../Makefile) is the stable operational interface:
 
 ```text
 make quality
-   ├── rustfmt
-   ├── clippy
-   ├── clj-kondo
-   └── cargo test --workspace
+   |-- rustfmt
+   |-- documentation structure, rustdoc, and doctests
+   |-- clippy and clj-kondo
+   `-- workspace tests
 
 make all
-   ├── quality
-   ├── coverage
-   ├── compatibility
-   └── benchmarks
+   |-- quality
+   |-- coverage
+   |-- compatibility
+   `-- benchmarks
 ```
 
-Os scripts em `scripts/` e nos diretórios de benchmark continuam sendo as interfaces
-de baixo nível. A CI usa os mesmos alvos públicos do Makefile, divididos em jobs de
-qualidade, cobertura, conformidade e checksums de benchmarks.
-
-A estratégia para ampliar testes unitários por crate está na
-[`ADR-0011`](../specs/adr/0011-rust-crate-unit-testing-strategy.md), e a redução dos
-grandes arquivos Rust está na
-[`ADR-0012`](../specs/adr/0012-rust-crate-modularization.md). Ambas são propostas; a
-separação física já concluída do runtime C é um trabalho anterior e distinto.
-
-Detalhes normativos ficam nas
-[`especificações`](../specs/README.md); comandos e requisitos estão no
-[guia de uso](usage.md).
+Normative behavior and planned work remain in the
+[specifications](../specs/README.md). Documentation policy, templates, and
+critical contract markers are defined in
+[`DOCUMENTATION_STYLE.md`](../specs/DOCUMENTATION_STYLE.md).

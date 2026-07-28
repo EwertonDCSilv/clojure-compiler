@@ -1,7 +1,11 @@
 //! Regenerates the tracked conformance fixture matrix.
 //!
-//! This is intentionally an explicit maintainer command. Normal verification
-//! never rewrites fixtures.
+//! The static table below is the source for generated manifests, programs, and
+//! expectations. Running the example overwrites the known generated files,
+//! removes obsolete generated payload names from those fixture directories,
+//! and finally rewrites `checksums.sha256`. It is therefore an explicit,
+//! deterministic maintainer command; normal verification never rewrites
+//! fixtures or consults the network.
 
 use clojure_test_support::update_checksums;
 use std::fs;
