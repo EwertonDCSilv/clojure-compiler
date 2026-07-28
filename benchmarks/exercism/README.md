@@ -68,8 +68,8 @@ make benchmarks-compare-exercism \
 
 The comparative CSV records wall time, CPU and peak RSS for both runtimes. Compilation
 is measured separately from execution. The JVM side uses Clojure 1.12.5 with HotSpot
-enabled after AOT compilation. The currently versioned CSV contains the seven practice
-cases; the next complete measurement will add `annalyns-infiltration`.
+enabled after AOT compilation. The versioned CSV contains all eight promoted cases,
+including `annalyns-infiltration`.
 
 ## Compatibility inventory
 

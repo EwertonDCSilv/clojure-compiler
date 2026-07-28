@@ -254,3 +254,24 @@ atravessa a fronteira de função com acumulador linear, cai 48,4%; e literais c
 reduzem `horner-polynomial` em 91,8%, `prefix-range-sums` em 81,8% e `counting-sort` em
 65,5%. A regressão agregada de 7,7% no capítulo de grafos, concentrada em BFS/DFS,
 permanece como sinal para investigação, sem desfazer o ganho dos outros cinco capítulos.
+
+## 11. Revalidação integral em 2026-07-28
+
+O benchmark foi executado novamente no compilador `1dc69b5`, ainda em escala 25× e
+`--opt-level none`. Diferentemente dos acompanhamentos anteriores, esta rodada refez
+também o lado Clojure 1.12.5/JVM; portanto, variações contra a rodada `1ca1d79` não
+isolam uma mudança específica do compilador.
+
+| Métrica Cormen | Native | Clojure/JVM |
+| --- | ---: | ---: |
+| Tempo de parede acumulado | 26,08 s | 16,39 s |
+| Tempo de CPU acumulado | 25,97 s | 31,35 s |
+| RSS mediano | 13,2 MiB | 273,0 MiB |
+| Vitórias por tempo de parede | 13 | 16 |
+| Vitórias por CPU | 22 | 8 |
+| Vitórias por RSS | 30 | 0 |
+
+Os 30 checksums coincidiram. O nativo ainda perde 1,59× no tempo de parede acumulado,
+mas consome 17,2% menos CPU no agregado e preserva vantagem de memória em todos os
+casos. O CSV e a tabela por caso permanecem no
+[relatório Cormen](../../benchmarks/cormen/results/README.md).

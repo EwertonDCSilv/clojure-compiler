@@ -3,7 +3,7 @@
 [Índice da documentação](README.md) · [Visão geral](overview.md) ·
 [Arquitetura](architecture.md) · [README em português](../README.pt-BR.md)
 
-> Comandos revisados no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+> Comandos revisados no [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
 > Veja o [snapshot documentado](SNAPSHOT.md).
 
 O repositório se chama `clojure-compiler`; os comandos abaixo usam o binário

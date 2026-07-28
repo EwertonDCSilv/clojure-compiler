@@ -18,7 +18,7 @@ rooting continua eager; as seções de liveness/safepoints descrevem o principal
 restante. `CodegenOptions` também já expõe `none`, `speed` e `speed-and-size`, mas
 `none` permanece padrão após regressão medida no gate Cormen.
 
-Ganhos posteriores, medidos no `HEAD 476aefd`, ampliaram o escopo original:
+Ganhos posteriores, revalidados no `HEAD 1dc69b5`, ampliaram o escopo original:
 
 - `mapv` e `into` constroem vetores por transiente estrutural;
 - acumuladores frescos de `loop` podem ser promovidos automaticamente, incluindo o
@@ -26,8 +26,8 @@ Ganhos posteriores, medidos no `HEAD 476aefd`, ampliaram o escopo original:
 - vetores literais constantes de imediatos são cacheados por site e registrados como
   roots permanentes (`1ca1d79`).
 
-Essas entregas reduziram o Cormen de 36,21 s para 29,45 s de parede e de 36,07 s para
-29,30 s de CPU na mesma referência JVM preservada. Elas não implementam rooting por
+Na rodada completa mais recente, o Cormen chegou a 26,08 s de parede e 25,97 s de CPU,
+contra 16,39 s e 31,35 s na JVM medida na mesma revisão. Essas entregas não implementam rooting por
 liveness, tuplas de retorno sem heap nem uma IR própria. A análise completa está na
 [ADR-0009](adr/0009-benchmark-performance-study.md), e a decisão interprocedural na
 [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md).

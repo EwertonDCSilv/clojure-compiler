@@ -12,9 +12,9 @@ runtime. The repository is named `clojure-compiler`; its command-line binary is
 > Experimental project under active development. It implements a documented subset of
 > Clojure and is not production-ready.
 
-> Documented snapshot: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
-> (2026-07-27). The benchmark compiler is
-> [`1ca1d79`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1ca1d799a02ead388a1ffcae33b760fe0743d8d9).
+> Documented snapshot and benchmark compiler:
+> [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> (2026-07-28).
 > See the [snapshot policy and current measurements](docs/SNAPSHOT.md).
 
 ## Overview
@@ -37,6 +37,7 @@ compatibility boundaries, implementation plans, and architectural decisions live
 | [`docs/architecture.md`](docs/architecture.md) | Crates, AOT pipeline, runtime, and GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | Audited HEAD, measured compiler commit, and current results |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Executable A–E compatibility contract |
+| [`specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md`](specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | Planned native HTTP connector and Pedestal-compatible subset |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catalog and methodology for 98 Native × JVM performance workloads |
 
 ## Current capabilities
@@ -175,8 +176,9 @@ The executable compatibility matrix currently contains 460 cases across levels A
 185 active, 243 expected failures, and 32 pending inventory entries. Levels D and E now
 include executable pure-library and standalone-application slices in addition to
 concrete expected gaps and project inventory, including a Pedestal Hello World HTTP API
-target and 13 official Exercism concept exemplars. The matrix also inventories the complete proposed I/O surface as expected
-failures without claiming that surface is available. Verification runs
+target and 13 official Exercism concept exemplars. The matrix covers the complete
+proposed I/O surface: implemented slices are active and the remaining executable gaps
+stay as expected failures. Verification runs
 offline without a JVM, checks fixture integrity, and writes reports to
 `target/conformance/`.
 
@@ -214,20 +216,20 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   deterministic Native × JVM workloads. The broader 114-solution support inventory is
   tracked separately by the conformance suite.
 
-Reference snapshots are pinned in each suite report. Cracking and Cormen use native
-compiler `1ca1d79` at scale 25×; Exercism uses compiler checkout `7607bef` and upstream
-snapshot `4a4c4fd` at scale 5×:
+Reference snapshots are pinned in each suite report. All three suites use compiler
+`1dc69b5`; Cracking and Cormen run at scale 25×, while Exercism uses upstream snapshot
+`4a4c4fd` at scale 5×:
 
 | Suite | Native/JVM wall | Native/JVM CPU | Native/JVM median RSS |
 | --- | ---: | ---: | ---: |
-| Cracking | 7.77 / 24.96 s | 7.61 / 53.88 s | 4.7 / 117.5 MiB |
-| Cormen/CLRS | 29.45 / 16.91 s | 29.30 / 32.61 s | 13.4 / 271.1 MiB |
-| Exercism (scale 5×) | 5.63 / 3.77 s | 5.61 / 7.26 s | per-case values in the external report |
+| Cracking | 7.71 / 22.27 s | 7.58 / 48.66 s | 4.6 / 120.8 MiB |
+| Cormen/CLRS | 26.08 / 16.39 s | 25.97 / 31.35 s | 13.2 / 273.0 MiB |
+| Exercism (scale 5×) | 6.68 / 4.22 s | 6.66 / 8.00 s | 7.8 / 249.6 MiB |
 
-All 98 benchmark cases have matching native/JVM checksums. The Cormen native run uses 10.1%
-less aggregate CPU than the preserved JVM reference, although its aggregate wall time
-is still higher. In the external corpus, 8 of 114 complete upstream solutions currently
-build; the other 106 have a versioned first-blocker classification.
+All 98 benchmark cases have matching native/JVM checksums. The Cormen native run uses
+17.2% less aggregate CPU than the JVM, although its aggregate wall time is still
+higher. In the external corpus, 8 of 114 complete upstream solutions currently build;
+the other 106 have a versioned first-blocker classification.
 
 ## Project layout
 
@@ -248,8 +250,8 @@ build; the other 106 have a versioned first-blocker classification.
 ## Known limitations
 
 - This is a Clojure subset, not a drop-in replacement for Clojure/JVM.
-- The reader accepts floating-point literals, but native compiled numeric execution is
-  currently fixnum-only. Bignums, ratios, and BigDecimal are not implemented.
+- Native compiled execution supports boxed IEEE-754 doubles and mixed
+  fixnum/float arithmetic. Bignums, ratios, and BigDecimal are not implemented.
 - User-defined macros, lazy/infinite sequences, dynamic namespace loading, and
   multi-file project compilation are not available on the native path.
 - Exception catches are currently catch-all: typed catch hierarchies, multiple catch
@@ -257,10 +259,10 @@ build; the other 106 have a versioned first-blocker classification.
   remain incomplete.
 - Multimethod dispatch requires an explicit function and supports equality plus
   `:default`; hierarchy dispatch through `derive`/`isa?` is not implemented.
-- Native I/O now covers `print`/`println`, flushing, dynamic output redirection,
-  `slurp`/`spit`, `read-string`, and in-memory `with-in-str`/`with-out-str` paths.
-  General stdin, binary/filesystem operations, full EDN options, and the remaining
-  lifecycle/error cases are still incomplete.
+- The native runtime includes standard and memory streams, text and binary files,
+  paths, bytes, filesystem primitives, process context, and runtime data reading.
+  The complete I/O gate remains open because derived APIs, full EDN options, and
+  several lifecycle/error contracts are still incomplete.
 - Native compilation targets the host and invokes a system C linker.
 - The GC is single-threaded and non-moving. Rooting is still eager; a planned phase
   will place roots from liveness information at allocation safepoints.

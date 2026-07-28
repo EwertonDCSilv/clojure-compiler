@@ -23,14 +23,14 @@ O intervalo seguro do fixnum é `[-2^62, 2^62 - 1]` nas plataformas de 64 bits a
 Fast paths gerados validam tag e overflow antes de devolver o valor retagueado; tipos
 inválidos e overflow seguem para o slow path do runtime.
 
-O reader reconhece `f64`, mas a representação numérica compilada ainda é somente
-fixnum. Float, BigInt, ratio e BigDecimal no runtime nativo são trabalho futuro.
+O caminho compilado representa `f64` como objeto `Float` boxeado e executa aritmética
+mista fixnum/float. BigInt, ratio e BigDecimal permanecem trabalho futuro.
 
 ### Objetos rastreados
 
 O runtime atual possui tags para:
 
-- string e keyword;
+- string, keyword, `Float` e `Bytes`;
 - cons;
 - closure/função;
 - vetor persistente e seus nós;
@@ -41,9 +41,10 @@ O runtime atual possui tags para:
 - tipos internos usados pelo runtime.
 
 Símbolos são necessários durante leitura/análise, mas não são objetos de primeira classe
-do runtime compilado atual. Metadata em valores compilados, Vars dinâmicas, atoms,
-delays e objetos de exceção com tipo/`ex-data` também permanecem futuros. Valores
-lançados explicitamente são mantidos como roots enquanto atravessam handlers nativos.
+do runtime compilado atual. Metadata em valores compilados, atoms, delays e objetos de
+exceção com tipo/`ex-data` também permanecem futuros. Vars dinâmicas e `binding` já
+restauram os valores anteriores inclusive durante unwind. Valores lançados
+explicitamente são mantidos como roots enquanto atravessam handlers nativos.
 
 ### Cache de literais constantes
 
@@ -189,15 +190,14 @@ continua registrando os contratos ainda não promovidos.
 
 O modelo arquitetural preserva espaço para:
 
-- números de precisão arbitrária e ponto flutuante;
-- metadata e Vars;
+- números de precisão arbitrária;
+- metadata;
 - lazy seqs;
 - exceções tipadas, `ex-data` e stack traces de fonte;
 - atoms, volatiles e delays;
 - namespaces e carregamento AOT multi-arquivo;
 - threads e um coletor apropriado a concorrência.
-- streams, arquivos, filesystem, `Bytes`, `Path` e readers de runtime conforme
-  [IO_SPEC](IO_SPEC.md).
+- APIs públicas e contratos restantes de I/O conforme [IO_SPEC](IO_SPEC.md).
 
 Esses itens não devem ser tratados como recursos disponíveis até aparecerem como casos
 `active` na suíte de conformidade.

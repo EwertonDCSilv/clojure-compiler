@@ -9,19 +9,19 @@ Este diretório registra a arquitetura, o escopo e as decisões do compilador na
 nome do produto e do binário é `clojure-native`; o repositório se chama
 `clojure-compiler`.
 
-> Snapshot documentado: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
-> em 2026-07-27. A política e o benchmark de referência estão em
+> Snapshot documentado: [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> em 2026-07-28. A política e o benchmark de referência estão em
 > [`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
 
 ## Estado executável
 
-Em 2026-07-27, o workspace já possui um corte vertical funcional:
+Em 2026-07-28, o workspace já possui um corte vertical funcional:
 
 - Reader com spans, reader macros e diagnósticos com arquivo, linha e coluna.
 - Interpretador de bootstrap para `eval`, `run` e infraestrutura de macros.
 - Analyzer e codegen Cranelift capazes de gerar executáveis nativos sem JVM.
-- Fixnums tagueados, strings, listas, keywords, vetores, mapas, sets, closures e
-  records rastreados pelo runtime nativo.
+- Fixnums tagueados, doubles IEEE-754 boxeados, strings, listas, keywords, vetores,
+  mapas, sets, closures e records rastreados pelo runtime nativo.
 - `loop/recur` como backedge nativo, closures transitivas, HOF, aridades
   fixas/múltiplas/variádicas e `apply`.
 - Expansão compilada de `when`, `when-not`, `if-not`, `cond`, `and`, `or`, `->` e
@@ -48,6 +48,8 @@ Em 2026-07-27, o workspace já possui um corte vertical funcional:
   caminho quente. O rooting ainda é eager; liveness em safepoints é a próxima etapa.
 - Runtime C separado fisicamente por subsistema, mas amalgamado como uma única unidade
   de tradução e uma única ABI.
+- I/O textual nativo com streams dinâmicos, `slurp`/`spit`, `read-string`, flush e
+  redirecionamento cobertos pela matriz executável.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
 [`tests/conformance/`](../tests/conformance) possui 460 casos: 185 ativos, 243 falhas
@@ -58,8 +60,8 @@ arquivo.
 
 O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
 fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
-7,77 s nativos contra 24,96 s na JVM; Cormen acumula 29,45 s contra 16,91 s de parede,
-mas 29,30 s contra 32,61 s de CPU. Os 90 checksums internos são equivalentes. O corpus
+7,71 s nativos contra 22,27 s na JVM; Cormen acumula 26,08 s contra 16,39 s de parede,
+mas 25,97 s contra 31,35 s de CPU. Os 98 checksums são equivalentes. O corpus
 externo Exercism audita 101 soluções práticas e 13 exemplares conceituais oficiais:
 8 compilam e 106 registram o primeiro bloqueador. Oito cargas adequadas formam uma
 suíte de desempenho Native × JVM separada; os demais casos pertencem ao relatório de
@@ -74,11 +76,13 @@ ressalvas e evolução estão na [ADR-0009](adr/0009-benchmark-performance-study
 
 As specs descrevem tanto o que existe quanto o alvo futuro; marcações de fase e
 `[FUTURO]` não devem ser lidas como funcionalidade entregue. O caminho nativo ainda não
-oferece bignums, ratios, ponto flutuante compilado, macros definidas pelo usuário,
-lazy-seq, namespaces dinâmicos, projetos multi-arquivo ou interop Java. Exceções ainda
-não têm hierarquia tipada e multimétodos ainda não usam hierarquias. O gate geral de
-O gate completo de I/O permanece proposto, mas output, flush, redirecionamento,
-`slurp`/`spit`, `read-string` e streams de string já têm casos ativos.
+oferece bignums, ratios, BigDecimal, macros definidas pelo usuário, lazy-seq, namespaces
+dinâmicos, projetos multi-arquivo ou interop Java. Exceções ainda não têm hierarquia
+tipada e multimétodos ainda não usam hierarquias. O runtime já expõe valores e
+primitivas para streams, arquivos, bytes, paths, filesystem, contexto de processo e
+leitura de dados. O gate completo de I/O continua aberto porque APIs derivadas, opções
+EDN completas e vários contratos de lifecycle/erro ainda não possuem evidência ativa
+de conformidade.
 
 ## Como ler estes documentos
 
@@ -93,14 +97,16 @@ Ordem sugerida:
 7. [MEMORY_MODEL.md](MEMORY_MODEL.md) — GC, roots e ownership.
 8. [STANDARD_LIBRARY_SCOPE.md](STANDARD_LIBRARY_SCOPE.md) — biblioteca entregue e alvo.
 9. [IO_SPEC.md](IO_SPEC.md) — gate proposto de streams, arquivos, processo e readers.
-10. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
+10. [PEDESTAL_NATIVE_CONNECTOR_SPEC.md](PEDESTAL_NATIVE_CONNECTOR_SPEC.md) — **Planejado**:
+    connector HTTP nativo e subconjunto de aplicação compatível com Pedestal.
+11. [ASSOCIATIVE_INDEXED_SPEC.md](ASSOCIATIVE_INDEXED_SPEC.md) — contrato proposto de
     `assoc` persistente e `nth` genérico.
-11. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
-12. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
-13. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
+12. [NATIVE_INTEROP.md](NATIVE_INTEROP.md) — FFI em ABI C.
+13. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
+14. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
     regressão.
-14. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-15. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+15. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+16. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 

@@ -60,10 +60,10 @@ caso separado de aridade inválida.
 
 As pastas pending tornam o escopo futuro auditável, mas não contam como suporte.
 
-O inventário de I/O amplia essa regra: `clojure.core`, `clojure.edn`, `cljn.io` e
-`cljn.process` possuem casos `xfail` normais, de limite e de erro conforme
-[IO_SPEC](IO_SPEC.md). Esses casos tornam o contrato auditável, mas não promovem os
-namespaces nem as funções a suporte atual.
+O inventário de I/O amplia essa regra: partes de `clojure.core` já estão `active`,
+enquanto `clojure.edn`, `cljn.io`, `cljn.process` e contratos incompletos permanecem
+`xfail` conforme [IO_SPEC](IO_SPEC.md). O runtime possuir uma primitiva não promove,
+por si só, a API pública correspondente.
 
 ## Alvo progressivo
 
@@ -82,16 +82,16 @@ fora do runtime nativo.
 
 ## Recursos ainda não entregues
 
-- `/` com ratios, `rem`, bignums, BigDecimal e ponto flutuante compilado;
+- `/` com ratios, `rem`, bignums e BigDecimal;
 - `ex-info`, hierarquia tipada/múltiplos catches e tradução de falhas fatais do runtime;
 - `defmacro` de usuário, syntax-quote executável e `macroexpand`;
 - `lazy-seq`, sequências infinitas e chunked seqs;
-- atoms, Vars dinâmicas, delays e futures;
+- atoms, delays e futures;
 - `deftype`, `reify`, `extend-protocol` e hierarquias de multimétodos;
 - `disj!`, `pop!`, edit tokens e invalidação completa de transients;
 - require dinâmico, classpath/JAR e bibliotecas JVM.
-- streams gerais, arquivos, filesystem, `clojure.edn` em runtime, `cljn.io` e
-  `cljn.process` (ver [IO_SPEC](IO_SPEC.md)).
+- APIs públicas completas de `clojure.edn`, `cljn.io` e `cljn.process`, além dos
+  contratos restantes de lifecycle/erro (ver [IO_SPEC](IO_SPEC.md)).
 
 Uma função só deve sair desta lista quando houver implementação e caso de conformidade
 ativo.

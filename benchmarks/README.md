@@ -358,6 +358,16 @@ make benchmarks-compare-exercism EXERCISM_COMPARE_ARGS="--scale 5"
 
 ## Consulte os resultados
 
+Snapshot medido em 2026-07-28 no compilador `1dc69b5`, com ambos os lados refeitos:
+
+| Suíte | Parede Native/JVM | CPU Native/JVM | RSS mediano Native/JVM |
+| --- | ---: | ---: | ---: |
+| Cracking | 7,71 / 22,27 s | 7,58 / 48,66 s | 4,6 / 120,8 MiB |
+| Cormen/CLRS | 26,08 / 16,39 s | 25,97 / 31,35 s | 13,2 / 273,0 MiB |
+| Exercism | 6,68 / 4,22 s | 6,66 / 8,00 s | 7,8 / 249,6 MiB |
+
+Os 98 casos terminaram com status `OK` e checksums equivalentes.
+
 | Suíte | Relatório comentado | CSV comparativo de referência |
 | --- | --- | --- |
 | Cracking | [`cracking/results/README.md`](cracking/results/README.md) | [`cracking/results/extreme.csv`](cracking/results/extreme.csv) |

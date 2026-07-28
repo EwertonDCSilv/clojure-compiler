@@ -12,9 +12,9 @@ chama `clojure-native`.
 > Projeto experimental em desenvolvimento ativo. Ele implementa um subconjunto
 > documentado de Clojure e ainda não está pronto para produção.
 
-> Snapshot documentado: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
-> (2026-07-27). O compilador medido nos benchmarks é o
-> [`1ca1d79`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1ca1d799a02ead388a1ffcae33b760fe0743d8d9).
+> Snapshot documentado e compilador medido:
+> [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> (2026-07-28).
 > Consulte a [política do snapshot e as medições atuais](docs/SNAPSHOT.md).
 
 ## Visão geral
@@ -37,6 +37,7 @@ arquiteturais ficam em [`specs/`](specs/README.md).
 | [`docs/architecture.md`](docs/architecture.md) | Crates, pipeline AOT, runtime e GC |
 | [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md) | HEAD auditado, commit medido e resultados atuais |
 | [`specs/conformance/README.md`](specs/conformance/README.md) | Contrato executável de compatibilidade A–E |
+| [`specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md`](specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | Connector HTTP nativo planejado e subconjunto compatível com Pedestal |
 | [`benchmarks/README.md`](benchmarks/README.md) | Catálogo e metodologia de 98 cargas de desempenho Native × JVM |
 
 ## Recursos atuais
@@ -175,8 +176,8 @@ A matriz executável de compatibilidade contém atualmente 460 casos nos níveis
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de
 lacunas esperadas concretas e inventário de projetos, incluindo uma API HTTP Hello
 World em Pedestal e 13 exemplares conceituais oficiais do Exercism. A matriz também
-inventaria toda a superfície proposta de I/O como
-falhas esperadas, sem afirmar que ela está disponível. A verificação roda
+abrange toda a superfície proposta de I/O: os recortes implementados estão ativos e as
+lacunas executáveis restantes continuam como falhas esperadas. A verificação roda
 offline e sem JVM, confere a integridade das fixtures e grava relatórios em
 `target/conformance/`.
 
@@ -214,20 +215,20 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   cargas determinísticas Native × JVM. O inventário mais amplo de suporte às 114
   soluções é mantido separadamente pela suíte de conformidade.
 
-Os snapshots ficam fixados no relatório de cada suíte. Cracking e Cormen usam o
-compilador nativo `1ca1d79` em escala 25×; Exercism usa o checkout `7607bef`, upstream
-`4a4c4fd` e escala 5×:
+Os snapshots ficam fixados no relatório de cada suíte. As três suítes usam o compilador
+`1dc69b5`; Cracking e Cormen rodam em escala 25×, enquanto Exercism usa o snapshot
+upstream `4a4c4fd` e escala 5×:
 
 | Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 7,77 / 24,96 s | 7,61 / 53,88 s | 4,7 / 117,5 MiB |
-| Cormen/CLRS | 29,45 / 16,91 s | 29,30 / 32,61 s | 13,4 / 271,1 MiB |
-| Exercism (escala 5×) | 5,63 / 3,77 s | 5,61 / 7,26 s | valores por caso no relatório externo |
+| Cracking | 7,71 / 22,27 s | 7,58 / 48,66 s | 4,6 / 120,8 MiB |
+| Cormen/CLRS | 26,08 / 16,39 s | 25,97 / 31,35 s | 13,2 / 273,0 MiB |
+| Exercism (escala 5×) | 6,68 / 4,22 s | 6,66 / 8,00 s | 7,8 / 249,6 MiB |
 
 Os 98 casos de benchmark possuem checksums nativo/JVM equivalentes. No Cormen, o nativo
-passou a usar 10,1% menos CPU acumulada que a referência JVM preservada, embora o tempo de parede
-agregado ainda seja maior. No corpus externo, 8 das 114 soluções upstream completas
-compilam; as outras 106 possuem classificação versionada do primeiro bloqueador.
+usa 17,2% menos CPU acumulada que a JVM, embora o tempo de parede agregado ainda seja
+maior. No corpus externo, 8 das 114 soluções upstream completas compilam; as outras 106
+possuem classificação versionada do primeiro bloqueador.
 
 ## Estrutura do projeto
 
@@ -248,8 +249,8 @@ compilam; as outras 106 possuem classificação versionada do primeiro bloqueado
 ## Limitações conhecidas
 
 - Este é um subconjunto de Clojure, não um substituto direto para Clojure/JVM.
-- O reader aceita literais de ponto flutuante, mas a execução numérica compilada
-  nativamente ainda é limitada a fixnums. Bignums, ratios e BigDecimal não existem.
+- A execução nativa compilada aceita doubles IEEE-754 boxeados e aritmética mista entre
+  fixnums e floats. Bignums, ratios e BigDecimal não existem.
 - Macros definidas pelo usuário, sequências lazy/infinitas, carregamento dinâmico de
   namespaces e compilação de projetos com múltiplos arquivos não estão disponíveis no
   caminho nativo.
@@ -258,10 +259,10 @@ compilam; as outras 106 possuem classificação versionada do primeiro bloqueado
   incompletos.
 - Multimétodos exigem uma função de dispatch explícita e suportam igualdade mais
   `:default`; dispatch por hierarquia com `derive`/`isa?` ainda não existe.
-- O I/O nativo já cobre `print`/`println`, flush, redirecionamento dinâmico de saída,
-  `slurp`/`spit`, `read-string` e os caminhos em memória de
-  `with-in-str`/`with-out-str`. Stdin geral, operações binárias/de filesystem, opções
-  EDN completas e os demais casos de lifecycle/erro continuam incompletos.
+- O runtime nativo inclui streams padrão e em memória, arquivos textuais e binários,
+  paths, bytes, primitivas de filesystem, contexto do processo e leitura de dados em
+  runtime. O gate completo de I/O continua aberto porque APIs derivadas, opções EDN
+  completas e vários contratos de lifecycle/erro ainda estão incompletos.
 - A compilação nativa usa o host e invoca um linker C do sistema.
 - O GC é single-thread e não móvel. O rooting ainda é eager; uma fase planejada usará
   liveness para posicionar roots nos safepoints de alocação.

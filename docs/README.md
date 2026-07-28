@@ -4,8 +4,8 @@ Este diretório reúne os guias correntes do `clojure-compiler` e a página publ
 GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzido se chama
 `clojure-native`.
 
-> Snapshot documentado: [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c)
-> em 2026-07-27. Consulte [SNAPSHOT.md](SNAPSHOT.md) para distinguir o HEAD auditado do
+> Snapshot documentado: [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb)
+> em 2026-07-28. Consulte [SNAPSHOT.md](SNAPSHOT.md) para distinguir o HEAD auditado do
 > commit do compilador medido.
 
 ## Comece aqui
@@ -17,11 +17,12 @@ GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzid
 | [Arquitetura](architecture.md) | crates, pipeline AOT, modelo de valores, runtime e gates |
 | [Snapshot](SNAPSHOT.md) | HEAD auditado, mudanças incluídas e benchmark de referência |
 | [Especificações](../specs/README.md) | escopo da linguagem, decisões, planos e ADRs |
+| [Connector Pedestal](../specs/PEDESTAL_NATIVE_CONNECTOR_SPEC.md) | alvo planejado de HTTP nativo e compatibilidade por subconjunto |
 | [Conformidade](../specs/conformance/README.md) | contrato executável da matriz A–E |
 | [Benchmarks](../benchmarks/README.md) | 98 cargas de comparação de desempenho Native × JVM |
 
 A apresentação pública fica em [index.html](index.html), com traduções em
-[i18n.js](i18n.js). Ela inclui um painel interativo dos benchmarks Cormen e Cracking;
+[i18n.js](i18n.js). Ela inclui um painel interativo de Cormen, Cracking e Exercism;
 os SVGs versionados ficam em [`assets/benchmarks/`](assets/benchmarks/) e são
 regenerados por `make benchmarks-charts`. Os gráficos permanecem neutros em relação ao
 idioma; títulos, legendas e descrições acessíveis são traduzidos pelo HTML. O arquivo

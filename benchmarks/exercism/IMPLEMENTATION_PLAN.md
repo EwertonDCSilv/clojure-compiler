@@ -4,8 +4,9 @@ This plan turns 101 public practice reference solutions and 13 official concept
 exemplars into an evolving external gate for `clojure-compiler`. It is based on upstream commit
 [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190)
 from the [Exercism Clojure Track](https://github.com/exercism/clojure), with full
-provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and compiler baseline
-`7607bef9f951b25711307f5f7c936053bc34baf8`.
+provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and was most recently audited
+with compiler
+[`1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
 
 ## Baseline
 
@@ -23,13 +24,13 @@ The counts below are first blockers, not independent feature totals:
 
 | First blocker | Cases | Intended implementation track |
 | --- | ---: | --- |
-| top-level collection/computed `def` | 19 | analyzer, global initialization and permanent GC roots |
-| missing core function | 18 | compiled `clojure.core` and native primitives |
+| top-level collection/computed `def` | 20 | analyzer, global initialization and permanent GC roots |
+| missing core function | 16 | compiled `clojure.core` and native primitives |
 | regex literal/runtime | 16 | reader value, regex engine and string APIs |
 | missing core macro | 11 | macro expansion before native analysis |
-| destructuring | 4 | parameter, `let` and `loop` lowering |
+| destructuring | 5 | parameter, `let` and `loop` lowering |
 | missing arity | 4 | call validation and stdlib arities |
-| Java interop operation | 4 | explicit compatibility decision |
+| Java interop operation | 5 | explicit compatibility decision |
 | variadic primitive used as a value | 3 | first-class primitive wrapper |
 | unresolved core symbol/predicate | 3 | core inventory and function values |
 | quote | 2 | quoted value lowering and rooting |
@@ -37,7 +38,6 @@ The counts below are first blockers, not independent feature totals:
 | standard-library namespace | 2 | `clojure.string` and `clojure.math` slices |
 | exception constructor | 2 | native exception construction |
 | symbol ending in apostrophe | 2 | reader tokenization |
-| character code generation | 1 | native `Char` representation |
 | nested/multi-arity `fn` form | 1 | function analyzer |
 | **Total failing** | **94** | |
 
@@ -61,26 +61,27 @@ conformance matrix is
 
 ## Backlog by first blocker
 
-- `top-level-def` (19): `allergies`, `diamond`, `food-chain`, `high-scores`,
-  `killer-sudoku-helper`, `kindergarten-garden`, `meetup`, `nucleotide-count`,
-  `proverb`, `queen-attack`, `raindrops`, `resistor-color-duo`,
+- `top-level-def` (20): `allergies`, `diamond`, `food-chain`, `hexadecimal`,
+  `high-scores`, `killer-sudoku-helper`, `kindergarten-garden`, `meetup`,
+  `nucleotide-count`, `proverb`, `queen-attack`, `raindrops`, `resistor-color-duo`,
   `resistor-color-trio`, `resistor-color`, `rna-transcription`, `robot-simulator`,
   `roman-numerals`, `scrabble-score`, `space-age`.
-- `missing-core-function` (18): `anagram`, `bank-account`, `beer-song`, `clock`,
-  `collatz-conjecture`, `dnd-character`, `eliuds-eggs`, `hexadecimal`, `isogram`,
-  `list-ops`, `perfect-numbers`, `pov`, `rotational-cipher`,
-  `state-of-tic-tac-toe`, `strain`, `sum-of-multiples`, `yacht`, `zipper`.
+- `missing-core-function` (16): `anagram`, `bank-account`, `beer-song`, `clock`,
+  `collatz-conjecture`, `dnd-character`, `eliuds-eggs`, `isogram`, `list-ops`,
+  `perfect-numbers`, `pov`, `state-of-tic-tac-toe`, `strain`, `sum-of-multiples`,
+  `yacht`, `zipper`.
 - `reader-regex` (16): `acronym`, `atbash-cipher`, `binary`, `connect`,
   `crypto-square`, `isbn-verifier`, `matrix`, `phone-number`, `pig-latin`, `poker`,
   `robot-name`, `run-length-encoding`, `say`, `twelve-days`, `word-count`, `wordy`.
 - `core-macro` (11): `darts`, `dominoes`, `etl`, `game-of-life`, `gigasecond`,
   `go-counting`, `grade-school`, `protein-translation`, `pythagorean-triplet`,
   `sieve`, `transpose`.
-- `destructuring` (4): `all-your-base`, `complex-numbers`, `leap`,
-  `spiral-matrix`.
+- `destructuring` (5): `all-your-base`, `complex-numbers`, `leap`,
+  `matching-brackets`, `spiral-matrix`.
 - `missing-arity` (4): `binary-search-tree`, `difference-of-squares`, `pangram`,
   `triangle`.
-- `java-interop` (4): `luhn`, `octal`, `secret-handshake`, `trinary`.
+- `java-interop` (5): `luhn`, `octal`, `rotational-cipher`, `secret-handshake`,
+  `trinary`.
 - `variadic-primitive-value` (3): `reverse-string`, `saddle-points`,
   `simple-cipher`.
 - `missing-symbol` (3): `flatten-array`, `hamming`, `sublist`.
@@ -89,7 +90,6 @@ conformance matrix is
 - `stdlib-namespace` (2): `bob`, `nth-prime`.
 - `exception-constructor` (2): `largest-series-product`, `series`.
 - `symbol-apostrophe` (2): `pascals-triangle`, `zebra-puzzle`.
-- `char-codegen` (1): `matching-brackets`.
 - `fn-form` (1): `change`.
 
 ## Phase 0 — Keep the corpus trustworthy

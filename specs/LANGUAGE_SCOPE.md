@@ -171,9 +171,10 @@ Define **precisamente** o subconjunto suportado. Legenda das colunas:
 | `agent` | | | ✅ | |
 | `core.async` / channels | | | ✅ | requer scheduler/go-blocks; muito pós-MVP |
 
-As marcas nesta tabela descrevem o escopo-alvo original, não o snapshot executável:
-Vars dinâmicas e `binding` ainda são bloqueantes para o gate de I/O e permanecem
-`xfail`. O contrato de implementação, streams, arquivos e reader em runtime está em
+As marcas nesta tabela descrevem o escopo-alvo original, não o snapshot executável.
+Vars dinâmicas e `binding` já sustentam os caminhos ativos de redirecionamento e
+streams em memória; bindings adicionais dependentes de threads continuam futuros. O
+contrato de implementação, streams, arquivos e reader em runtime está em
 [IO_SPEC](IO_SPEC.md).
 
 ---

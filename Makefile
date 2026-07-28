@@ -223,6 +223,10 @@ benchmarks-charts: $(BENCHMARK_CHART_RENDERER)
 		benchmarks/cormen/results/extreme.csv \
 		docs/assets/benchmarks/cormen \
 		"Cormen/CLRS"
+	$(BENCHMARK_CHART_RENDERER) \
+		benchmarks/exercism/results/extreme.csv \
+		docs/assets/benchmarks/exercism \
+		"Exercism"
 
 benchmarks-ci: release
 	benchmarks/cracking/run.sh --chapter 01

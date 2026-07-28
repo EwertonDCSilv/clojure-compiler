@@ -2132,10 +2132,6 @@
           width: 100%;
         }
 
-        .benchmark-control:first-child .benchmark-toggle {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
         .benchmark-toggle button {
           padding-inline: 0.5rem;
         }
@@ -2248,8 +2244,8 @@
         "@type": "SoftwareSourceCode",
         "name": "clojure-native",
         "description": "Compilador nativo experimental de Clojure sem JVM.",
-        "version": "0.0.1+476aefd",
-        "dateModified": "2026-07-27",
+        "version": "0.0.1+1dc69b5",
+        "dateModified": "2026-07-28",
         "codeRepository": "https://github.com/EwertonDCSilv/clojure-compiler",
         "license": [
           "https://opensource.org/license/mit",
@@ -2407,13 +2403,13 @@
             </div>
             <a
               class="snapshot-link"
-              href="https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c"
+              href="https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb"
               target="_blank"
               rel="noreferrer"
             >
               <span>HEAD</span>
-              <code>476aefd</code>
-              <time datetime="2026-07-27">2026-07-27</time>
+              <code>1dc69b5</code>
+              <time datetime="2026-07-28">2026-07-28</time>
             </a>
           </div>
 
@@ -2652,7 +2648,7 @@
             Nativo e JVM, caso a caso.
           </h2>
           <p class="section-lead reveal" data-i18n="benchmarks.lead">
-            Compare os 90 programas com a mesma carga e checksums idênticos. Escolha a
+            Compare os 98 programas com a mesma carga e checksums idênticos. Escolha a
             suíte e alterne entre tempo, CPU e memória sem sair da página.
           </p>
 
@@ -2682,6 +2678,14 @@
                     data-i18n="benchmarks.cracking"
                   >
                     Cracking
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed="false"
+                    data-benchmark-suite="exercism"
+                    data-i18n="benchmarks.exercism"
+                  >
+                    Exercism
                   </button>
                 </div>
               </div>
@@ -2726,7 +2730,7 @@
             <div class="benchmark-summary" aria-live="polite">
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="wall">
-                  29,45 s / 16,91 s
+                  26,08 s / 16,39 s
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryWall">
                   tempo total · nativo / JVM
@@ -2734,7 +2738,7 @@
               </div>
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="cpu">
-                  29,30 s / 32,61 s
+                  25,97 s / 31,35 s
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryCpu">
                   CPU total · nativo / JVM
@@ -2742,7 +2746,7 @@
               </div>
               <div class="benchmark-summary-item">
                 <span class="benchmark-summary-value" data-benchmark-summary="memory">
-                  13,4 MiB / 271,1 MiB
+                  13,2 MiB / 273,0 MiB
                 </span>
                 <span class="benchmark-summary-label" data-i18n="benchmarks.summaryMemory">
                   RSS mediano · nativo / JVM
@@ -2925,15 +2929,15 @@
 
           <div class="stats-grid reveal">
             <div class="stat">
-              <span class="stat-value">447</span>
+              <span class="stat-value">460</span>
               <span class="stat-label" data-i18n="stats.cases">casos na matriz A–E</span>
             </div>
             <div class="stat">
-              <span class="stat-value">170<sup data-i18n="stats.active">ATIVOS</sup></span>
+              <span class="stat-value">185<sup data-i18n="stats.active">ATIVOS</sup></span>
               <span class="stat-label" data-i18n="stats.behaviors">comportamentos implementados</span>
             </div>
             <div class="stat">
-              <span class="stat-value">90</span>
+              <span class="stat-value">98</span>
               <span class="stat-label" data-i18n="stats.benchmarks">benchmarks de algoritmos</span>
             </div>
             <div class="stat">
@@ -3065,9 +3069,9 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/extreme.csv",
-          wall: [29.45, 16.91],
-          cpu: [29.3, 32.61],
-          memory: [13.4, 271.1],
+          wall: [26.08, 16.39],
+          cpu: [25.97, 31.35],
+          memory: [13.2, 273.0],
         },
         cracking: {
           labelKey: "benchmarks.cracking",
@@ -3076,9 +3080,20 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/extreme.csv",
-          wall: [7.77, 24.96],
-          cpu: [7.61, 53.88],
-          memory: [4.7, 117.5],
+          wall: [7.71, 22.27],
+          cpu: [7.58, 48.66],
+          memory: [4.6, 120.8],
+        },
+        exercism: {
+          labelKey: "benchmarks.exercism",
+          assetDirectory: "exercism",
+          report:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/README.md",
+          csv:
+            "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/extreme.csv",
+          wall: [6.68, 4.22],
+          cpu: [6.66, 8.0],
+          memory: [7.8, 249.6],
         },
       };
       const benchmarkMetrics = {

@@ -12,8 +12,8 @@ Files:
   solutions;
 - [`all-files.tsv`](all-files.tsv): individual build result for all 493 `.clj`/`.cljc`
   files in the checkout;
-- [`extreme.csv`](extreme.csv): historical Native × Clojure/JVM comparison for the
-  seven practice workloads, before the concept promotion.
+- [`extreme.csv`](extreme.csv): current Native × Clojure/JVM comparison for all eight
+  promoted workloads.
 
 The concept compilation matrix is stored with the conformance fixtures at
 [`compilation.tsv`](../../../tests/conformance/level-d-pure-libraries/external/exercism/compilation.tsv).
@@ -23,9 +23,8 @@ It is a compatibility inventory and is not part of this performance report.
 
 | Component | Revision |
 | --- | --- |
-| Compiler checkout used for the published performance measurement | `7607bef9f951b25711307f5f7c936053bc34baf8` |
-| Compiler checkout used for practice/full-checkout matrices | `b845a3ae56321443a3754718f9a91da2c0f695ba` |
-| Compiler checkout used for the concept-conformance matrix | recorded in the conformance TSV |
+| Compiler checkout used for performance and compatibility | `1dc69b5b126c193c30e9f24fdddd549abb7ce4cb` |
+| Measurement date | 2026-07-28 |
 | [`exercism/clojure`](https://github.com/exercism/clojure) | [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190) |
 | Clojure/JVM | 1.12.5, AOT with HotSpot enabled |
 | Internal load multiplier | 5× |
@@ -57,25 +56,26 @@ baseline.
 - The complete checkout contains 493 Clojure files: 116 build individually and 377
   fail. This includes 101 practice references, 13 concept exemplars, 120 source/stub
   files, 114 tests, 113 `project.clj` files, 30 generators and 2 tooling files.
-- The largest first-blocker groups are top-level values (`19`), missing core functions
-  (`18`), regex (`16`) and missing core macros (`11`).
+- The largest first-blocker groups are top-level values (`20`), missing core functions
+  (`16`), regex (`16`) and missing core macros (`11`).
 
 ## Performance result
 
-- 7/7 workloads produced identical Native and JVM checksums.
-- Accumulated wall time: Native `5.63 s`, JVM `3.77 s`.
-- Accumulated CPU time: Native `5.61 s`, JVM `7.26 s`.
+- 8/8 workloads produced identical Native and JVM checksums.
+- Accumulated wall time: Native `6.68 s`, JVM `4.22 s`.
+- Accumulated CPU time: Native `6.66 s`, JVM `8.00 s`.
 - Native used less wall time in 4 cases and less CPU in 6 cases.
-- JVM used less wall time in `knapsack`, `prime-factors` and `two-fer`.
-- Native used less RSS in 6 cases. `knapsack` is the exception and reaches
-  `351.3 MiB` natively versus `248.1 MiB` on the JVM.
-- `prime-factors` is the main native performance deficit: `3.62 s` versus `1.18 s`
-  wall time.
+- Native used less RSS in 7 cases. `knapsack` remains the exception at
+  `351.2 MiB` natively versus `258.5 MiB` on the JVM.
+- Median RSS: Native `7.8 MiB`, JVM `249.6 MiB`.
+- `prime-factors` remains the main native deficit: `3.55 s` versus `1.16 s` wall
+  time.
+- The newly promoted `annalyns-infiltration` workload completed with matching
+  checksum; Native used `1.08 s` versus `0.60 s` JVM wall time.
 
-The accumulated wall result favors the JVM because `prime-factors` dominates this
-small suite. The accumulated CPU result favors Native, while process memory strongly
-favors Native in most cases. This is an initial engineering baseline, not a general
-performance claim.
+The accumulated wall result favors the JVM because `prime-factors`, `knapsack`, and
+`annalyns-infiltration` dominate this small suite. Accumulated CPU and median memory
+favor Native. This is an engineering baseline, not a general performance claim.
 
 ## Charts
 
@@ -96,15 +96,16 @@ performance claim.
 `N/J` means Native/Clojure JVM. Delta is `(Native - JVM) / JVM`: negative values favor
 Native.
 
-| Case | Wall N/J (s) | Δ wall | CPU N/J (s) | Δ CPU | RSS N/J (MiB) | Δ RSS |
+| Caso | Tempo N/J (s) | Δ tempo | CPU N/J (s) | Δ CPU | RSS N/J (MiB) | Δ RSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `01-practice/01-accumulate.clj` | 0.17 / 0.45 | -62.2% | 0.16 / 0.94 | -83.0% | 8.3 / 231.9 | -96.4% |
-| `01-practice/02-binary-search.clj` | 0.10 / 0.36 | -72.2% | 0.10 / 0.81 | -87.7% | 1.5 / 116.4 | -98.7% |
-| `01-practice/03-hello-world.clj` | 0.15 / 0.33 | -54.5% | 0.15 / 0.73 | -79.5% | 7.6 / 97.5 | -92.2% |
-| `01-practice/04-knapsack.clj` | 1.02 / 0.58 | +75.9% | 1.02 / 1.22 | -16.4% | 351.3 / 248.1 | +41.6% |
-| `01-practice/05-prime-factors.clj` | 3.62 / 1.18 | +206.8% | 3.62 / 1.74 | +108.0% | 15.6 / 1004.9 | -98.4% |
-| `01-practice/06-square-root.clj` | 0.03 / 0.35 | -91.4% | 0.03 / 0.77 | -96.1% | 1.5 / 97.1 | -98.5% |
-| `01-practice/07-two-fer.clj` | 0.54 / 0.52 | +3.8% | 0.53 / 1.05 | -49.5% | 8.0 / 371.8 | -97.8% |
+| `01-practice/01-accumulate.clj` | 0.16 / 0.44 | -63.6% | 0.16 / 0.92 | -82.6% | 8.2 / 240.8 | -96.6% |
+| `01-practice/02-binary-search.clj` | 0.11 / 0.35 | -68.6% | 0.11 / 0.75 | -85.3% | 1.4 / 115.1 | -98.7% |
+| `01-practice/03-hello-world.clj` | 0.18 / 0.31 | -41.9% | 0.17 / 0.71 | -76.1% | 7.6 / 97.6 | -92.2% |
+| `01-practice/04-knapsack.clj` | 1.02 / 0.55 | +85.5% | 1.02 / 1.14 | -10.5% | 351.2 / 258.5 | +35.9% |
+| `01-practice/05-prime-factors.clj` | 3.55 / 1.16 | +206.0% | 3.55 / 1.70 | +108.8% | 16.1 / 1055.3 | -98.5% |
+| `01-practice/06-square-root.clj` | 0.04 / 0.32 | -87.5% | 0.04 / 0.74 | -94.6% | 1.4 / 108.7 | -98.7% |
+| `01-practice/07-two-fer.clj` | 0.54 / 0.49 | +10.2% | 0.53 / 0.99 | -46.5% | 7.9 / 371.4 | -97.9% |
+| `02-concept/01-annalyns-infiltration.clj` | 1.08 / 0.60 | +80.0% | 1.08 / 1.05 | +2.9% | 1.4 / 371.4 | -99.6% |
 
 Reproduce:
 

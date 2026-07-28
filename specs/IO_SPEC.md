@@ -44,10 +44,10 @@ IO-0 é uma dependência arquitetural, não apenas uma conveniência de API. Sem
 capturável não é possível garantir fechamento em `with-open`, restauração de bindings
 ou erros de I/O categorizados.
 
-O snapshot atual satisfaz apenas a parte genérica de unwind de IO-0: `throw` e
-`try`/`catch`/`finally` atravessam frames e executam `finally`. O marco continua aberto
-porque Vars dinâmicas, `binding`, tipos de exceção e `ex-data` ainda não existem no
-caminho compilado.
+O snapshot atual já possui unwind genérico, Vars dinâmicas e `binding` no caminho
+compilado: `throw` e `try`/`catch`/`finally` atravessam frames, executam `finally` e
+restauram bindings. IO-0 continua aberto porque hierarquia de exceções, erros de I/O
+capturáveis por tipo e `ex-data` completo ainda não estão entregues.
 
 ## Modelo de valores e ABI
 

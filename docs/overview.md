@@ -3,7 +3,7 @@
 [Índice da documentação](README.md) · [Uso](usage.md) ·
 [Arquitetura](architecture.md) · [Especificações](../specs/README.md)
 
-> Estado auditado no [`HEAD 476aefd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/476aefd47bd01c4dca8b11f3e8009fbf2cd78d3c).
+> Estado auditado no [`HEAD 1dc69b5`](https://github.com/EwertonDCSilv/clojure-compiler/commit/1dc69b5b126c193c30e9f24fdddd549abb7ce4cb).
 > Detalhes do snapshot: [SNAPSHOT.md](SNAPSHOT.md).
 
 O repositório `clojure-compiler` implementa um compilador nativo experimental de
@@ -81,12 +81,11 @@ runtimes. A auditoria de 101 práticas, 13 conceitos e 493 arquivos alimenta a
 conformidade, não os resultados de desempenho. As três suítes exportam CSV com tempo
 de parede, CPU e pico de memória para o nativo e para Clojure/JVM.
 
-No snapshot de referência, Cracking acumula 7,77 s nativos contra 24,96 s na JVM. Cormen
-acumula 29,45 s nativos contra 16,91 s de parede na JVM, mas usa 29,30 s de CPU contra
-32,61 s da JVM. Os 90 checksums internos são equivalentes. No Exercism em escala 5×,
-os sete checksums também coincidem; o nativo soma 5,63 s de parede e 5,61 s de CPU,
-contra 3,77 s e 7,26 s na JVM. Ambiente, repetições e valores por caso estão nos
-relatórios das suítes.
+No snapshot de referência, Cracking acumula 7,71 s nativos contra 22,27 s na JVM. Cormen
+acumula 26,08 s nativos contra 16,39 s de parede na JVM, mas usa 25,97 s de CPU contra
+31,35 s da JVM. No Exercism em escala 5×, o nativo soma 6,68 s de parede e 6,66 s de
+CPU, contra 4,22 s e 8,00 s na JVM. Os 98 checksums coincidem. Ambiente, repetição e
+valores por caso estão nos relatórios das suítes.
 
 Os gates correntes são expostos pelo [`Makefile`](../Makefile):
 
@@ -104,15 +103,16 @@ em `make benchmarks-compare`, pois requer Java — os relatórios de referência
 
 ## Limites importantes
 
-O compilador ainda não é uma implementação completa de Clojure. A execução nativa
-numérica é limitada a fixnums; não há bignums, ratios nem BigDecimal. Literais
-floating-point são reconhecidos pelo reader, mas ainda não chegam ao caminho compilado.
+O compilador ainda não é uma implementação completa de Clojure. Fixnums e floats
+double-boxed já chegam ao caminho compilado, inclusive em aritmética mista; não há
+bignums, ratios nem BigDecimal.
 Também permanecem fora do caminho nativo: macros definidas pelo usuário, sequências
 lazy/infinitas, namespaces dinâmicos, projetos multi-arquivo e interop Java. Exceções
 explícitas já são capturáveis, mas catches tipados e tradução de falhas fatais do
 runtime ainda não estão disponíveis.
-Streams gerais, arquivos, filesystem e readers de runtime também ainda não estão
-implementados.
+O runtime já possui streams, arquivos, paths, bytes, operações de filesystem e reader
+de dados. O gate completo de I/O continua aberto porque parte das APIs derivadas,
+opções EDN e contratos de lifecycle/erro ainda está marcada como `xfail`.
 
 Consulte [`specs/README.md`](../specs/README.md) para o estado detalhado e
 [`usage.md`](usage.md) para os comandos. O código e os casos de conformidade `active`
