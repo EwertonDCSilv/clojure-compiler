@@ -126,7 +126,14 @@ static void write_val(SB *b, Value v, int for_str) {
     }
 }
 
-void cljn_print(Value v) { SB b; sb_init(&b); write_val(&b,v,0); fwrite(b.p,1,b.len,stdout); free(b.p); }
+/* print/println escrevem no Writer corrente (*out*), permitindo captura via
+ * with-out-str; por padrão *out* é o Writer de stdout. */
+void cljn_print(Value v) {
+    SB b; sb_init(&b); write_val(&b,v,0);
+    Value out = dynvar_get(VAR_OUT); /* pode alocar (init preguiçoso); v está rooteado */
+    writer_write(out, b.p, b.len);
+    free(b.p);
+}
 Value cljn_to_str(Value v) {
     SB b; sb_init(&b); write_val(&b,v,1);
     Value r = cljn_str_from(b.p, (long)b.len); /* pode coletar; v está rooteado */
@@ -144,5 +151,5 @@ Value cljn_str_concat(Value a, Value b) {
     memcpy(s->data+x->len,y->data,y->len);
     return (Value)s;
 }
-void cljn_print_space(void) { fputc(' ', stdout); }
-void cljn_print_newline(void) { fputc('\n', stdout); }
+void cljn_print_space(void) { writer_write(dynvar_get(VAR_OUT), " ", 1); }
+void cljn_print_newline(void) { writer_write(dynvar_get(VAR_OUT), "\n", 1); }

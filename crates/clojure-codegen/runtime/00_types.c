@@ -37,7 +37,8 @@ typedef intptr_t Value;
 
 enum { T_STR = 1, T_CONS = 2, T_FN = 3, T_KW = 4, T_VEC = 5, T_MAP = 6, T_SET = 7, T_RECORD = 8,
        T_VNODE = 9, T_HMAP = 10, T_MNODE = 11, T_MCOLL = 12, T_HSET = 13,
-       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19 };
+       T_TNODE = 14, T_SMAP = 15, T_SSET = 16, T_TVEC = 17, T_TBOX = 18, T_EDIT = 19,
+       T_WRITER = 20 };
 
 typedef struct Obj {
     uint8_t type;
@@ -73,6 +74,10 @@ typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET 
  * possui (marcados por um token `edit`); transient/persistent! são O(1). Mapa/set
  * transiente = caixa mutável sobre o valor persistente (persistent! O(1)). */
 typedef struct { Obj h; } Edit;             /* T_EDIT: token único de posse */
+/* Writer (ADR-0007): destino de saída de print/println. kind stdout/stderr escreve
+ * direto; kind string acumula num buffer (base de with-out-str). */
+enum { WR_STDOUT = 0, WR_STDERR = 1, WR_STRING = 2 };
+typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; } Writer; /* T_WRITER */
 typedef struct { Obj h; Value inner; } TBox; /* T_TBOX (mapa/set transiente) */
 /* Vetor persistente: bitmapped vector trie (32-way), como o PersistentVector de
  * Clojure. `tail` (até 32) dá conj/nth O(1) amortizado; o resto é uma árvore

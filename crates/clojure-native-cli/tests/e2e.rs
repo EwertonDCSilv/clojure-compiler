@@ -386,6 +386,31 @@ fn native_io_slurp_spit_getenv() {
 }
 
 #[test]
+fn with_out_str_captures_and_restores_out() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0007 / IO-0: *out* é Var dinâmica; with-out-str rebinda para um Writer de
+    // string. Restaura *out* no retorno e também quando o corpo lança (repropaga).
+    let src = r#"(ns wos.core)
+(defn -main []
+  (let [s (with-out-str (print "ab") (print 42) (println))]
+    (println (count s) (= s "ab42\n")))
+  (let [o (with-out-str (print "A") (print (with-out-str (print "BC"))) (print "-D"))]
+    (println (= o "ABC-D")))
+  (println "normal")
+  (println (try (with-out-str (print "x") (throw {:e 1})) (catch E e "caught")))
+  (println "still-ok"))
+(-main)"#;
+    let expected = "5 true\ntrue\nnormal\ncaught\nstill-ok\n";
+    assert_eq!(build_and_run("with_out_str", src), expected);
+    assert_eq!(
+        build_and_run_env("with_out_str_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        expected
+    );
+}
+
+#[test]
 fn constant_vector_literals_are_hoisted() {
     if !have_cc() {
         return;

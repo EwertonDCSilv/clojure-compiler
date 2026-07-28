@@ -100,3 +100,35 @@ Value cljn_getenv(Value name) {
     free(cn);
     return v ? cljn_str_from(v, (long)strlen(v)) : NIL;
 }
+
+/* (with-out-str thunk) — roda o thunk (fn de 0 arg) com *out* rebindado a um Writer
+ * de string e devolve o texto acumulado. Restaura *out* mesmo se o corpo lançar
+ * (repropaga a exceção), reusando a pilha de handlers de exceção. `old` e `w` ficam
+ * rooteados na shadow-stack durante o corpo (o writer de stdout só é referenciado
+ * por *out*, que reescrevemos). */
+Value cljn_with_out_str(Value thunk) {
+    Value w = cljn_string_writer();
+    cljn_gc_push(w);
+    Value old = dynvar_get(VAR_OUT);
+    cljn_gc_push(old);
+    dyn_vars[VAR_OUT] = w;
+    Handler h;
+    h.prev = handler_top;
+    h.saved_sp = gc_sp;
+    h.saved_gc_disabled = gc_disabled;
+    if (setjmp(h.env) == 0) {
+        handler_top = &h;
+        call_fn0(thunk); /* valor do corpo é descartado */
+        handler_top = h.prev;
+    } else {
+        handler_top = h.prev;
+        gc_sp = h.saved_sp;
+        gc_disabled = h.saved_gc_disabled;
+        dyn_vars[VAR_OUT] = gc_stack[h.saved_sp - 1]; /* restaura *out* (old) */
+        return cljn_throw(exception_value);
+    }
+    dyn_vars[VAR_OUT] = old;
+    Value s = cljn_writer_to_string(w);
+    cljn_gc_popn(2);
+    return s;
+}

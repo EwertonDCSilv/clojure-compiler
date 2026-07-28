@@ -57,6 +57,7 @@ embed_runtime_modules!(
     ),
     ("transients", "../runtime/70_transients.c"),
     ("core-operations", "../runtime/80_core_operations.c"),
+    ("writers", "../runtime/85_writers.c"),
     ("print", "../runtime/90_print.c"),
     ("exceptions", "../runtime/100_exceptions.c"),
     ("multimethods", "../runtime/110_multimethods.c"),
@@ -220,6 +221,7 @@ struct Runtime {
     spit: FuncId,             // (path,content)->nil
     file_exists: FuncId,      // (path)->bool
     getenv: FuncId,           // (name)->string|nil
+    with_out_str: FuncId,     // (thunk)->string
     transient: FuncId,        // (coll)->transient
     persistent_bang: FuncId,  // (t)->coll
     conj_bang: FuncId,        // (t,x)->t
@@ -560,6 +562,7 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         spit: bin(m, "cljn_spit"),
         file_exists: una(m, "cljn_file_exists"),
         getenv: una(m, "cljn_getenv"),
+        with_out_str: una(m, "cljn_with_out_str"),
         transient: una(m, "cljn_transient"),
         persistent_bang: una(m, "cljn_persistent_bang"),
         conj_bang: bin(m, "cljn_conj_bang"),
@@ -2260,6 +2263,7 @@ impl<'a> FnGen<'a> {
             Prim::Spit => self.bin(self.rt.spit, args),
             Prim::FileExists => self.una(self.rt.file_exists, args),
             Prim::Getenv => self.una(self.rt.getenv, args),
+            Prim::WithOutStr => self.una(self.rt.with_out_str, args),
             Prim::Transient => self.una(self.rt.transient, args),
             Prim::PersistentBang => self.una(self.rt.persistent_bang, args),
             Prim::ConjBang => self.bin(self.rt.conj_bang, args),

@@ -140,6 +140,7 @@ pub enum Prim {
     Spit,
     FileExists,
     Getenv,
+    WithOutStr,
 }
 
 /// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
@@ -923,6 +924,14 @@ impl<'a> Analyzer<'a> {
             "recur" => self.analyze_recur(args, span, tail),
             "fn" | "fn*" => self.analyze_fn(args, span),
             "try" => self.analyze_try(args, span),
+            "with-out-str" => {
+                // (with-out-str corpo...) — corpo vira thunk; runtime rebinda *out*.
+                let body_fn = self.make_lambda(vec![], args.to_vec(), span)?;
+                Ok(Ast::Call {
+                    callee: Callee::Prim(Prim::WithOutStr),
+                    args: vec![body_fn],
+                })
+            }
             "apply" => {
                 if args.len() < 2 {
                     return Err(unsupported("apply requer função e uma coleção", span));
@@ -1724,6 +1733,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::SortedSet
         | Prim::Println
         | Prim::Try // sintetizada; nunca usada como valor de 1ª classe
+        | Prim::WithOutStr // idem: só via forma especial
         | Prim::Print => return None,
     })
 }
@@ -1761,6 +1771,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         | Prim::Getenv
         | Prim::Vals => n == 1,
         Prim::Try => n == 3,
+        Prim::WithOutStr => n == 1,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
         Prim::List

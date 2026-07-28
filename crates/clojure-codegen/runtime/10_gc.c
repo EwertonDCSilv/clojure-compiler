@@ -187,6 +187,7 @@ static void gc_sweep(void) {
         } else {
             *pp = o->next_all;
             if (o->type == T_STR) free(((Str *)o)->data);
+            if (o->type == T_WRITER) free(((Writer *)o)->buf);
             if (o->szc == 0) {
                 free(o); /* grande: malloc'd */
             } else {
@@ -215,12 +216,14 @@ static void gc_mark_consts(void) {
 static void gc_mark_method_table(void); /* fwd */
 static void gc_mark_exceptions(void);   /* fwd */
 static void gc_mark_multi(void);        /* fwd */
+static void gc_mark_dynvars(void);      /* fwd */
 static void gc_collect(void) {
     for (int64_t i = 0; i < gc_sp; i++) gc_mark(gc_stack[i]);
     gc_mark_method_table(); /* raízes permanentes: chaves/impls de protocolos */
     gc_mark_exceptions();   /* valor de exceção em voo */
     gc_mark_multi();        /* funções de dispatch de multimethods + :default */
     gc_mark_consts();       /* vetores literais constantes cacheados */
+    gc_mark_dynvars();      /* Vars dinâmicas (*out* etc.) */
     gc_sweep();
     alloc_since_gc = 0;
 }
