@@ -1,9 +1,11 @@
-//! Analisador do **subconjunto compilável** (Fase 3, corte vertical p/ Fase 5).
+//! Semantic analysis and closure conversion for the compilable subset.
 //!
-//! Transforma `Form` em uma AST tipada, com resolução de locais/capturas/funções,
-//! checagem de aridade, expansão prévia de macros de core (ADR-0004) e
-//! **conversão de closures** (funções de 1ª classe: `fn`, captura léxica,
-//! chamadas indiretas). Construções fora do subconjunto viram diagnósticos.
+//! [`analyze`] expands supported core macros, resolves lexical locals, captures,
+//! top-level functions, protocols, records, and multimethods, validates call and
+//! `recur` arities, and produces a backend-oriented [`Program`]. Closure
+//! conversion assigns numeric frame slots and explicit capture vectors.
+//! Unsupported source constructs become stable diagnostics; code generation
+//! never needs to recover source-level binding rules.
 
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use clojure_span::Span;
@@ -13,165 +15,287 @@ use std::collections::HashMap;
 mod expand;
 pub use expand::expand_all;
 
-/// Nó de AST do subconjunto compilável.
+/// Backend-oriented expression in the compilable subset.
+///
+/// Local and capture names have already been resolved to numeric slots. The AST
+/// intentionally contains no source spans; all user-facing errors are emitted
+/// while analysis still owns the spanned source forms.
 #[derive(Debug, Clone)]
 pub enum Ast {
+    /// Signed 64-bit integer literal.
     Int(i64),
+    /// Boolean literal.
     Bool(bool),
+    /// The `nil` literal.
     Nil,
+    /// Owned UTF-8 string literal.
     Str(String),
+    /// Keyword encoded without the leading colon.
     Keyword(String),
-    /// Literais de coleção.
+    /// Vector literal whose elements evaluate left to right.
     VecLit(Vec<Ast>),
+    /// Set literal whose elements evaluate left to right.
     SetLit(Vec<Ast>),
+    /// Map literal whose key/value pairs preserve source order.
     MapLit(Vec<(Ast, Ast)>),
-    /// Local por slot (no frame da função/lambda atual).
+    /// Local slot in the current function or lambda frame.
     Local(u32),
-    /// Variável capturada: `self->freev[idx]` da lambda atual.
+    /// Captured value read from `self->freev[index]`.
     Capture(u32),
-    /// Referência a uma função de topo como valor (cria closure com 0 capturas).
+    /// Top-level function used as a value; lowering creates a zero-capture closure.
     FnRef(String),
-    /// Cria uma closure: função-lambda + valores capturados (avaliados no contexto
-    /// que contém o `fn`).
+    /// Closure construction with captures evaluated in the enclosing context.
     MakeFn {
+        /// Generated top-level symbol containing the lambda body.
         lambda: String,
+        /// Canonical callable arity stored in the closure header.
         arity: usize,
+        /// Capture expressions in the lambda's assigned capture-slot order.
         captures: Vec<Ast>,
     },
+    /// Conditional expression: test, then branch, else branch.
     If(Box<Ast>, Box<Ast>, Box<Ast>),
+    /// Ordered expression sequence whose last value is returned.
     Do(Vec<Ast>),
+    /// Lexical bindings followed by their body.
     Let {
+        /// Local slot and initializer pairs in evaluation order.
         slots: Vec<(u32, Ast)>,
+        /// Expression evaluated after all bindings are installed.
         body: Box<Ast>,
     },
+    /// Recur target with mutable iteration slots.
     Loop {
+        /// Local slot and initial-value pairs.
         slots: Vec<(u32, Ast)>,
+        /// Loop body that may produce [`Ast::Recur`].
         body: Box<Ast>,
     },
+    /// Tail transfer to the nearest loop or function method.
     Recur(Vec<Ast>),
-    /// Chamada direta a primitiva ou função de topo conhecida.
+    /// Direct call to a primitive or known top-level function.
     Call {
+        /// Statically selected target.
         callee: Callee,
+        /// Eager argument expressions in call order.
         args: Vec<Ast>,
     },
-    /// Chamada indireta de um valor-função (closure).
+    /// Indirect invocation of a first-class callable value.
     CallValue {
+        /// Expression producing the callable.
         f: Box<Ast>,
+        /// Eager argument expressions.
         args: Vec<Ast>,
     },
-    /// `(apply f a b ... coll)`: chama `f` com os args fixos + elementos de `coll`.
+    /// `(apply f a b ... coll)` with explicit fixed and spread arguments.
     Apply {
+        /// Expression producing the callable.
         f: Box<Ast>,
+        /// Arguments preceding the final collection.
         fixed: Vec<Ast>,
+        /// Collection whose elements complete the argument vector.
         coll: Box<Ast>,
     },
-    /// Constrói um record: nome do tipo + campos (nome → valor).
+    /// Record construction from a type name and field expressions.
     MakeRecord {
+        /// Declared record type.
         type_name: String,
+        /// Field names and values in declaration order.
         fields: Vec<(String, Ast)>,
     },
-    /// Registra uma impl de protocolo/multimethod em runtime: `(method_id, key) → impl`.
+    /// Runtime registration of a protocol or multimethod implementation.
     RegisterMethod {
+        /// Analyzer-assigned dispatch table identifier.
         method_id: i64,
+        /// Dispatch key expression.
         key: Box<Ast>,
+        /// Closure implementing the method.
         impl_fn: Box<Ast>,
     },
-    /// Registra a função de dispatch de um multimethod: `(method_id) → dispatch-fn`.
+    /// Runtime registration of a multimethod dispatch function.
     RegisterMulti {
+        /// Analyzer-assigned multimethod identifier.
         method_id: i64,
+        /// Function applied to invocation arguments to obtain the dispatch key.
         dispatch_fn: Box<Ast>,
     },
 }
 
+/// Statically resolved target of a direct call.
 #[derive(Debug, Clone)]
 pub enum Callee {
+    /// Built-in operation lowered through a known runtime or fast path.
     Prim(Prim),
+    /// Top-level function symbol.
     Fn(String),
 }
 
+/// Built-in operation recognized by semantic analysis.
+///
+/// Variants are an internal Rust/backend contract. `clojure-codegen` maps each
+/// operation to inline lowering, a C ABI symbol, or a synthesized control-flow
+/// sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Prim {
+    /// Numeric addition.
     Add,
+    /// Numeric subtraction.
     Sub,
+    /// Numeric multiplication.
     Mul,
+    /// Truncating integer quotient.
     Quot,
+    /// Euclidean integer remainder.
     Mod,
+    /// Increment an integer.
     Inc,
+    /// Decrement an integer.
     Dec,
+    /// Structural equality.
     Eq,
+    /// Numeric less-than comparison.
     Lt,
+    /// Numeric less-than-or-equal comparison.
     Le,
+    /// Numeric greater-than comparison.
     Gt,
+    /// Numeric greater-than-or-equal comparison.
     Ge,
+    /// Clojure logical negation.
     Not,
+    /// Test for `nil`.
     NilP,
+    /// Test whether a supported collection is empty.
     EmptyP,
+    /// Prepend an item to a sequence.
     Cons,
+    /// Return the first sequence item.
     First,
+    /// Return the sequence after its first item.
     Rest,
+    /// Count a supported collection.
     Count,
+    /// Construct a list.
     List,
+    /// Concatenate printable values as a string.
     Str,
+    /// Print values followed by a newline.
     Println,
+    /// Print values without a newline.
     Print,
-    // coleções
+    /// Perform associative lookup.
     Get,
+    /// Perform indexed lookup.
     Nth,
+    /// Associate one or more key/value pairs.
     Assoc,
+    /// Remove an associative key.
     Dissoc,
+    /// Test for an associative key or set member.
     Contains,
+    /// Return map keys.
     Keys,
+    /// Return map values.
     Vals,
+    /// Add an item to a persistent collection.
     Conj,
+    /// Construct a vector.
     Vector,
+    /// Construct a hash map.
     HashMap,
+    /// Construct a hash set.
     HashSet,
+    /// Construct a sorted map.
     SortedMap,
+    /// Construct a sorted set.
     SortedSet,
+    /// Compare two supported values.
     Compare,
+    /// Throw a native exception value.
     Throw,
+    /// Synthesized try/catch/finally operation.
     Try,
+    /// Convert a persistent collection to a transient.
     Transient,
+    /// Freeze a transient collection.
     PersistentBang,
+    /// Add an item to a transient collection.
     ConjBang,
+    /// Associate a key/value pair in a transient collection.
     AssocBang,
+    /// Remove a key from a transient collection.
     DissocBang,
+    /// Read a UTF-8 file as a string.
     Slurp,
+    /// Write a string to a file.
     Spit,
+    /// Test whether a filesystem path exists.
     FileExists,
+    /// Read a process environment variable.
     Getenv,
+    /// Synthesized output capture operation.
     WithOutStr,
+    /// Read a built-in dynamic Var.
     VarGet,
+    /// Invoke a thunk with one built-in dynamic Var rebound.
     WithBinding,
+    /// Read one line from the current input stream.
     ReadLine,
+    /// Create an in-memory string reader.
     StringReader,
+    /// Convert an integer to a character.
     CharOf,
+    /// Convert a character to its integer code point.
     IntOf,
+    /// Test whether a value is a character.
     CharP,
+    /// Read one character from the current input stream.
     ReadChar,
+    /// Join two path components.
     PathJoin,
+    /// Return the final component of a path.
     FileName,
+    /// Return the parent of a path.
     Parent,
+    /// Encode a string as bytes.
     Bytes,
+    /// Decode bytes as a string.
     BytesToString,
+    /// Read one byte by index.
     Bget,
+    /// Read a file as bytes.
     SlurpBytes,
+    /// Write bytes to a file.
     SpitBytes,
+    /// Parse one string at native runtime.
     ReadString,
+    /// Open a file-backed writer.
     WriterOpen,
+    /// Open a file-backed reader.
     ReaderOpen,
+    /// Close a closeable stream.
     Close,
+    /// Flush the current output stream.
     Flush,
+    /// Create one directory.
     Mkdir,
+    /// Create a directory hierarchy.
     Mkdirs,
+    /// List directory entries.
     ListDir,
+    /// Delete a file.
     DeleteFile,
+    /// Rename a filesystem entry.
     Rename,
+    /// Test whether a path names a directory.
     DirectoryP,
+    /// Test whether a path names a regular file.
     FileP,
 }
 
-/// Ids das Vars dinâmicas embutidas (devem casar com o enum do runtime 85_writers.c).
+/// Maps built-in dynamic Vars to the C runtime's stable IDs.
+///
+/// ABI: values must match `enum DynVarId` in `runtime/85_writers.c`.
 fn dyn_var_id(name: &str) -> Option<i64> {
     match name {
         "*out*" => Some(0),
@@ -182,53 +306,71 @@ fn dyn_var_id(name: &str) -> Option<i64> {
     }
 }
 
-/// Uma aridade de uma função: params fixos + `& rest` opcional + corpo.
+/// One fixed or variadic arity of a function.
 #[derive(Debug, Clone)]
 pub struct FnMethod {
+    /// Fixed parameter names in source order.
     pub params: Vec<String>,
+    /// Optional variadic rest parameter.
     pub rest: Option<String>,
+    /// Analyzed method body.
     pub body: Ast,
 }
 
 impl FnMethod {
-    /// Número de slots que a aridade ocupa (params + rest).
+    /// Returns the parameter slots occupied by this arity.
     pub fn nslots(&self) -> usize {
         self.params.len() + self.rest.is_some() as usize
     }
 }
 
+/// Top-level code-generation unit.
 #[derive(Debug, Clone)]
 pub struct Function {
+    /// Linkage symbol, including generated lambda names.
     pub name: String,
-    /// Uma ou mais aridades (multi-arity). Só uma variádica, sempre a de maior aridade.
+    /// One or more arities; at most one is variadic and it has greatest arity.
     pub methods: Vec<FnMethod>,
-    /// Slots locais reservados no frame (máximo sobre as aridades). **Não** inclui `self`.
+    /// Maximum local slots over all arities, excluding the implicit `self`.
     pub local_count: u32,
-    /// Verdadeiro para lambdas (usam `self` para ler capturas); falso p/ defns de topo.
+    /// Whether the function reads captures through the implicit `self`.
     pub is_lambda: bool,
-    /// Tipo de despacho: nenhum, protocolo (por `type_key(arg0)`) ou multimethod
-    /// (por `(dispatch-fn args)`). Funções-despacho têm `methods` vazio.
+    /// Dispatch strategy; dispatch stubs have no method bodies.
     pub dispatch: Dispatch,
 }
 
-/// Estratégia de despacho de uma função de topo.
+/// Runtime dispatch strategy for a top-level symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dispatch {
+    /// Ordinary function with directly compiled methods.
     None,
-    /// Protocolo: `impl = lookup(mid, type_key(arg0))`.
+    /// Protocol dispatch via `lookup(method_id, type_key(arg0))`.
     Protocol(i64),
-    /// Multimethod: `impl = lookup(mid, (dispatch-fn args))`, com `:default`.
+    /// Multimethod dispatch via a registered dispatch function and `:default`.
     Multi(i64),
 }
 
+/// Complete analyzer output consumed by native code generation.
 #[derive(Debug, Clone)]
 pub struct Program {
+    /// Top-level definitions and generated lambda functions.
     pub functions: Vec<Function>,
+    /// Initialization and top-level expressions, in source order.
     pub main_body: Vec<Ast>,
+    /// Local slots required by the synthesized native entry point.
     pub main_local_count: u32,
 }
 
-/// Analisa forms de topo no `Program` compilável (expande macros antes).
+/// Expands and analyzes top-level forms into a compilable program.
+///
+/// Analysis is deterministic for a fixed form sequence. It collects top-level
+/// signatures before analyzing bodies, allowing forward references between
+/// functions.
+///
+/// # Errors
+///
+/// Returns all diagnostics collected while analyzing independent top-level
+/// forms. No partial [`Program`] is returned when any error is present.
 pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let expanded = expand::expand_all(forms);
     analyze_expanded(&expanded)
@@ -237,12 +379,13 @@ pub fn analyze(forms: &[SForm]) -> Result<Program, Diagnostics> {
 fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     let mut diags = Diagnostics::new();
 
-    // Assinaturas de funções de topo: aridades (fixos, variádica?) por nome.
+    // Pass 1 collects top-level signatures so forward calls have arity data.
     let mut sigs: HashMap<String, Vec<(usize, bool)>> = HashMap::new();
-    // Protocolos: nome do método → (method_id, aridade). Records: nomes de tipo.
+    // Protocol methods map to (runtime method ID, arity); record names form the
+    // user-defined dispatch-key set.
     let mut protos: HashMap<String, (i64, usize)> = HashMap::new();
     let mut records: std::collections::HashSet<String> = std::collections::HashSet::new();
-    // Multimethods: nome → method_id.
+    // Multimethod names share the positive runtime method-ID namespace.
     let mut multis: HashMap<String, i64> = HashMap::new();
     let mut next_mid: i64 = 1;
     for f in forms {
@@ -280,7 +423,8 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
     };
     let mut main_body = Vec::new();
 
-    // Frame do "main" (topo). Fica na base; frames de defn entram/saem acima.
+    // The synthetic main frame remains at the bottom while function frames are
+    // pushed and popped above it.
     an.frames.push(Frame::new(false));
 
     for f in forms {
@@ -299,7 +443,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 Err(d) => diags.push(d),
             }
         } else if let Some((rname, fields)) = match_defrecord(f) {
-            // Gera o construtor ->Name que monta o record.
+            // Synthesize ->Name as an ordinary function constructing the record.
             let make = Ast::MakeRecord {
                 type_name: rname.clone(),
                 fields: fields
@@ -320,7 +464,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 dispatch: Dispatch::None,
             });
         } else if let Some((_pname, methods)) = match_defprotocol(f) {
-            // Cada método vira uma função-despacho.
+            // Each protocol method becomes a body-less dispatch stub.
             for (mname, _arity) in methods {
                 let mid = an.protos[&mname].0;
                 an.functions.push(Function {
@@ -333,8 +477,8 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
             }
         } else if let Some((typename, impls)) = match_extend_type(f) {
             for (mname, params, body_forms) in impls {
-                // ADR-0008: capacidades de core (assoc/nth) usam IDs reservados
-                // (negativos), fora do espaço de protocolos do programa.
+                // ABI: core capabilities use reserved negative IDs outside the
+                // positive program protocol-ID namespace (ADR-0008).
                 let mid = match core_capability_mid(&mname) {
                     Some(cid) => cid,
                     None => {
@@ -384,7 +528,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
             }
         } else if let Some((name, df_form)) = match_defmulti(f) {
             let mid = multis[&name];
-            // A função-despacho de topo: encaminha por (dispatch-fn args).
+            // The top-level symbol is a multimethod dispatch stub.
             an.functions.push(Function {
                 name,
                 methods: vec![],
@@ -392,7 +536,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
                 is_lambda: false,
                 dispatch: Dispatch::Multi(mid),
             });
-            // Registra a função de dispatch em runtime (avaliada no init).
+            // Register the dispatch function during program initialization.
             match an.analyze(&df_form, false) {
                 Ok(df) => main_body.push(Ast::RegisterMulti {
                     method_id: mid,
@@ -454,7 +598,7 @@ fn analyze_expanded(forms: &[SForm]) -> Result<Program, Diagnostics> {
         return Err(diags);
     }
     let mut functions = an.functions;
-    optimize_transients(&mut functions, &mut main_body); // ADR-0009/0010: auto-transient
+    optimize_transients(&mut functions, &mut main_body); // ADR-0009/0010.
     Ok(Program {
         functions,
         main_body,
@@ -469,8 +613,7 @@ fn is_ns(f: &SForm) -> bool {
 
 type MethodDecl = (Vec<String>, Option<String>, Vec<SForm>);
 
-/// Reconhece `(defn nome [params] body...)` ou multi-aridade
-/// `(defn nome ([a] ...) ([a b] ...))`. Devolve o nome e as aridades.
+/// Recognizes single- and multi-arity `defn` and returns its declarations.
 fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     let Form::List(items) = f.node.strip_meta() else {
         return None;
@@ -486,7 +629,7 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
         Some(Form::Symbol(nm)) if nm.ns.is_none() => nm.name.clone(),
         _ => return None,
     };
-    // Descarta docstring opcional.
+    // Docstrings affect documentation, not the compiled method body.
     let mut rest = &items[2..];
     if rest.len() > 1 && matches!(rest[0].node.strip_meta(), Form::Str(_)) {
         rest = &rest[1..];
@@ -495,8 +638,10 @@ fn match_defn(f: &SForm) -> Option<(String, Vec<MethodDecl>)> {
     Some((name, methods))
 }
 
-/// Reconhece `(defrecord Nome [campos...])`. Impls inline de protocolo ainda não
-/// são suportadas (viram erro no analyzer, não silêncio).
+/// Recognizes `(defrecord Name [fields...])`.
+///
+/// Inline protocol implementations are not accepted approximately; remaining
+/// forms are left for the analyzer to diagnose.
 fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
     let Form::List(items) = f.node.strip_meta() else {
         return None;
@@ -519,7 +664,7 @@ fn match_defrecord(f: &SForm) -> Option<(String, Vec<String>)> {
     Some((name, fields))
 }
 
-/// `(defprotocol Nome (m1 [args]) (m2 [args]))` → nome + (método, aridade).
+/// Extracts a protocol name and `(method, arity)` declarations.
 fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
     let Form::List(items) = f.node.strip_meta() else {
         return None;
@@ -544,13 +689,15 @@ fn match_defprotocol(f: &SForm) -> Option<(String, Vec<(String, usize)>)> {
                 methods.push((mn.name.clone(), ps.len()));
             }
         }
-        // strings (docstrings) e outros são ignorados
+        // Protocol docstrings and other non-method forms do not affect dispatch.
     }
     Some((name, methods))
 }
 
-/// `(extend-type Tipo Proto (m [args] body...) ...)` → tipo + impls (método/params/corpo).
-/// Nomes de protocolo intercalados são ignorados (dispatch é por nome de método).
+/// Extracts an `extend-type` target and its method implementations.
+///
+/// Interleaved protocol names are ignored because current dispatch identity is
+/// the method name.
 #[allow(clippy::type_complexity)]
 fn match_extend_type(f: &SForm) -> Option<(String, Vec<(String, Vec<String>, Vec<SForm>)>)> {
     let Form::List(items) = f.node.strip_meta() else {
@@ -577,12 +724,12 @@ fn match_extend_type(f: &SForm) -> Option<(String, Vec<(String, Vec<String>, Vec
                 impls.push((mn.name.clone(), params, mi[2..].to_vec()));
             }
         }
-        // Symbol (nome de protocolo) → ignorado.
+        // A protocol-name symbol does not define a method and is ignored.
     }
     Some((typename, impls))
 }
 
-/// `(defmulti nome dispatch-fn)` → nome + a forma da função de dispatch.
+/// Extracts a multimethod name and dispatch-function form.
 fn match_defmulti(f: &SForm) -> Option<(String, SForm)> {
     let Form::List(items) = f.node.strip_meta() else {
         return None;
@@ -600,8 +747,7 @@ fn match_defmulti(f: &SForm) -> Option<(String, SForm)> {
     Some((name, items.get(2)?.clone()))
 }
 
-/// `(defmethod nome dispatch-val [params] body...)` → nome, valor de dispatch,
-/// params e corpo.
+/// Extracts a method name, dispatch value, parameters, and body from `defmethod`.
 fn match_defmethod(f: &SForm) -> Option<(String, SForm, Vec<String>, Vec<SForm>)> {
     let Form::List(items) = f.node.strip_meta() else {
         return None;
@@ -624,9 +770,10 @@ fn match_defmethod(f: &SForm) -> Option<(String, SForm, Vec<String>, Vec<SForm>)
     Some((name, dispatch_val, params, items[4..].to_vec()))
 }
 
-/// ADR-0008: nomes reservados de capacidade de core → method_id reservado
-/// (negativo, deve casar com CORE_ASSOC_ONE/CORE_NTH/CORE_NTH_OR no runtime).
-/// A superfície pública não está congelada (aguarda deftype/impls inline).
+/// Maps core capability names to reserved negative method IDs.
+///
+/// ABI: values must match `CORE_ASSOC_ONE`, `CORE_NTH`, and `CORE_NTH_OR` in the
+/// C runtime. These IDs are deliberately separate from program protocol IDs.
 fn core_capability_mid(mname: &str) -> Option<i64> {
     match mname {
         "-assoc" => Some(-1),
@@ -636,8 +783,10 @@ fn core_capability_mid(mname: &str) -> Option<i64> {
     }
 }
 
-/// Chave de dispatch para um nome de tipo: records → keyword; builtins → fixnum.
-/// Deve casar com `cljn_type_key` no runtime.
+/// Builds the runtime dispatch key for a declared type name.
+///
+/// ABI: record types use keywords and built-in types use fixnums matching
+/// `cljn_type_key` in `runtime/60_records_and_dispatch.c`.
 fn key_for(typename: &str, records: &std::collections::HashSet<String>) -> Option<Ast> {
     if records.contains(typename) {
         return Some(Ast::Keyword(typename.to_string()));
@@ -658,7 +807,7 @@ fn key_for(typename: &str, records: &std::collections::HashSet<String>) -> Optio
     Some(Ast::Int(code))
 }
 
-/// Aridade única `[params] body...` ou multi `([params] body...) ...`.
+/// Parses either `[params] body...` or multi-arity method lists.
 fn parse_methods(forms: &[SForm]) -> Option<Vec<MethodDecl>> {
     match forms.first().map(|f| f.node.strip_meta()) {
         Some(Form::Vector(_)) => {
@@ -680,7 +829,7 @@ fn parse_methods(forms: &[SForm]) -> Option<Vec<MethodDecl>> {
     }
 }
 
-/// Vetor de parâmetros → (fixos, rest opcional após `&`).
+/// Splits a parameter vector into fixed names and an optional rest name.
 fn parse_params(f: &SForm) -> Option<(Vec<String>, Option<String>)> {
     let Form::Vector(ps) = f.node.strip_meta() else {
         return None;
@@ -705,7 +854,7 @@ fn parse_params(f: &SForm) -> Option<(Vec<String>, Option<String>)> {
     Some((out, None))
 }
 
-/// Frame léxico de uma função ou lambda.
+/// Lexical frame for one function or lambda analysis.
 struct Frame {
     locals: Vec<(String, u32)>,
     next_slot: u32,
@@ -739,7 +888,7 @@ struct Analyzer<'a> {
     lam: u32,
 }
 
-/// Alguma aridade de `arities` aceita `n` argumentos?
+/// Returns whether any declared arity accepts `n` arguments.
 fn arity_accepts(arities: &[(usize, bool)], n: usize) -> bool {
     arities
         .iter()
@@ -760,8 +909,10 @@ impl<'a> Analyzer<'a> {
         slot
     }
 
-    /// Resolve `name` como valor válido no frame `i`: `Local`, `Capture` ou `None`.
-    /// Ao cruzar fronteiras de lambda, registra capturas transitivas.
+    /// Resolves `name` in frame `i` as a local, capture, or missing value.
+    ///
+    /// Crossing lambda boundaries records transitive captures in deterministic
+    /// first-use order.
     fn resolve_from(&mut self, i: usize, name: &str) -> Option<Ast> {
         if let Some((_, slot)) = self.frames[i].locals.iter().rev().find(|(n, _)| n == name) {
             return Some(Ast::Local(*slot));
@@ -771,7 +922,7 @@ impl<'a> Analyzer<'a> {
                 return Some(Ast::Capture(idx as u32));
             }
         }
-        // Só uma lambda captura do frame que a contém.
+        // Only a lambda captures values from its enclosing frame.
         if i == 0 || !self.frames[i].is_lambda {
             return None;
         }
@@ -814,7 +965,7 @@ impl<'a> Analyzer<'a> {
                 f.span,
             )),
             Form::Char(c) => Ok(Ast::Call {
-                // Literal de char → (char <codepoint>); runtime devolve o imediato.
+                // Character literals lower through `char` to an immediate code point.
                 callee: Callee::Prim(Prim::CharOf),
                 args: vec![Ast::Int(*c as u32 as i64)],
             }),
@@ -852,7 +1003,7 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// Símbolo em posição de valor: local/captura, ou função de topo (FnRef).
+    /// Resolves a symbol in value position to a local, capture, or function ref.
     fn analyze_symbol_value(
         &mut self,
         ns: &Option<String>,
@@ -869,7 +1020,7 @@ impl<'a> Analyzer<'a> {
             return Ok(ast);
         }
         if let Some(id) = dyn_var_id(name) {
-            // Var dinâmica lida como valor: (var-get id).
+            // A dynamic Var in value position lowers to `(var-get id)`.
             return Ok(Ast::Call {
                 callee: Callee::Prim(Prim::VarGet),
                 args: vec![Ast::Int(id)],
@@ -879,7 +1030,7 @@ impl<'a> Analyzer<'a> {
             return Ok(Ast::FnRef(name.to_string()));
         }
         if let Some(prim) = prim_of(name) {
-            // Primitiva como valor: sintetiza um wrapper `(fn [a b] (prim a b))`.
+            // A primitive used as a value gets a synthesized callable wrapper.
             if let Some(arity) = prim_value_arity(prim) {
                 let params: Vec<String> = (0..arity).map(|i| format!("__p{i}")).collect();
                 let call_args = (0..arity).map(|i| Ast::Local(i as u32)).collect();
@@ -936,7 +1087,7 @@ impl<'a> Analyzer<'a> {
             }
         }
 
-        // Operador não-simbólico: chamada indireta de um valor-função.
+        // A non-symbol operator is an indirect call through a callable value.
         let Form::Symbol(op) = head.node.strip_meta() else {
             let f = self.analyze(head, false)?;
             let a = self.analyze_seq(args)?;
@@ -975,7 +1126,7 @@ impl<'a> Analyzer<'a> {
             "fn" | "fn*" => self.analyze_fn(args, span),
             "try" => self.analyze_try(args, span),
             "with-out-str" => {
-                // (with-out-str corpo...) — corpo vira thunk; runtime rebinda *out*.
+                // `with-out-str` turns its body into a thunk rebound through *out*.
                 let body_fn = self.make_lambda(vec![], args.to_vec(), span)?;
                 Ok(Ast::Call {
                     callee: Callee::Prim(Prim::WithOutStr),
@@ -985,7 +1136,7 @@ impl<'a> Analyzer<'a> {
             "binding" => self.analyze_binding(args, span),
             "with-open" => self.analyze_with_open(args, span),
             "with-in-str" => {
-                // (with-in-str s corpo...) — rebinda *in* a um Reader sobre s.
+                // `with-in-str` binds *in* to a Reader over the supplied string.
                 if args.is_empty() {
                     return Err(unsupported("with-in-str requer a string de entrada", span));
                 }
@@ -1001,7 +1152,7 @@ impl<'a> Analyzer<'a> {
                 })
             }
             "__cljn-with-binding" => {
-                // interno (desugar de binding): (id-int val thunk).
+                // Internal binding form produced by desugaring: `(id value thunk)`.
                 let id = self.analyze(&args[0], false)?;
                 let val = self.analyze(&args[1], false)?;
                 let thunk = self.analyze(&args[2], false)?;
@@ -1037,7 +1188,7 @@ impl<'a> Analyzer<'a> {
                         args: a,
                     })
                 } else if let Some(ast) = self.resolve(name) {
-                    // Local/captura em posição de operador → chamada indireta.
+                    // A local or capture in operator position requires indirect call.
                     let a = self.analyze_seq(args)?;
                     Ok(Ast::CallValue {
                         f: Box::new(ast),
@@ -1139,8 +1290,8 @@ impl<'a> Analyzer<'a> {
             let slot = self.push_local(name);
             slots.push((slot, val));
         }
-        // O corpo do loop é sempre contexto de cauda para o seu próprio recur,
-        // independentemente de o loop estar ou não em posição de cauda externa.
+        // A loop body is a tail context for its own recur regardless of whether
+        // the loop expression itself occupies an outer tail position.
         let _ = tail;
         self.top().recur_arity.push(slots.len());
         let body = self.analyze_body(&args[1..], span, true);
@@ -1149,8 +1300,8 @@ impl<'a> Analyzer<'a> {
         let fr = self.top();
         fr.locals.truncate(saved);
         fr.next_slot = saved_next;
-        // A linearização (auto-transient, ADR-0009/0010) é um post-pass sobre o
-        // Program inteiro (precisa dos sumários de todas as funções).
+        // Auto-transient linearization is a whole-Program post-pass because it
+        // requires summaries for every top-level function (ADR-0009/ADR-0010).
         Ok(Ast::Loop {
             slots,
             body: Box::new(body),
@@ -1178,9 +1329,10 @@ impl<'a> Analyzer<'a> {
         Ok(Ast::Recur(self.analyze_seq(args)?))
     }
 
-    /// Analisa as aridades de uma função num frame próprio; devolve
-    /// (métodos, slots máximos, capturas). Para lambdas, as capturas são
-    /// compartilhadas entre as aridades.
+    /// Analyzes function arities in a dedicated lexical frame.
+    ///
+    /// Returns methods, maximum slot count, and captures. All arities of a
+    /// lambda share one capture layout.
     fn analyze_methods(
         &mut self,
         decls: &[MethodDecl],
@@ -1201,7 +1353,7 @@ impl<'a> Analyzer<'a> {
                 }
                 variadic_seen = true;
             }
-            // Cada aridade tem seu próprio conjunto de slots (reutilizam a região).
+            // Each arity has its own slots but reuses the function's frame region.
             self.top().locals.clear();
             self.top().next_slot = 0;
             for p in params {
@@ -1230,8 +1382,9 @@ impl<'a> Analyzer<'a> {
         Ok((methods, fr.max_slots, fr.captures))
     }
 
-    /// Cria uma lambda de aridade única (params fixos, sem rest) a partir de forms
-    /// de corpo e devolve `MakeFn` com as capturas. Usada por `fn` e por `try`.
+    /// Creates a single fixed-arity lambda and its explicit capture expression.
+    ///
+    /// This common path is used by source `fn` and synthesized `try` thunks.
     fn make_lambda(
         &mut self,
         params: Vec<String>,
@@ -1257,10 +1410,11 @@ impl<'a> Analyzer<'a> {
         })
     }
 
-    /// `(try corpo... (catch Classe e handler...) (finally limpeza...))`.
-    /// Desugar: corpo/catch/finally viram lambdas (com captura léxica) e a forma
-    /// vira `(cljn_try body catch|nil finally|nil)`. `catch` é catch-all no
-    /// subconjunto (sem hierarquia de classes); a classe é aceita e ignorada.
+    /// Lowers `try`, optional `catch`, and optional `finally` into thunks.
+    ///
+    /// Body, handler, and cleanup become capture-aware lambdas passed to
+    /// [`Prim::Try`]. Catch is catch-all in the current subset; the source class
+    /// form is accepted but has no runtime hierarchy semantics.
     fn analyze_try(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let mut body: Vec<SForm> = Vec::new();
         let mut catch: Option<(String, Vec<SForm>)> = None;
@@ -1328,11 +1482,11 @@ impl<'a> Analyzer<'a> {
         })
     }
 
-    /// `(binding [*out* v ...] corpo...)` — rebinda Vars dinâmicas durante o corpo.
-    /// Desugar: cada par vira `(__cljn-with-binding id valor (fn* [] resto))`,
-    /// aninhando de dentro pra fora; o runtime salva/restaura (inclusive em exceção).
-    /// Nota: os valores são avaliados na ordem, cada um após o `set` do anterior
-    /// (aninhado) — difere do Clojure só se um valor referenciar Var já rebindada.
+    /// Lowers `binding` to nested runtime rebinding calls and zero-arity thunks.
+    ///
+    /// The runtime restores each dynamic Var even on exception. Binding values
+    /// evaluate in order after the preceding rebind; this differs from the JVM
+    /// only when a later value reads a Var already rebound by the same form.
     fn analyze_binding(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let first = args
             .first()
@@ -1385,9 +1539,9 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// `(with-open [n (reader p) ...] corpo...)` — liga recursos e garante `close`.
-    /// Desugar: cada par vira `(let* [n res] (try corpo... (finally (close n))))`,
-    /// aninhando de dentro pra fora (fecha em ordem inversa, mesmo em exceção).
+    /// Lowers `with-open` to nested bindings and `try/finally` cleanup.
+    ///
+    /// Resources close in reverse acquisition order, including exceptional exit.
     fn analyze_with_open(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let first = args
             .first()
@@ -1430,15 +1584,17 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    /// `(fn [params] body...)`, `(fn* nome? [params] body...)` ou multi-aridade
-    /// `(fn ([a] ...) ([a b] ...))` → cria uma lambda + `MakeFn` com as capturas.
+    /// Analyzes named, anonymous, single-, or multi-arity function syntax.
+    ///
+    /// The result is a generated lambda function plus [`Ast::MakeFn`] containing
+    /// capture expressions evaluated in the enclosing frame.
     fn analyze_fn(&mut self, args: &[SForm], span: Span) -> Result<Ast, Diagnostic> {
         let mut idx = 0;
         if matches!(
             args.first().map(|f| f.node.strip_meta()),
             Some(Form::Symbol(_))
         ) {
-            idx = 1; // nome opcional (auto-referência não suportada; ignorado)
+            idx = 1; // Optional name; self-reference is not currently modeled.
         }
         let decls = parse_methods(&args[idx..]).ok_or_else(|| {
             unsupported(
@@ -1465,78 +1621,105 @@ impl<'a> Analyzer<'a> {
     }
 }
 
-// ===== Auto-transient de acumuladores de loop (ADR-0009) =====
-// Reescreve slots de `loop` cujo acumulador é um vetor literal fresco usado de
-// forma LINEAR (só conj/assoc no próprio slot, leituras nth/get/count/contains,
-// e recur/escape do próprio slot — nunca passado a função, capturado, guardado,
-// ou religado a outro slot). Nesses casos, o acumulador vira transiente (mutação
-// in-place O(1)) e é congelado com `persistent!` nas saídas. É SÃO por construção:
-// qualquer uso não reconhecido cancela a transformação daquele slot (fallback ao
-// caminho persistente). A semântica é idêntica; só muda a representação interna.
+// ===== Automatic loop transients (ADR-0009 and ADR-0010) =================
+//
+// A loop slot initialized by a fresh vector may become transient when every use
+// is linear: rooted conj/assoc updates, recognized reads, transfer through the
+// same recur slot, or escape as the final result. Capturing, storing, aliasing,
+// rebinding to another slot, or passing to an unknown function rejects the
+// candidate. Accepted exits are frozen with persistent!.
+//
+// INVARIANT: the analysis is conservative. Any unrecognized use keeps the
+// original persistent representation, so the transformation changes only
+// internal cost, never source semantics.
 
 fn ast_is_local(e: &Ast, s: u32) -> bool {
     matches!(e, Ast::Local(x) if *x == s)
 }
-/// `e` é um valor derivado do acumulador `s`? (o próprio `s`, ou uma cadeia de
-/// conj/assoc enraizada em `s`).
+/// Tests whether `e` is slot `s` or a persistent update chain rooted at `s`.
 fn s_derived(e: &Ast, s: u32) -> bool {
     match e {
         Ast::Local(x) => *x == s,
-        Ast::Call { callee: Callee::Prim(Prim::Conj | Prim::Assoc), args } => {
-            args.first().is_some_and(|r| s_derived(r, s))
-        }
+        Ast::Call {
+            callee: Callee::Prim(Prim::Conj | Prim::Assoc),
+            args,
+        } => args.first().is_some_and(|r| s_derived(r, s)),
         _ => false,
     }
 }
-/// Verdadeiro se TODA ocorrência de `Local(s)` em `e` está numa posição linear
-/// válida. `tail` indica que um valor derivado de `s` pode escapar/religar aqui.
-/// `pos` é a posição do slot `s` na lista de slots do loop (para `recur`).
+/// Function-name to linearly consumed parameter-index summary.
 type LinMap = HashMap<String, usize>;
-/// `e` é uma chamada a função linear que consome `s` no parâmetro linear (ADR-0010)?
+/// Tests whether `e` calls a summarized function with `s` in its linear position.
 fn is_lin_call(e: &Ast, s: u32, lin: &LinMap) -> bool {
-    if let Ast::Call { callee: Callee::Fn(name), args } = e {
+    if let Ast::Call {
+        callee: Callee::Fn(name),
+        args,
+    } = e
+    {
         if let Some(&j) = lin.get(name) {
             return args.get(j).is_some_and(|a| ast_is_local(a, s));
         }
     }
     false
 }
-/// Valor que produz o próximo transiente de `s`: cadeia conj/assoc, `s` puro, ou
-/// chamada a função linear consumindo `s`.
+/// Tests whether `e` produces the next representation of transient slot `s`.
 fn transient_producing(e: &Ast, s: u32, lin: &LinMap) -> bool {
     s_derived(e, s) || is_lin_call(e, s, lin)
 }
+/// Verifies that every occurrence of slot `s` occupies an accepted linear use.
+///
+/// `tail` permits a derived value to escape or rebind here. `pos` is the slot's
+/// position in the loop binding vector and therefore in each [`Ast::Recur`].
 fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
     match e {
-        Ast::Local(x) => *x != s || tail, // `s` puro só é válido em cauda (escape/recur-s)
-        Ast::Int(_) | Ast::Bool(_) | Ast::Nil | Ast::Str(_) | Ast::Keyword(_)
-        | Ast::Capture(_) | Ast::FnRef(_) => true,
-        Ast::Call { callee: Callee::Prim(p), args }
-            if matches!(p, Prim::Conj | Prim::Assoc) && args.first().is_some_and(|r| s_derived(r, s)) =>
+        Ast::Local(x) => *x != s || tail, // A bare `s` is valid only as a tail transfer.
+        Ast::Int(_)
+        | Ast::Bool(_)
+        | Ast::Nil
+        | Ast::Str(_)
+        | Ast::Keyword(_)
+        | Ast::Capture(_)
+        | Ast::FnRef(_) => true,
+        Ast::Call {
+            callee: Callee::Prim(p),
+            args,
+        } if matches!(p, Prim::Conj | Prim::Assoc)
+            && args.first().is_some_and(|r| s_derived(r, s)) =>
         {
-            // mutação enraizada em `s`: válida só em cauda; args seguintes podem LER `s`
+            // A rooted update is valid only in tail position. Remaining
+            // arguments may read `s` through recognized operations.
             tail && args[1..].iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
-        Ast::Call { callee: Callee::Prim(p), args }
-            if matches!(p, Prim::Nth | Prim::Get | Prim::Count | Prim::Contains)
-                && args.first().is_some_and(|r| ast_is_local(r, s)) =>
+        Ast::Call {
+            callee: Callee::Prim(p),
+            args,
+        } if matches!(p, Prim::Nth | Prim::Get | Prim::Count | Prim::Contains)
+            && args.first().is_some_and(|r| ast_is_local(r, s)) =>
         {
-            // leitura de `s`: válida em qualquer posição
+            // Recognized reads may occur in any expression position.
             args[1..].iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
-        // ADR-0010: chamada a função linear consumindo `s` no seu parâmetro linear;
-        // válida só em cauda (o resultado vira o próximo `s`). Demais args podem LER
-        // `s` mas não escapá-lo/mutá-lo. O transiente threada pela função (dispatch
-        // em runtime de conj/assoc sobre T_TVEC).
-        Ast::Call { callee: Callee::Fn(name), args }
-            if lin.get(name).is_some_and(|&j| args.get(j).is_some_and(|a| ast_is_local(a, s))) =>
+        // ADR-0010: a summarized call consumes `s` in one parameter and is
+        // valid only in tail position, where its result becomes the next `s`.
+        // Other arguments may read but not escape or mutate `s`. Runtime
+        // conj/assoc dispatch threads the transient representation.
+        Ast::Call {
+            callee: Callee::Fn(name),
+            args,
+        } if lin
+            .get(name)
+            .is_some_and(|&j| args.get(j).is_some_and(|a| ast_is_local(a, s))) =>
         {
             let j = lin[name];
-            tail && args.iter().enumerate().all(|(i, a)| i == j || linear_ok(a, s, pos, false, lin))
+            tail && args
+                .iter()
+                .enumerate()
+                .all(|(i, a)| i == j || linear_ok(a, s, pos, false, lin))
         }
         Ast::Call { args, .. } => args.iter().all(|a| linear_ok(a, s, pos, false, lin)),
         Ast::CallValue { f, args } => {
-            linear_ok(f, s, pos, false, lin) && args.iter().all(|a| linear_ok(a, s, pos, false, lin))
+            linear_ok(f, s, pos, false, lin)
+                && args.iter().all(|a| linear_ok(a, s, pos, false, lin))
         }
         Ast::Apply { f, fixed, coll } => {
             linear_ok(f, s, pos, false, lin)
@@ -1557,14 +1740,17 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
             .enumerate()
             .all(|(i, st)| linear_ok(st, s, pos, tail && i + 1 == stmts.len(), lin)),
         Ast::Let { slots, body } => {
-            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false, lin)) && linear_ok(body, s, pos, tail, lin)
+            slots.iter().all(|(_, i)| linear_ok(i, s, pos, false, lin))
+                && linear_ok(body, s, pos, tail, lin)
         }
         Ast::Loop { slots, body } => {
             slots.iter().all(|(_, i)| linear_ok(i, s, pos, false, lin))
                 && linear_ok(body, s, pos, false, lin)
         }
         Ast::MakeFn { captures, .. } => captures.iter().all(|c| linear_ok(c, s, pos, false, lin)),
-        Ast::MakeRecord { fields, .. } => fields.iter().all(|(_, v)| linear_ok(v, s, pos, false, lin)),
+        Ast::MakeRecord { fields, .. } => {
+            fields.iter().all(|(_, v)| linear_ok(v, s, pos, false, lin))
+        }
         Ast::VecLit(items) | Ast::SetLit(items) => {
             items.iter().all(|i| linear_ok(i, s, pos, false, lin))
         }
@@ -1577,7 +1763,7 @@ fn linear_ok(e: &Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) -> bool {
         Ast::RegisterMulti { dispatch_fn, .. } => linear_ok(dispatch_fn, s, pos, false, lin),
     }
 }
-/// Conta ocorrências de `Local(s)` em `e`.
+/// Counts occurrences of local slot `s` throughout an AST.
 fn count_local(e: &Ast, s: u32) -> usize {
     let mut n = 0;
     fn go(e: &Ast, s: u32, n: &mut usize) {
@@ -1626,20 +1812,25 @@ fn count_local(e: &Ast, s: u32) -> usize {
     go(e, s, &mut n);
     n
 }
-/// Toda saída (cauda) de um corpo de loop é derivada do acumulador `s` (a função
-/// retorna o acumulador)? `recur` diverge (não é saída).
+/// Tests whether every terminating loop path returns a value derived from `s`.
+///
+/// `recur` is a back edge, not a terminating path.
 fn all_escapes_derived(e: &Ast, s: u32, lin: &LinMap) -> bool {
     match e {
         Ast::Recur(_) => true,
-        Ast::If(_, then, els) => all_escapes_derived(then, s, lin) && all_escapes_derived(els, s, lin),
+        Ast::If(_, then, els) => {
+            all_escapes_derived(then, s, lin) && all_escapes_derived(els, s, lin)
+        }
         Ast::Do(stmts) => stmts.last().is_none_or(|l| all_escapes_derived(l, s, lin)),
         Ast::Let { body, .. } => all_escapes_derived(body, s, lin),
         other => transient_producing(other, s, lin),
     }
 }
-/// Sumário de linearidade (ADR-0010): posição do parâmetro que a função consome
-/// linearmente e devolve. Stage 1: corpo é um `loop` cujo slot é init a esse
-/// parâmetro, o parâmetro aparece só ali, o slot é usado linearmente e retornado.
+/// Infers the parameter a function consumes linearly and returns.
+///
+/// Stage one accepts a single-method non-variadic function whose body is a loop:
+/// one accumulator initializes directly from the parameter, that parameter
+/// occurs nowhere else, the slot is linear, and every exit returns it.
 fn linear_param(m: &FnMethod, lin: &LinMap) -> Option<usize> {
     if m.rest.is_some() {
         return None;
@@ -1648,32 +1839,40 @@ fn linear_param(m: &FnMethod, lin: &LinMap) -> Option<usize> {
         return None;
     };
     for pi in 0..m.params.len() as u32 {
-        // slot cujo init é exatamente o parâmetro `pi`
+        // Find the loop slot initialized directly from parameter `pi`.
         let Some(acc_pos) = slots.iter().position(|(_, init)| ast_is_local(init, pi)) else {
             continue;
         };
         let acc_slot = slots[acc_pos].0;
-        // `pi` aparece só uma vez em todo o corpo (aquele init) e os outros inits não o usam
+        // The parameter may occur only in that initializer.
         if count_local(&m.body, pi) != 1 {
             continue;
         }
-        if linear_ok(body, acc_slot, acc_pos, true, lin) && all_escapes_derived(body, acc_slot, lin) {
+        if linear_ok(body, acc_slot, acc_pos, true, lin) && all_escapes_derived(body, acc_slot, lin)
+        {
             return Some(pi as usize);
         }
     }
     None
 }
-/// Reescreve conj/assoc enraizados em `s` para conj!/assoc! (segue a cadeia).
+/// Rewrites a rooted conj/assoc chain to conj!/assoc!.
 fn rewrite_bang(e: &mut Ast, s: u32) {
-    if let Ast::Call { callee: Callee::Prim(p), args } = e {
+    if let Ast::Call {
+        callee: Callee::Prim(p),
+        args,
+    } = e
+    {
         if matches!(p, Prim::Conj | Prim::Assoc) && args.first().is_some_and(|r| s_derived(r, s)) {
             rewrite_bang(&mut args[0], s);
-            *p = if *p == Prim::Conj { Prim::ConjBang } else { Prim::AssocBang };
+            *p = if *p == Prim::Conj {
+                Prim::ConjBang
+            } else {
+                Prim::AssocBang
+            };
         }
     }
 }
-/// Valor que continua transiente (arg de recur do próprio slot): desce em
-/// `if`/`do`/`let` até os valores-folha e reescreve conj/assoc → conj!/assoc!.
+/// Rewrites leaf updates in the value transferred to the same recur slot.
 fn rewrite_transient_value(e: &mut Ast, s: u32) {
     match e {
         Ast::If(_, then, els) => {
@@ -1689,10 +1888,10 @@ fn rewrite_transient_value(e: &mut Ast, s: u32) {
         _ => rewrite_bang(e, s),
     }
 }
-/// Transforma o corpo: nas saídas (cauda) congela valores que produzem o
-/// transiente com `persistent!`; nos recur do próprio slot reescreve conj/assoc →
-/// conj!/assoc! (chamadas a funções lineares threadam o transiente sem reescrita —
-/// conj/assoc dispatcham sobre T_TVEC em runtime, ADR-0010).
+/// Applies transient operations and freezes every terminating tail result.
+///
+/// Recur transfers use mutating updates. Calls summarized as linear thread the
+/// transient unchanged because runtime conj/assoc dispatch recognizes `T_TVEC`.
 fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) {
     match e {
         Ast::If(_, then, els) => {
@@ -1723,7 +1922,8 @@ fn transform_body(e: &mut Ast, s: u32, pos: usize, tail: bool, lin: &LinMap) {
 }
 fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast, lin: &LinMap) {
     let n = slots.len();
-    // Decide todos os slots elegíveis sobre o corpo ORIGINAL, depois transforma.
+    // INVARIANT: decide all candidates against the original body before any
+    // rewrite, preventing one slot's transformation from affecting another.
     let eligible: Vec<usize> = (0..n)
         .filter(|&pos| {
             matches!(slots[pos].1, Ast::VecLit(_)) && linear_ok(body, slots[pos].0, pos, true, lin)
@@ -1739,7 +1939,7 @@ fn linearize_loop(slots: &mut [(u32, Ast)], body: &mut Ast, lin: &LinMap) {
         transform_body(body, s, pos, true, lin);
     }
 }
-/// Percorre `e` (bottom-up) e lineariza cada `loop` usando os sumários `lin`.
+/// Walks bottom-up and linearizes each loop using `lin` summaries.
 fn walk_and_linearize(e: &mut Ast, lin: &LinMap) {
     match e {
         Ast::Loop { slots, body } => {
@@ -1758,7 +1958,9 @@ fn walk_and_linearize(e: &mut Ast, lin: &LinMap) {
             v.iter_mut().for_each(|x| walk_and_linearize(x, lin))
         }
         Ast::Let { slots, body } => {
-            slots.iter_mut().for_each(|(_, i)| walk_and_linearize(i, lin));
+            slots
+                .iter_mut()
+                .for_each(|(_, i)| walk_and_linearize(i, lin));
             walk_and_linearize(body, lin);
         }
         Ast::Call { args, .. } => args.iter_mut().for_each(|a| walk_and_linearize(a, lin)),
@@ -1771,10 +1973,12 @@ fn walk_and_linearize(e: &mut Ast, lin: &LinMap) {
             fixed.iter_mut().for_each(|a| walk_and_linearize(a, lin));
             walk_and_linearize(coll, lin);
         }
-        Ast::MakeFn { captures, .. } => captures.iter_mut().for_each(|c| walk_and_linearize(c, lin)),
-        Ast::MakeRecord { fields, .. } => {
-            fields.iter_mut().for_each(|(_, v)| walk_and_linearize(v, lin))
+        Ast::MakeFn { captures, .. } => {
+            captures.iter_mut().for_each(|c| walk_and_linearize(c, lin))
         }
+        Ast::MakeRecord { fields, .. } => fields
+            .iter_mut()
+            .for_each(|(_, v)| walk_and_linearize(v, lin)),
         Ast::MapLit(p) => p.iter_mut().for_each(|(k, v)| {
             walk_and_linearize(k, lin);
             walk_and_linearize(v, lin);
@@ -1787,10 +1991,9 @@ fn walk_and_linearize(e: &mut Ast, lin: &LinMap) {
         _ => {}
     }
 }
-/// Post-pass de auto-transient (ADR-0009 rec.2 + ADR-0010): computa os sumários de
-/// linearidade das funções e lineariza os acumuladores de loop (intra e inter).
+/// Computes first-stage linearity summaries and rewrites eligible accumulators.
 fn optimize_transients(functions: &mut [Function], main_body: &mut [Ast]) {
-    // Sumários (stage 1: não-recursivos — um passe, sem chaining de lineares).
+    // Stage-one summaries are non-recursive and do not chain linear callees.
     let mut lin: LinMap = HashMap::new();
     for f in functions.iter() {
         if f.methods.len() == 1 {
@@ -1888,8 +2091,9 @@ fn prim_of(name: &str) -> Option<Prim> {
     })
 }
 
-/// Aridade canônica de uma primitiva usada como *valor* (para HOF). `None` p/
-/// variádicas (str/list/vector/hash-map/hash-set/println/print).
+/// Returns the canonical arity when a primitive is used as a first-class value.
+///
+/// Variadic and synthesized primitives return `None`.
 fn prim_value_arity(prim: Prim) -> Option<usize> {
     Some(match prim {
         Prim::Inc
@@ -2017,7 +2221,11 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::Bget | Prim::SpitBytes => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,
-        Prim::Mkdir | Prim::Mkdirs | Prim::ListDir | Prim::DeleteFile | Prim::DirectoryP
+        Prim::Mkdir
+        | Prim::Mkdirs
+        | Prim::ListDir
+        | Prim::DeleteFile
+        | Prim::DirectoryP
         | Prim::FileP => n == 1,
         Prim::Rename => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
@@ -2069,11 +2277,11 @@ mod tests {
 
     #[test]
     fn closure_captures() {
-        // adder captura n; a lambda tem 1 captura.
+        // `adder` captures `n`, so its generated lambda has one capture.
         let p = prog("(defn adder [n] (fn [x] (+ x n)))");
         let lam = p.functions.iter().find(|f| f.is_lambda).unwrap();
         assert_eq!(lam.methods[0].params, vec!["x"]);
-        // O MakeFn no corpo de adder deve capturar 1 valor.
+        // The MakeFn inside `adder` must materialize exactly one capture.
         if let Ast::MakeFn {
             captures, arity, ..
         } = &p
@@ -2113,7 +2321,7 @@ mod tests {
     #[test]
     fn macros_expand() {
         let p = prog("(defn f [n] (cond (< n 0) -1 :else 1))");
-        // cond vira if aninhado
+        // `cond` expands to nested conditional expressions.
         assert!(matches!(p.functions[0].methods[0].body, Ast::If(..)));
     }
 

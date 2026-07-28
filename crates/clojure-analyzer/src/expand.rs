@@ -1,18 +1,22 @@
-//! Pré-passo de expansão de macros para o caminho **compilado** (ADR-0004).
+//! Deterministic core-macro expansion for the compiled pipeline.
 //!
-//! O caminho de compilação AOT não roda o interpretador de macros geral; aqui
-//! expandimos o conjunto de macros de `clojure.core` que o analyzer não trata como
-//! forma especial: `when when-not if-not cond and or -> ->>`. Formas especiais
-//! (`if do let* fn* def defn loop* recur quote ns`) e `let`/`defn` (reconhecidos
-//! diretamente pelo analyzer) são preservadas. `(quote ...)` não é expandido.
+//! AOT compilation does not execute a general macro interpreter. This module
+//! expands the supported `clojure.core` macros (`when`, `when-not`, `if-not`,
+//! `cond`, `and`, `or`, `->`, and `->>`) into forms handled directly by semantic
+//! analysis. Special forms, `let`, and `defn` remain intact, and quoted data is
+//! never traversed.
 //!
-//! As expansões espelham a semântica do interpretador de bootstrap
-//! (`clojure-interp`), mantendo os crates desacoplados.
+//! Expansion mirrors the bootstrap interpreter without creating a dependency on
+//! it. Generated symbols use a deterministic per-call counter.
 
 use clojure_span::{Span, Spanned};
 use clojure_syntax::{Form, SForm};
 
-/// Expande as macros suportadas em todas as forms de topo.
+/// Recursively expands supported macros in all top-level forms.
+///
+/// Source spans are preserved or inherited from the enclosing macro call.
+/// Malformed macro forms remain unexpanded so semantic analysis can issue the
+/// appropriate source diagnostic.
 pub fn expand_all(forms: &[SForm]) -> Vec<SForm> {
     let mut ex = Expander { g: 0 };
     forms.iter().cloned().map(|f| ex.expand(f)).collect()
@@ -34,11 +38,11 @@ impl Expander {
                 if let Form::Symbol(n) = items[0].node.strip_meta() {
                     if n.ns.is_none() {
                         if n.name == "quote" {
-                            return f; // não expande dados citados
+                            return f; // Quoted data is an expansion boundary.
                         }
                         let args = items[1..].to_vec();
                         if let Some(expanded) = self.try_expand(&n.name, &args, f.span) {
-                            return self.expand(expanded); // re-expande o resultado
+                            return self.expand(expanded); // Reach a fixed point.
                         }
                     }
                 }
@@ -80,7 +84,7 @@ impl Expander {
         }
     }
 
-    /// Uma etapa de expansão para as macros suportadas. `None` se não for macro.
+    /// Performs one supported macro rewrite, or returns `None`.
     fn try_expand(&mut self, name: &str, args: &[SForm], span: Span) -> Option<SForm> {
         let sym = |s: &str| Spanned::new(Form::sym(s), span);
         let list = |v: Vec<SForm>| Spanned::new(Form::List(v), span);
@@ -107,7 +111,7 @@ impl Expander {
             }
             "cond" => {
                 if args.len() & 1 != 0 {
-                    return None; // deixa o analyzer reportar erro estrutural
+                    return None; // Let semantic analysis report malformed cond.
                 }
                 let mut result = nilf();
                 for pair in args.chunks_exact(2).rev() {
@@ -175,7 +179,7 @@ impl Expander {
     }
 }
 
-/// Insere `expr` como 1º (`->`) ou último (`->>`) argumento de `step`.
+/// Inserts `expr` first for `->` or last for `->>` in one threading step.
 fn thread_into(step: &SForm, expr: SForm, first: bool, span: Span) -> SForm {
     match step.node.strip_meta() {
         Form::List(items) if !items.is_empty() => {
