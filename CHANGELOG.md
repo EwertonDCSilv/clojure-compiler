@@ -68,6 +68,8 @@ tags.
 - Add a continuous libFuzzer target for the HTTP request parser
   (`tests/fuzz/http_parse_fuzz.c`) with the `scripts/fuzz-http.sh` runner and the
   `make fuzz-http` entry point, seeded from the deterministic corpus (ADR-0013 Gate 4).
+- Add a CI `security` job that runs the runtime C harnesses under ASan/UBSan, the
+  1000-cycle HTTP start/serve/stop gate, and an HTTP parser fuzz smoke.
 
 ### Changed
 
