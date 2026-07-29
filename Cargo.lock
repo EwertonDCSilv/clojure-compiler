@@ -67,7 +67,7 @@ dependencies = [
  "clojure-analyzer",
  "clojure-diagnostics",
  "clojure-ir",
- "cranelift-codegen 0.124.3",
+ "cranelift-codegen 0.134.2",
  "cranelift-frontend",
  "cranelift-module 0.134.2",
  "cranelift-object",
