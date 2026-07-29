@@ -8,6 +8,10 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Release temporary GC roots when a function with no local root slots returns.
+
 ### Added
 
 - Add Tidy First rules for AI agents, including change classification, isolated
