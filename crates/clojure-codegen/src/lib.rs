@@ -387,6 +387,9 @@ struct Runtime {
     create_symlink: FuncId,          // (target,link)->nil
     read_link: FuncId,               // (path)->string
     native_symlink_p: FuncId,        // (x)->bool
+    path_absolute: FuncId,           // (path)->bool
+    path_normalize: FuncId,          // (path)->string
+    real_path: FuncId,               // (path)->string
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -958,6 +961,9 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         create_symlink: bin(m, "cljn_create_symlink"),
         read_link: una(m, "cljn_read_link"),
         native_symlink_p: una(m, "cljn_native_symlink_p"),
+        path_absolute: una(m, "cljn_path_absolute"),
+        path_normalize: una(m, "cljn_path_normalize"),
+        real_path: una(m, "cljn_real_path"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -1103,6 +1109,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::FileWriterP
             | Prim::CreateSymlink
             | Prim::NativeSymlinkP
+            | Prim::PathAbsolute
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3586,6 +3593,9 @@ impl<'a> FnGen<'a> {
             Prim::CreateSymlink => self.bin(self.rt.create_symlink, args),
             Prim::ReadLink => self.una(self.rt.read_link, args),
             Prim::NativeSymlinkP => self.una(self.rt.native_symlink_p, args),
+            Prim::PathAbsolute => self.una(self.rt.path_absolute, args),
+            Prim::PathNormalize => self.una(self.rt.path_normalize, args),
+            Prim::RealPath => self.una(self.rt.real_path, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),

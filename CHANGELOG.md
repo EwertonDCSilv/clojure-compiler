@@ -13,6 +13,10 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add the `cljn.io` path-algebra API (issue #142): `path` now yields a distinct
+  path value, `parent`/`file-name`/`join` require it, and `absolute?`, `normalize`
+  (lexical), and `real-path` (realpath) join the surface, promoting 10 conformance
+  fixtures to `active`.
 - Add the `cljn.io` symbolic-link and copy API (issue #140): `create-symlink!`,
   `read-link`, `symlink?`, and `copy!`, backed by symlink/readlink/lstat runtime
   primitives, promoting 12 conformance fixtures to `active`.
