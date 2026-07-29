@@ -36,7 +36,7 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
 	test test-runtime test-runtime-sanitize test-benchmark-charts test-ir-ab-analyzer coverage \
-	compatibility compatibility-list compatibility-oracle \
+	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
 	benchmarks-charts \
@@ -62,6 +62,7 @@ help:
 		"  hooks-install            Ativa os hooks Git versionados neste checkout" \
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
+		"  reader-syntax-coverage   Mede suporte do Reader Clojure 1.12.5" \
 		"  benchmarks               Executa as suítes Cracking, Cormen e Exercism" \
 		"  benchmarks-cormen-ir     Executa o gate A/B da IR opcional no Cormen" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
@@ -175,7 +176,11 @@ coverage:
 	scripts/coverage.sh $(COVERAGE_ARGS)
 
 compatibility:
+	scripts/conformance.sh reader-coverage
 	scripts/conformance.sh verify $(CONFORMANCE_ARGS)
+
+reader-syntax-coverage:
+	scripts/conformance.sh reader-coverage $(CONFORMANCE_ARGS)
 
 compatibility-list:
 	scripts/conformance.sh list $(CONFORMANCE_ARGS)

@@ -13,12 +13,12 @@ case "$command" in
       -p clojure-native-cli \
       -p clojure-test-support
     ;;
-  list | oracle | help | -h | --help)
+  list | oracle | reader-coverage | help | -h | --help)
     cargo build --release --locked -p clojure-test-support
     ;;
   *)
     echo "unknown conformance command: $command" >&2
-    echo "use: verify, list, oracle --check, or oracle --bless" >&2
+    echo "use: verify, list, reader-coverage, oracle --check, or oracle --bless" >&2
     exit 2
     ;;
 esac
