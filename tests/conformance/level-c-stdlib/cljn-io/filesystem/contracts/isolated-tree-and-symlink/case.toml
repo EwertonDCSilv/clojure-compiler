@@ -1,13 +1,13 @@
 id = "c.cljn_io.filesystem.isolated_tree_and_symlink"
 level = "C"
 area = "stdlib/cljn-io/filesystem"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = true
-reason = "Recursive operations and symlink policy require an exact isolated filesystem oracle."
+reason = "Native cljn.io recursive/attribute operations over the compiled module and runtime primitives; the Clojure/JVM oracle cannot resolve the native namespace (ADR-0016, issue #144)."
 tracking = "specs/IO_SPEC.md#filesystem-and-recursive-safety"
 namespace = "cljn.io"
 [run]
