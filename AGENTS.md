@@ -47,6 +47,25 @@ regardless of the model, tool, or editor integration:
 8. Merge feature work into `master` only through that pull request. Do not bypass
    review history with a direct feature push to `master`.
 
+## AI pull requests
+
+AI agents open feature pull requests as drafts unless the user explicitly requests a
+ready-for-review PR. Use `.github/PULL_REQUEST_TEMPLATE.md` without removing its issue,
+scope, validation, or TDD sections. The PR must close the linked issue, name the exact
+validation commands that actually ran, and disclose any TDD exception or baseline
+failure. Do not claim unexecuted checks as passing.
+
+Match the established AI PR convention when publishing a scoped delivery:
+
+- title: `#<issue>: <behavior> (<measurable result>)`, for example
+  `#125: cljn.io byte-streams (19 casos ativos)`; omit the parenthesized result only
+  when no truthful concise metric exists;
+- body: begin with the delivery slice and parent issue when applicable, then use
+  `## Runtime`/`## Funções` when relevant and a `## Resultado` section with exact
+  fixture, validation, sanitizer, and benchmark evidence; end with `Closes #<issue>`;
+- labels: do not add, remove, or invent GitHub labels unless the user explicitly asks.
+  The established Claude PRs use issue references and body tags, not PR labels.
+
 Bug fixes, documentation, maintenance, release, and investigation branches may use
 their established workflow. Work that adds user-visible or compiler/runtime capability
 is a feature and must follow the workflow above.

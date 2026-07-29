@@ -10,6 +10,8 @@ tags.
 
 ### Added
 
+- Add a pull-request template and explicit AI-agent rules requiring issue linkage,
+  scoped changes, TDD evidence, and truthful validation records.
 - Add versioned crate and high-risk-module coverage baselines, a no-regression
   ratchet, JSON reports, and a 90% executable-Rust diff-coverage gate to `make coverage`.
 - Add an AI-agent story-point guard that blocks feature implementation for

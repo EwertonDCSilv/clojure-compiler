@@ -5,6 +5,8 @@ suite_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$suite_dir/../.." && pwd)"
 runner="$suite_dir/run.sh"
 compiler="$repo_root/target/release/clojure-native"
+control_compiler=""
+candidate_compiler=""
 analyzer_source="$repo_root/benchmarks/analyze-ir-ab.rs"
 analyzer="$repo_root/target/benchmark-tools/analyze-ir-ab"
 repetitions=7
@@ -20,13 +22,15 @@ usage() {
   printf '%s\n' \
     "Uso: benchmarks/cormen/compare-ir.sh [opções]" \
     "" \
-    "Compara dois perfis nativos no mesmo commit." \
+    "Compara dois perfis nativos, inclusive builds distintas do compilador." \
     "A ordem control/candidate é alternada para reduzir viés temporal." \
     "" \
     "  --repetitions N    Pares por caso (padrão: 7; mínimo do gate: 7)" \
     "  --scale N          Multiplicador da carga (padrão: 25)" \
     "  --chapter PREFIX   Restringe a um capítulo; não satisfaz o gate global" \
     "  --compiler PATH    Usa um compilador release específico" \
+    "  --control-compiler PATH  Build de controle (padrão: --compiler)" \
+    "  --candidate-compiler PATH  Build candidata (padrão: --compiler)" \
     "  --control-ir-opt M IR do controle: none ou safe (padrão: none)" \
     "  --candidate-ir-opt M IR candidata: none ou safe (padrão: safe)" \
     "  --candidate-experiment ID  Experimento candidato: none ou adr15" \
@@ -51,6 +55,14 @@ while (($# > 0)); do
       ;;
     --compiler)
       compiler="${2:-}"
+      shift 2
+      ;;
+    --control-compiler)
+      control_compiler="${2:-}"
+      shift 2
+      ;;
+    --candidate-compiler)
+      candidate_compiler="${2:-}"
       shift 2
       ;;
     --control-ir-opt)
@@ -105,6 +117,14 @@ if [[ ! -x "$compiler" ]]; then
   cargo build --manifest-path "$repo_root/Cargo.toml" --release \
     -p clojure-native-cli || exit 1
 fi
+control_compiler="${control_compiler:-$compiler}"
+candidate_compiler="${candidate_compiler:-$compiler}"
+for selected_compiler in "$control_compiler" "$candidate_compiler"; do
+  if [[ ! -x "$selected_compiler" ]]; then
+    printf 'Compilador não encontrado: %s\n' "$selected_compiler" >&2
+    exit 2
+  fi
+done
 
 mkdir -p "$(dirname "$analyzer")" "$(dirname "$raw_path")" "$(dirname "$report_path")"
 rustc --edition=2021 -D warnings -O "$analyzer_source" -o "$analyzer" || exit 1
@@ -135,7 +155,10 @@ metadata_path="${raw_path%.csv}.metadata.txt"
     awk '/name = "cranelift-codegen"/{found=1; next}
          found && /version = /{gsub(/"/, "", $3); print $3; exit}' "$repo_root/Cargo.lock"
   )"
-  printf 'compiler_sha256=%s\n' "$(sha256sum "$compiler" | awk '{print $1}')"
+  printf 'control_compiler=%s\n' "$control_compiler"
+  printf 'control_compiler_sha256=%s\n' "$(sha256sum "$control_compiler" | awk '{print $1}')"
+  printf 'candidate_compiler=%s\n' "$candidate_compiler"
+  printf 'candidate_compiler_sha256=%s\n' "$(sha256sum "$candidate_compiler" | awk '{print $1}')"
   printf 'repetitions=%s\n' "$repetitions"
   printf 'scale=%s\n' "$scale"
   printf 'chapter=%s\n' "${chapter:-all}"
@@ -178,8 +201,9 @@ run_profile() {
   local order="$3"
   local ir_opt="$4"
   local experiment="$5"
+  local selected_compiler="$6"
   local csv="$temporary/$repetition-$order-$profile.csv"
-  local -a arguments=(--scale "$scale" --ir-opt "$ir_opt" --csv "$csv")
+  local -a arguments=(--compiler "$selected_compiler" --scale "$scale" --ir-opt "$ir_opt" --csv "$csv")
   if [[ "$experiment" != "none" ]]; then
     arguments+=(--ir-experiment "$experiment")
   fi
@@ -194,13 +218,13 @@ run_profile() {
 
 for ((repetition = 1; repetition <= repetitions; repetition++)); do
   if ((repetition % 2 == 1)); then
-    run_profile control "$repetition" 1 "$control_ir_opt" none || exit 1
+    run_profile control "$repetition" 1 "$control_ir_opt" none "$control_compiler" || exit 1
     run_profile candidate "$repetition" 2 "$candidate_ir_opt" \
-      "$candidate_experiment" || exit 1
+      "$candidate_experiment" "$candidate_compiler" || exit 1
   else
     run_profile candidate "$repetition" 1 "$candidate_ir_opt" \
-      "$candidate_experiment" || exit 1
-    run_profile control "$repetition" 2 "$control_ir_opt" none || exit 1
+      "$candidate_experiment" "$candidate_compiler" || exit 1
+    run_profile control "$repetition" 2 "$control_ir_opt" none "$control_compiler" || exit 1
   fi
 done
 
