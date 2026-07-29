@@ -370,6 +370,14 @@ struct Runtime {
     bytes_of_vec: FuncId,            // (vec)->bytes
     bytes_to_vec: FuncId,            // (bytes)->vec
     valid_utf8: FuncId,              // (bytes)->bool
+    byte_input_stream: FuncId,       // (bytes)->reader
+    byte_output_stream: FuncId,      // ()->writer
+    read_bytes: FuncId,              // (reader,n)->bytes
+    write_bytes: FuncId,             // (writer,bytes)->nil
+    output_bytes: FuncId,            // (writer)->bytes
+    read_block: FuncId,              // (reader,n)->string|bytes
+    byte_input_p: FuncId,            // (x)->bool
+    byte_output_p: FuncId,           // (x)->bool
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -920,6 +928,19 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         bytes_of_vec: una(m, "cljn_bytes_of_vec"),
         bytes_to_vec: una(m, "cljn_bytes_to_vec"),
         valid_utf8: una(m, "cljn_valid_utf8"),
+        byte_input_stream: una(m, "cljn_byte_input_stream"),
+        byte_output_stream: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_byte_output_stream", Linkage::Import, &s)
+                .unwrap()
+        },
+        read_bytes: bin(m, "cljn_read_bytes"),
+        write_bytes: bin(m, "cljn_write_bytes"),
+        output_bytes: una(m, "cljn_output_bytes"),
+        read_block: bin(m, "cljn_read_block"),
+        byte_input_p: una(m, "cljn_byte_input_p"),
+        byte_output_p: una(m, "cljn_byte_output_p"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -1055,6 +1076,9 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::ReadChar
             | Prim::Bget
             | Prim::ValidUtf8
+            | Prim::WriteBytes
+            | Prim::ByteInputP
+            | Prim::ByteOutputP
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3535,6 +3559,14 @@ impl<'a> FnGen<'a> {
             Prim::BytesOfVec => self.una(self.rt.bytes_of_vec, args),
             Prim::BytesToVec => self.una(self.rt.bytes_to_vec, args),
             Prim::ValidUtf8 => self.una(self.rt.valid_utf8, args),
+            Prim::ByteInputStream => self.una(self.rt.byte_input_stream, args),
+            Prim::ByteOutputStream => Ok(self.call0(self.rt.byte_output_stream)),
+            Prim::ReadBytes => self.bin(self.rt.read_bytes, args),
+            Prim::WriteBytes => self.bin(self.rt.write_bytes, args),
+            Prim::OutputBytes => self.una(self.rt.output_bytes, args),
+            Prim::ReadBlock => self.bin(self.rt.read_block, args),
+            Prim::ByteInputP => self.una(self.rt.byte_input_p, args),
+            Prim::ByteOutputP => self.una(self.rt.byte_output_p, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),

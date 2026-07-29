@@ -224,3 +224,44 @@
   [x]
   (let [c (stream-closed x)]
     (if (nil? c) (fail) c)))
+
+;; --- byte streams ------------------------------------------------------------
+
+(defn byte-input-stream
+  "Returns a byte input stream over an immutable byte array."
+  [b]
+  (if (bytes? b) (byte-input-stream b) (fail)))
+
+(defn byte-output-stream
+  "Returns a byte output stream; an optional non-negative capacity hint is
+  accepted."
+  [& options]
+  (if (or (empty? options) (not (neg? (first options))))
+    (byte-output-stream)
+    (fail)))
+
+(defn read-bytes
+  "Reads up to `n` bytes from an open byte input stream."
+  [s n]
+  (if (and (byte-input? s) (not (stream-closed s)) (int? n) (not (neg? n)))
+    (read-bytes s n)
+    (fail)))
+
+(defn write-bytes!
+  "Writes byte array `b` to an open byte output stream."
+  [s b]
+  (if (and (byte-output? s) (not (stream-closed s)) (bytes? b))
+    (write-bytes! s b)
+    (fail)))
+
+(defn output-bytes
+  "Returns the accumulated bytes of a byte output stream."
+  [s]
+  (if (byte-output? s) (output-bytes s) (fail)))
+
+(defn read-block!
+  "Reads up to `n` items (characters or bytes) from an open reader."
+  [s n]
+  (if (and (reader? s) (not (stream-closed s)) (int? n) (not (neg? n)))
+    (read-block! s n)
+    (fail)))

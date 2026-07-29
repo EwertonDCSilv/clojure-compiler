@@ -324,6 +324,86 @@ Value cljn_bget(Value b, Value i) {
     if (idx < 0 || idx >= bb->len) die("bget: índice fora dos limites");
     return MK_FIX((int64_t)bb->data[idx]);
 }
+
+/* Byte input stream: a Reader cursor over an immutable byte array. */
+Value cljn_byte_input_stream(Value b) {
+    if (obj_type(b) != T_BYTES) die("byte-input-stream: esperava bytes");
+    return mk_reader(RD_BYTES, b);
+}
+/* Byte output stream: a Writer accumulating bytes in its growable buffer. */
+Value cljn_byte_output_stream(void) { return mk_std_writer(WR_BYTES); }
+/* Read up to n bytes from a byte-input Reader into a new array, advancing the
+   cursor. GC: roots the reader across allocation. */
+Value cljn_read_bytes(Value rv, Value nv) {
+    if (obj_type(rv) != T_READER) die("read-bytes: esperava reader");
+    if (!IS_FIX(nv)) die("read-bytes: n deve ser inteiro");
+    Reader *r = (Reader *)rv;
+    Bytes *src = (Bytes *)r->src;
+    int64_t n = FIX(nv);
+    int64_t avail = src->len - r->pos;
+    if (n > avail) n = avail;
+    if (n < 0) n = 0;
+    cljn_gc_push(rv);
+    Value out = bytes_alloc(n);
+    if (n) memcpy(((Bytes *)out)->data, ((Bytes *)((Reader *)rv)->src)->data + r->pos, (size_t)n);
+    r->pos += n;
+    cljn_gc_popn(1);
+    return out;
+}
+/* Append an immutable byte array to a byte-output Writer. */
+Value cljn_write_bytes(Value wv, Value b) {
+    if (obj_type(wv) != T_WRITER) die("write-bytes!: esperava writer");
+    if (obj_type(b) != T_BYTES) die("write-bytes!: esperava bytes");
+    Bytes *bb = (Bytes *)b;
+    writer_write(wv, (const char *)bb->data, (size_t)bb->len);
+    return NIL;
+}
+/* Return a copy of a byte-output Writer's accumulated bytes. */
+Value cljn_output_bytes(Value wv) {
+    if (obj_type(wv) != T_WRITER) die("output-bytes: esperava writer");
+    Writer *w = (Writer *)wv;
+    cljn_gc_push(wv);
+    Value out = bytes_alloc((int64_t)w->len);
+    if (w->len) memcpy(((Bytes *)out)->data, ((Writer *)wv)->buf, w->len);
+    cljn_gc_popn(1);
+    return out;
+}
+/* Read up to n items from a Reader: characters for text sources returned as a
+   string, or bytes for byte sources returned as a byte array. */
+Value cljn_read_block(Value rv, Value nv) {
+    if (obj_type(rv) != T_READER) die("read-block!: esperava reader");
+    if (!IS_FIX(nv)) die("read-block!: n deve ser inteiro");
+    Reader *r = (Reader *)rv;
+    int64_t n = FIX(nv);
+    if (n < 0) n = 0;
+    if (r->kind == RD_BYTES) return cljn_read_bytes(rv, nv);
+    if (r->kind == RD_STRING) {
+        Str *s = (Str *)r->src;
+        int64_t start = r->pos, count = 0;
+        while (count < n && r->pos < (int64_t)s->len) {
+            int len = utf8_len((unsigned char)s->data[r->pos]);
+            if (r->pos + len > (int64_t)s->len) len = 1;
+            r->pos += len;
+            count++;
+        }
+        return cljn_str_from(s->data + start, (long)(r->pos - start));
+    }
+    FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
+    if (!fp) return cljn_str_from("", 0);
+    char *buf = (char *)xalloc(n ? n : 1);
+    size_t got = fread(buf, 1, (size_t)n, fp);
+    Value v = cljn_str_from(buf, (long)got);
+    free(buf);
+    return v;
+}
+/* Predicate: value is a byte-input Reader. */
+Value cljn_byte_input_p(Value x) {
+    return b2v(obj_type(x) == T_READER && ((Reader *)x)->kind == RD_BYTES);
+}
+/* Predicate: value is a byte-output Writer. */
+Value cljn_byte_output_p(Value x) {
+    return b2v(obj_type(x) == T_WRITER && ((Writer *)x)->kind == WR_BYTES);
+}
 /* Read a complete file in binary mode into an immutable byte array. */
 Value cljn_slurp_bytes(Value path) {
     if (obj_type(path) != T_STR) die("slurp-bytes: path deve ser string");
