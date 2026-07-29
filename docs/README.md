@@ -29,10 +29,12 @@ A apresentação pública fica em [index.html](index.html), com traduções em
 os SVGs versionados ficam em [`assets/benchmarks/`](assets/benchmarks/) e são
 regenerados por `make benchmarks-charts`. O dataset
 [`assets/benchmarks/data.js`](assets/benchmarks/data.js) é derivado dos CSVs
-comparativos por `make benchmark-page-refresh`; métricas não são mantidas manualmente
-no HTML. Os gráficos permanecem neutros em relação ao idioma; títulos, legendas e
-descrições acessíveis são traduzidos pelo HTML. O arquivo `.nojekyll` permite que o
-conteúdo desta pasta seja publicado diretamente pelo GitHub Pages.
+comparativos por `make benchmark-page-refresh`. The refresh publishes per-case
+medians from ten complete rounds and retains the raw samples under `target/`; metrics
+are not maintained manually in the HTML. Os gráficos permanecem neutros em relação ao
+idioma; títulos, legendas e descrições acessíveis são traduzidos pelo HTML. O arquivo
+`.nojekyll` permite que o conteúdo desta pasta seja publicado diretamente pelo GitHub
+Pages.
 
 ## Fonte de verdade
 

@@ -189,6 +189,13 @@ Os CSVs registram, por caso e implementação, tempo de parede, CPU e pico de me
 comparação JVM deve manter versões, warmup, repetição e escala registrados para evitar
 comparar Cranelift frio com HotSpot aquecido sem contexto.
 
+`make benchmark-page-refresh` is the publication gate for the comparison CSVs and
+Pages assets. It requires ten complete Native × JVM rounds, verifies that case
+identity, scale, runtime version, checksum, and status are stable across the sample
+set, then publishes the per-case median for every measured field. Ratios are
+recomputed from those medians, and the ten raw CSVs are retained under `target/` for
+audit. A failed or incomplete round must leave the published artifacts unchanged.
+
 The optional optimization IR has an additional executable native A/B gate defined by
 [OPTIMIZATION_IR_SPEC](OPTIMIZATION_IR_SPEC.md#13-blocking-cormen-non-regression-gate).
 It compares `--ir-opt none` with `--ir-opt safe` on the same commit for at least seven

@@ -95,6 +95,19 @@ Os artefatos JVM fixados são baixados na primeira execução para
 `target/benchmark-clojure/`, que não é versionado. Os CSVs são gravados por padrão em
 `target/benchmarks/`; altere esse destino com `BENCHMARK_OUTPUT_DIR`.
 
+The direct comparison target produces one diagnostic sample. To refresh the published
+CSV files and Pages assets, use:
+
+```bash
+make benchmark-page-refresh
+```
+
+This workflow runs every Native × JVM suite ten times and publishes the per-case
+median of each measurement. It accepts a sample set only when all ten rounds have the
+same cases, scales, runtime version, checksums, and `OK` statuses. The raw CSV files
+remain under the reported `target/benchmark-page-refresh.*` directory so that an
+unexpected change can be audited before commit.
+
 ### 4. Aumente a carga ou investigue o runtime
 
 ```bash
@@ -358,19 +371,20 @@ make benchmarks-compare-exercism EXERCISM_COMPARE_ARGS="--scale 5"
 
 ## Consulte os resultados
 
-Snapshot medido em 2026-07-28 no compilador `424ba20`, com ambos os lados refeitos:
+Snapshot medido em 2026-07-29 no compilador `a1ecebd`, com medianas por caso de dez
+rodadas completas:
 
 | Suíte | Parede Native/JVM | CPU Native/JVM | RSS mediano Native/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 8,05 / 23,02 s | 7,91 / 47,35 s | 4,6 / 114,8 MiB |
-| Cormen/CLRS | 27,23 / 16,95 s | 27,09 / 32,08 s | 13,2 / 270,8 MiB |
-| Exercism | 7,15 / 4,43 s | 7,12 / 8,44 s | 8,1 / 244,2 MiB |
+| Cracking | 8,23 / 23,18 s | 8,06 / 49,68 s | 4,6 / 117,2 MiB |
+| Cormen/CLRS | 30,60 / 16,74 s | 30,38 / 31,82 s | 13,2 / 270,2 MiB |
+| Exercism | 35,05 / 8,48 s | 35,00 / 12,47 s | 7,7 / 430,9 MiB |
 
 Os 98 casos terminaram com status `OK` e checksums equivalentes.
-No Cormen, o tempo de parede nativo agregado caiu 9,4% frente à rodada anterior.
-Como os números são snapshots únicos, a variação continua subordinada ao gate pareado da
-[ADR-0014](../specs/adr/0014-optional-optimization-ir.md), não como causalidade
-atribuída.
+No Cormen, a mediana reduziu em 11,7% o pico do artefato anterior, mas ficou 12,4%
+acima do snapshot de uma rodada em `424ba20`. Essa diferença continua subordinada ao
+gate pareado da [ADR-0014](../specs/adr/0014-optional-optimization-ir.md), não como
+causalidade atribuída.
 
 | Suíte | Relatório comentado | CSV comparativo de referência |
 | --- | --- | --- |
@@ -425,9 +439,12 @@ README da respectiva pasta `results/`.
 - As entradas são fixas e reprodutíveis.
 - A execução JVM inclui a inicialização da JVM; a nativa inclui a inicialização do
   processo nativo.
-- Uma única rodada é adequada para triagem de regressões, não para conclusões
-  estatísticas. Para análise formal, faça várias repetições com a máquina ociosa e uma
-  ferramenta como `hyperfine`.
+- `make benchmarks-compare` remains a single-round diagnostic. The published
+  `make benchmark-page-refresh` workflow requires ten complete rounds and records the
+  per-case median while retaining every raw sample.
+- Ten unpaired rounds reduce outlier sensitivity but do not prove causality. Compiler
+  changes still require a same-environment paired A/B experiment such as the Cormen IR
+  gate before attributing a performance difference to the implementation.
 - O subconjunto nativo ainda possui limites documentados em
   [`specs/LANGUAGE_SCOPE.md`](../specs/LANGUAGE_SCOPE.md). Esses limites influenciam a
   forma de alguns casos.

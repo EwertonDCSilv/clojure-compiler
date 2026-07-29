@@ -36,7 +36,7 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	help all ci quality docs-check pre-commit pre-push hooks-install agent-feature-guard \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh coverage \
+	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh coverage \
 	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
@@ -81,6 +81,7 @@ help:
 		"  test-runtime             Testa o runtime C" \
 		"  test-runtime-sanitize    Testa o runtime C com sanitizers" \
 		"  test-agent-guard         Testa o guard rail de story points sem rede" \
+		"  test-benchmark-aggregation Testa a mediana das dez rodadas publicadas" \
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
 		"  test-ir-ab-analyzer      Testa o analisador estatístico do gate de IR" \
 		"  test-coverage-report     Testa o relatório e ratchet de cobertura" \
@@ -163,7 +164,7 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh
+test: test-agent-guard test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh
 	$(CARGO) test --workspace
 
 test-agent-guard:
@@ -197,6 +198,9 @@ test-coverage-report:
 test-benchmark-page-refresh:
 	tests/scripts/refresh-benchmark-page.sh
 	tests/scripts/render-benchmark-page-data.sh
+
+test-benchmark-aggregation:
+	tests/scripts/aggregate-benchmark-runs.sh
 
 coverage: test-coverage-report
 	scripts/coverage.sh $(COVERAGE_ARGS)

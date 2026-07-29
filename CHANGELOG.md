@@ -152,6 +152,9 @@ tags.
 
 ### Changed
 
+- Publish benchmark CSVs and Pages assets from per-case medians over ten complete
+  Native × JVM rounds, with cross-round validation and retained raw samples; refresh
+  the versioned comparison artifacts with the first ten-round result.
 - Update the Cranelift backend crates to 0.134.2, `sha2` to 0.11, and `toml` to
   1.1, including the required code-generation API migration.
 - Refresh every ADR `Status` field to reflect the delivered state: ADR-0001–0008 are

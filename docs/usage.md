@@ -92,7 +92,7 @@ Alvos auxiliares:
 | `make benchmarks-list` | lista os casos das três suítes |
 | `make benchmarks-ci` | recorte de checksums usado na CI |
 | `make benchmarks-charts` | regenera os SVGs dos relatórios e da página do projeto |
-| `make benchmark-page-refresh` | testa, mede Native × JVM e regenera dados e gráficos da página |
+| `make benchmark-page-refresh` | testa, executa dez rodadas Native × JVM e publica medianas, dados e gráficos |
 | `make benchmarks-compare-cracking` | comparação JVM somente da suíte Cracking |
 | `make benchmarks-compare-cormen` | comparação JVM somente da suíte Cormen |
 | `make benchmarks-compare-exercism` | comparação JVM do subconjunto Exercism promovido |
@@ -214,12 +214,13 @@ de parede, CPU e memória. `make benchmarks` não requer JVM; somente os alvos
 `benchmarks-charts` usa os CSVs comparativos versionados para atualizar tanto os
 relatórios quanto o painel de benchmarks da página do projeto.
 
-`make benchmark-page-refresh` executa o fluxo completo: testes, as três comparações
-Native × JVM, validação dos status, geração do dataset
-`docs/assets/benchmarks/data.js` e atualização dos SVGs. Os valores apresentados no
-painel são agregados diretamente dos CSVs versionados; não devem ser transcritos
-manualmente no HTML. O texto editorial e a interpretação dos resultados continuam
-sujeitos a revisão humana.
+`make benchmark-page-refresh` runs the full publication flow: tests, ten complete
+Native × JVM rounds for all three suites, cross-round schema/checksum/status
+validation, per-case medians, generation of
+`docs/assets/benchmarks/data.js`, and SVG updates. It reports the directory under
+`target/` containing all raw samples. The dashboard values are derived directly from
+the versioned CSV files and must not be transcribed manually into HTML. Editorial
+text and interpretation remain subject to human review.
 
 Consulte o [catálogo central](../benchmarks/README.md) e os READMEs de
 [`Cracking`](../benchmarks/cracking/README.md) e
