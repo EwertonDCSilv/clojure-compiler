@@ -1,0 +1,12 @@
+id = "e.pedestal.native_connector_hello"
+level = "E"
+area = "ecosystem/web-frameworks/pedestal"
+status = "active"
+class = "spec"
+target = "build-run"
+oracle = "not-applicable"
+timeout_ms = 120000
+gc_stress = false
+reason = "Native P1 connector Hello World over the in-memory test-request dispatch path, using only compiler-owned cljn.pedestal.* sources with no JVM or network."
+tracking = "specs/adr/0013-compiled-clojure-pedestal-native-connector.md"
+namespace = "hello.native-connector"

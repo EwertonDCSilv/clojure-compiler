@@ -240,18 +240,21 @@ Value cljn_serialize_http_response(Value resp) {
     sb_str(&b, http_reason(status));
     sb_str(&b, "\r\n");
 
-    /* Application headers (array-map only in P1). */
+    /* Application headers (array-map only in P1), validated then emitted in stable
+     * lowercase lexical order so byte-level fixtures stay deterministic (§5). */
     Value headers = cljn_map_get(resp, cljn_kw("headers", 7));
     if (headers != NIL) {
         if (obj_type(headers) != T_MAP) { free(b.p); http_ser_throw("unsupported-headers"); }
         Map *hm = (Map *)headers;
-        for (int64_t k = 0; k < hm->n; k++) {
+        int n = (int)hm->n;
+        int idx[64];
+        if (n > 64) { free(b.p); http_ser_throw("unsupported-headers"); }
+        for (int k = 0; k < n; k++) {
             Value hk = hm->kv[2 * k];
             Value hv = hm->kv[2 * k + 1];
             if (obj_type(hk) != T_KW || obj_type(hv) != T_STR) { free(b.p); http_ser_throw("invalid-header"); }
             Str *kn = (Str *)hk;
             Str *vs = (Str *)hv;
-            /* Reject framing headers the serializer owns, and CR/LF/NUL injection. */
             if ((kn->len == 14 && memcmp(kn->data, "content-length", 14) == 0) ||
                 (kn->len == 17 && memcmp(kn->data, "transfer-encoding", 17) == 0)) {
                 free(b.p); http_ser_throw("reserved-header");
@@ -262,6 +265,25 @@ Value cljn_serialize_http_response(Value resp) {
                 char c = vs->data[j];
                 if (c == '\r' || c == '\n' || c == 0) { free(b.p); http_ser_throw("invalid-header"); }
             }
+            idx[k] = k;
+        }
+        /* Insertion sort of header names (n <= 8 array-map in P1). */
+        for (int i = 1; i < n; i++) {
+            int cur = idx[i];
+            Str *ck = (Str *)hm->kv[2 * cur];
+            int j = i - 1;
+            while (j >= 0) {
+                Str *jk = (Str *)hm->kv[2 * idx[j]];
+                size_t m = ck->len < jk->len ? ck->len : jk->len;
+                int cmp = memcmp(ck->data, jk->data, m);
+                if (cmp == 0) cmp = (ck->len < jk->len) ? -1 : (ck->len > jk->len ? 1 : 0);
+                if (cmp < 0) { idx[j + 1] = idx[j]; j--; } else break;
+            }
+            idx[j + 1] = cur;
+        }
+        for (int ii = 0; ii < n; ii++) {
+            Str *kn = (Str *)hm->kv[2 * idx[ii]];
+            Str *vs = (Str *)hm->kv[2 * idx[ii] + 1];
             sb_write(&b, kn->data, kn->len);
             sb_str(&b, ": ");
             sb_write(&b, vs->data, vs->len);

@@ -254,6 +254,324 @@ fn linear_router_params_404_405_and_via_chain() {
 }
 
 #[test]
+fn http_server_subprocess_start_serve_stop_cycles() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #5/#6: repeated full start/serve/stop subprocess
+    // cycles complete with no crash or hang, each serving one request then exiting
+    // cleanly. Defaults to a fast count; CI sets CLJN_HTTP_CYCLES=1000.
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let cycles: u32 = std::env::var("CLJN_HTTP_CYCLES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let src = r#"(ns cyc.core
+  (:require [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]
+            [cljn.pedestal.service :as svc]))
+(defn -main []
+  (let [running (svc/start! (conn/create-connector (fn [r] (resp/ok "ok"))) {:port 0})]
+    (println (svc/server-port running))
+    (flush)
+    (svc/serve-one! running)
+    (http-server-close (get running :server))))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_cyc_e2e.clj");
+    let exe = dir.join("cljn_cyc_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for cycle in 0..cycles {
+        let mut child = Command::new(&exe)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn");
+        let mut reader = BufReader::new(child.stdout.take().unwrap());
+        let mut port_line = String::new();
+        reader.read_line(&mut port_line).unwrap();
+        let port: u16 = port_line.trim().parse().expect("porta");
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        assert!(
+            resp.starts_with("HTTP/1.1 200 OK"),
+            "ciclo {cycle}: resposta {resp:?}"
+        );
+        let status = child.wait().unwrap();
+        assert!(status.success(), "ciclo {cycle}: saída {status:?}");
+    }
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+}
+
+#[test]
+fn http_server_open_close_cycles_do_not_leak() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #6: repeated open/close lifecycles must not leak the
+    // listener descriptor. The self-pipe is primed once, then 500 cycles run; the
+    // process open-descriptor count returns to its baseline.
+    let src = r#"(ns cyc.core)
+(defn -main []
+  (http-server-close (http-server-open 0))
+  (let [before (count (list-dir "/proc/self/fd"))]
+    (loop [i 0]
+      (if (< i 500)
+        (do (http-server-close (http-server-open 0)) (recur (inc i)))
+        nil))
+    (println (- (count (list-dir "/proc/self/fd")) before))))
+(-main)"#;
+    assert_eq!(build_and_run("http_open_close_cycles", src), "0\n");
+    assert_eq!(
+        build_and_run_env("http_open_close_cycles_gc", src, &[("CLJN_GC_STRESS", "1")]),
+        "0\n"
+    );
+}
+
+#[test]
+fn http_server_does_not_leak_descriptors_across_requests() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 acceptance #6: every connection is closed. The server reports
+    // its own open descriptor count after each response; a leaked connection fd
+    // would make that count grow monotonically across many requests.
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns leak.core (:require [cljn.http.response :as resp]))
+(defn -main []
+  (let [srv (http-server-open 0)]
+    (println (http-server-port srv))
+    (flush)
+    (loop [i 0]
+      (let [req (http-server-accept srv)]
+        (if (nil? req)
+          nil
+          (do (http-server-respond srv (resp/ok "x"))
+              (println (count (list-dir "/proc/self/fd")))
+              (flush)
+              (recur (inc i))))))))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_leak_e2e.clj");
+    let exe = dir.join("cljn_leak_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let mut counts = Vec::new();
+    for _ in 0..40 {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET /x HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        assert!(resp.starts_with("HTTP/1.1 200 OK"), "resposta: {resp:?}");
+        let mut fd_line = String::new();
+        reader.read_line(&mut fd_line).unwrap();
+        counts.push(fd_line.trim().parse::<i64>().expect("fd count"));
+    }
+    let _ = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    // The descriptor count must be stable, not grow request-over-request.
+    let first = counts[0];
+    let last = *counts.last().unwrap();
+    assert_eq!(first, last, "vazamento de descritor: contagens {counts:?}");
+}
+
+#[test]
+fn http_service_lifecycle_and_signal_shutdown() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4 §6 / Gate 5: start!/serve! over the connector, real requests,
+    // and a clean SIGTERM shutdown through the self-pipe (no hang, no leaked port).
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns svc.core
+  (:require [cljn.http.response :as resp]
+            [cljn.pedestal.connector :as conn]
+            [cljn.pedestal.service :as svc]))
+(defn handler [req] (if (= (get req :path) "/health") (resp/ok "up") (resp/not-found)))
+(defn -main []
+  (let [running (svc/start! (conn/create-connector handler) {:port 0})]
+    (println (svc/server-port running))
+    (flush)
+    (svc/serve! running)
+    (println "stopped-cleanly")
+    (flush)))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_svc_e2e.clj");
+    let exe = dir.join("cljn_svc_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let request = |path: &str| -> String {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        resp.lines().next().unwrap_or("").to_string()
+    };
+    assert_eq!(request("/health"), "HTTP/1.1 200 OK");
+    assert_eq!(request("/x"), "HTTP/1.1 404 Not Found");
+
+    // SIGTERM must wake the blocked accept and shut down cleanly.
+    let _ = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status();
+    let mut rest = String::new();
+    reader.read_to_string(&mut rest).unwrap(); // blocks until stdout closes at exit
+    let status = child.wait().unwrap();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    assert!(rest.contains("stopped-cleanly"), "saída: {rest:?}");
+    assert!(status.success(), "servidor não saiu limpo: {status:?}");
+}
+
+#[test]
+fn loopback_http_server_serves_real_requests() {
+    if !have_cc() {
+        return;
+    }
+    // ADR-0013 Gate 4: a Clojure service loop over the C socket provider serves real
+    // loopback HTTP requests on an ephemeral port (open/port/accept/respond/close).
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let src = r#"(ns srv.core
+  (:require [cljn.http.response :as resp]))
+(defn handler [req]
+  (if (= (get req :path) "/health") (resp/ok "up") (resp/not-found)))
+(defn serve [srv]
+  (try
+    (let [req (http-server-accept srv)]
+      (http-server-respond srv (handler req)))
+    (catch E e (http-server-respond srv {:status 400 :headers {} :body nil})))
+  (recur srv))
+(defn -main []
+  (let [srv (http-server-open 0)]
+    (println (http-server-port srv))
+    (flush)
+    (serve srv)))
+(-main)"#;
+    let dir = std::env::temp_dir();
+    let clj = dir.join("cljn_srv_e2e.clj");
+    let exe = dir.join("cljn_srv_e2e.bin");
+    std::fs::write(&clj, src).unwrap();
+    let out = Command::new(cli())
+        .arg("build")
+        .arg(&clj)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("build");
+    assert!(
+        out.status.success(),
+        "build falhou: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut child = Command::new(&exe)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn servidor");
+    let mut reader = BufReader::new(child.stdout.take().unwrap());
+    let mut port_line = String::new();
+    reader.read_line(&mut port_line).unwrap();
+    let port: u16 = port_line.trim().parse().expect("porta");
+
+    let request = |path: &str| -> String {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        s.read_to_string(&mut resp).unwrap();
+        resp
+    };
+    let health = request("/health");
+    let missing = request("/missing");
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&clj);
+    let _ = std::fs::remove_file(&exe);
+
+    assert_eq!(
+        health,
+        "HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nup"
+    );
+    assert_eq!(
+        missing,
+        "HTTP/1.1 404 Not Found\r\ncontent-length: 9\r\nconnection: close\r\n\r\nNot Found"
+    );
+}
+
+#[test]
 fn http_request_parser_valid_and_malformed() {
     if !have_cc() {
         return;
@@ -293,7 +611,7 @@ fn http_response_serializer_bytes_and_validation() {
     let src = r#"(ns s.core)
 (defn kind [f] (try (do (f) :ok) (catch E e (get e :kind))))
 (defn -main []
-  (print (serialize-http-response {:status 200 :headers {:content-type "text/plain"} :body "hi"}))
+  (print (serialize-http-response {:status 200 :headers {:x-b "2" :x-a "1"} :body "hi"}))
   (println "|")
   (print (serialize-http-response {:status 204 :headers {} :body nil}))
   (println "|")
@@ -301,7 +619,7 @@ fn http_response_serializer_bytes_and_validation() {
            (kind (fn [] (serialize-http-response {:status 200 :headers {:x "a\r\nb"} :body nil})))
            (kind (fn [] (serialize-http-response {:status 200 :headers {:content-length "5"} :body nil})))))
 (-main)"#;
-    let expected = "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi|\nHTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n|\n:invalid-status :invalid-header :reserved-header\n";
+    let expected = "HTTP/1.1 200 OK\r\nx-a: 1\r\nx-b: 2\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi|\nHTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n|\n:invalid-status :invalid-header :reserved-header\n";
     assert_eq!(build_and_run("http_serializer", src), expected);
     assert_eq!(
         build_and_run_env("http_serializer_gc", src, &[("CLJN_GC_STRESS", "1")]),

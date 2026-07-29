@@ -336,6 +336,18 @@ pub enum Prim {
     ParseHttpRequest,
     /// Serialize a response map into raw HTTP/1.1 response bytes (ADR-0013 Gate 4).
     SerializeHttpResponse,
+    /// Open a loopback HTTP server on a port (ADR-0013 Gate 4).
+    HttpServerOpen,
+    /// The bound port of an HTTP server handle.
+    HttpServerPort,
+    /// Block for and parse one request from an HTTP server handle.
+    HttpServerAccept,
+    /// Serialize/write a response and close the current connection.
+    HttpServerRespond,
+    /// Close an HTTP server handle (idempotent).
+    HttpServerClose,
+    /// Request a graceful stop of the HTTP service loop.
+    HttpServerStop,
 }
 
 /// Maps built-in dynamic Vars to the C runtime's stable IDs.
@@ -2386,6 +2398,12 @@ fn prim_of(name: &str) -> Option<Prim> {
         "str-split" => Prim::StrSplit,
         "parse-http-request" => Prim::ParseHttpRequest,
         "serialize-http-response" => Prim::SerializeHttpResponse,
+        "http-server-open" => Prim::HttpServerOpen,
+        "http-server-port" => Prim::HttpServerPort,
+        "http-server-accept" => Prim::HttpServerAccept,
+        "http-server-respond" => Prim::HttpServerRespond,
+        "http-server-close" => Prim::HttpServerClose,
+        "http-server-stop" => Prim::HttpServerStop,
         _ => return None,
     })
 }
@@ -2421,6 +2439,11 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::ReadString
         | Prim::ParseHttpRequest
         | Prim::SerializeHttpResponse
+        | Prim::HttpServerOpen
+        | Prim::HttpServerPort
+        | Prim::HttpServerAccept
+        | Prim::HttpServerClose
+        | Prim::HttpServerStop
         | Prim::WriterOpen
         | Prim::ReaderOpen
         | Prim::Close
@@ -2466,6 +2489,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Rename
         | Prim::Div
         | Prim::StrSplit
+        | Prim::HttpServerRespond
         | Prim::Conj => 2,
         Prim::Assoc | Prim::AssocBang => 3,
         Prim::Str
@@ -2535,6 +2559,12 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
+        Prim::HttpServerOpen
+        | Prim::HttpServerPort
+        | Prim::HttpServerAccept
+        | Prim::HttpServerClose
+        | Prim::HttpServerStop => n == 1,
+        Prim::HttpServerRespond => n == 2,
         Prim::Bget | Prim::SpitBytes | Prim::StrSplit => n == 2,
         Prim::WriterOpen | Prim::ReaderOpen | Prim::Close => n == 1,
         Prim::Flush => n == 0,

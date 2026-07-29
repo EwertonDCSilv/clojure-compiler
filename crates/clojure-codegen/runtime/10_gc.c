@@ -214,6 +214,11 @@ static void gc_sweep(void) {
                 if (r->kind == RD_FILE && r->fp) fclose((FILE *)r->fp);
             }
             if (o->type == T_BYTES) free(((Bytes *)o)->data);
+            if (o->type == T_HTTP_SERVER) {
+                HttpServer *hs = (HttpServer *)o;
+                if (hs->conn_fd >= 0) close(hs->conn_fd);   /* descriptor vazado */
+                if (hs->listen_fd >= 0) close(hs->listen_fd);
+            }
             if (o->szc == 0) {
                 free(o); /* Directly allocated large object. */
             } else {

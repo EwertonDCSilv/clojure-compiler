@@ -126,6 +126,24 @@ fn runtime_internal_unit_suite() {
 }
 
 #[test]
+fn runtime_http_parser_serializer_fuzz_suite() {
+    // ADR-0013 Gate 4: strict HTTP parser/serializer over an adversarial corpus
+    // (every prefix of every input, NUL/high bytes, oversize, header injection),
+    // run under ASan/UBSan via `make test-runtime-sanitize`.
+    let source = manifest_dir().join("tests/c/runtime_http.c");
+    let binary = compile("http", &[&source]);
+
+    assert_success(
+        &run(&binary.executable, &[], &[]),
+        "runtime C HTTP fuzz: ok\n",
+    );
+    assert_success(
+        &run(&binary.executable, &[], &[("CLJN_GC_STRESS", "1")]),
+        "runtime C HTTP fuzz: ok\n",
+    );
+}
+
+#[test]
 fn runtime_public_abi_integration_suite() {
     let root = manifest_dir();
     let runtime = root.join("runtime.c");

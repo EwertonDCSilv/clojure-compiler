@@ -30,6 +30,52 @@ tags.
   generic-boundary fallbacks.
 - Add deterministic aggregate lowering metrics through `--ir-stats PATH` and make the
   paired Cormen runner configurable for `safe`-versus-candidate comparisons.
+- Add ADR-0013 Gate 1 static module loading: initialized top-level `def` globals with
+  permanent GC roots, a `--source-path` multi-file namespace graph with transitive
+  `:require` resolution, dependency-cycle and missing-file diagnostics, and an embedded
+  built-in source bundle resolved ahead of local roots.
+- Add per-namespace symbol resolution (namespace-mangled `def`/`defn`, alias and
+  `clojure.core` auto-refer), namespaced keywords, and the `string?`/`int?`/`keyword?`/
+  `vector?`/`map?`/`bytes?` type predicates plus `str-split`.
+- Add the ADR-0013 P0/P1 native connector namespaces `cljn.http.request`,
+  `cljn.http.response`, `cljn.pedestal.chain`, `cljn.pedestal.route`, and
+  `cljn.pedestal.connector`: request/response validation with categorized error maps,
+  a synchronous interceptor chain (`:enter`/`:leave`/`:error`, termination, recovery),
+  a deterministic linear router (`:param` capture, 404/405, ambiguity rejection), and
+  `test-request` sharing the same dispatch path as the network route.
+- Add the strict bounded HTTP/1.x `parse-http-request` and `serialize-http-response`
+  runtime primitives (ADR-0013 Gate 4), rejecting Transfer-Encoding, divergent
+  Content-Length, folded headers, NUL, bare CR/LF, invalid tokens/versions, header
+  injection, and limit overflow.
+- Add the loopback HTTP socket provider (`T_HTTP_SERVER`,
+  `http-server-open`/`-port`/`-accept`/`-respond`/`-close`) with a Clojure-driven
+  synchronous service loop, bounded timed reads, and GC-sweep descriptor cleanup,
+  serving real ephemeral-port loopback requests (ADR-0013 Gate 4).
+- Add a self-pipe `SIGINT`/`SIGTERM` stop mechanism, `http-server-stop`, and the
+  `cljn.pedestal.service` lifecycle (`start!`/`serve!`/`serve-one!`/`server-port`/
+  `stop!`) that drives the connector's shared dispatch over the provider and shuts
+  down cleanly on a signal or a dispatch-path stop (ADR-0013 §3/§6, Gate 5).
+- Add the root `native_http_server.clj` runnable example with loopback health checks
+  and a bounded JSON body-dump endpoint for manual `curl` validation.
+- Emit response headers in deterministic lowercase lexical order and cover the
+  no-descriptor-leak service contract with a multi-request end-to-end test
+  (ADR-0013 Gate 4 acceptance #6, Gate 5).
+- Add the `runtime_http.c` HTTP parser/serializer fuzz harness to the C runtime test
+  suite, exercising an adversarial corpus and every input prefix under ASan/UBSan via
+  `make test-runtime-sanitize`, and an open/close-cycle descriptor-leak end-to-end
+  test (ADR-0013 Gate 4 CI hardening).
+- Add a subprocess start/serve/stop cycle gate (default 200, `CLJN_HTTP_CYCLES=1000`
+  in CI) that verifies repeated full server lifecycles serve one request and exit
+  cleanly with no crash or hang (ADR-0013 Gate 4 acceptance #5/#6).
+- Add a continuous libFuzzer target for the HTTP request parser
+  (`tests/fuzz/http_parse_fuzz.c`) with the `scripts/fuzz-http.sh` runner and the
+  `make fuzz-http` entry point, seeded from the deterministic corpus (ADR-0013 Gate 4).
+- Add a CI `security` job that runs the runtime C harnesses under ASan/UBSan, the
+  1000-cycle HTTP start/serve/stop gate, and an HTTP parser fuzz smoke.
+- Add the active `e.pedestal.native_connector_hello` conformance fixture that builds
+  and runs a native `cljn.pedestal.*` router connector through the in-memory
+  `test-request` dispatch path with no JVM or network, while the upstream
+  `e.pedestal.hello_world_api` fixture stays `pending` (ADR-0013 §11, Gate 5).
 
 ### Changed
 

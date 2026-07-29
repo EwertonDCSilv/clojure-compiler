@@ -1561,3 +1561,6 @@ f76802671c269a960b4f567a8254e9fee0e0e09862e2188ed2c51807e807143e  level-e-ecosys
 bc5e5964c542ae677372d59c9836f22916a04b3a99a5546190f1e038020c7df8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/input.clj
 1715088f15d4fcd66d36486dad98cdc620cef2da0028e13ffca52f5ddf3005d8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/request.http
 bc5e5964c542ae677372d59c9836f22916a04b3a99a5546190f1e038020c7df8  level-e-ecosystem/web-frameworks/pedestal/hello-world-api/src/hello.clj
+2912d2190e73b58e2cba02f31fda8c708cd72c68d25e167dfb0f2cb1f5716648  level-e-ecosystem/web-frameworks/pedestal/native-connector-hello/case.toml
+4a7a33122f786a93ad18ab7a87b6cf9d2d57f109f1f79929e67a565f00150e36  level-e-ecosystem/web-frameworks/pedestal/native-connector-hello/expected.stdout
+8fccd06cc7256c9970113852677a10a3bcc376951b9a295d74433b418ceb5f73  level-e-ecosystem/web-frameworks/pedestal/native-connector-hello/input.clj

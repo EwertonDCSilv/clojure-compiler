@@ -8,3 +8,4 @@ Cargo.lock.orig
 *.obj
 /examples/*.out
 /hello
+crates/clojure-codegen/fuzz-corpus/
