@@ -1,6 +1,6 @@
 # ADR-0011 — Estratégia de testes unitários para os crates Rust
 
-- Status: **accepted**
+- Status: **accepted; implementada** (harnesses de unidade por crate em uso)
 - Data: 2026-07-27
 - Relacionadas: [ADR-0004](0004-macro-execution.md),
   [ADR-0006](0006-codegen-optimization.md),

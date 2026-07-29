@@ -1,6 +1,6 @@
 # ADR-0012 — Modularização dos crates Rust e controle de arquivos gigantes
 
-- Status: **proposta**
+- Status: **parcialmente implementada** (gate de tamanho de arquivo entregue em #109/#124 com baselines *grandfathered*; a extração/split dos módulos gigantes como `analyzer/lib.rs` e `codegen/lib.rs` continua pendente)
 - Data: 2026-07-27
 - Relacionadas: [ADR-0001](0001-code-generation-backend.md),
   [ADR-0004](0004-macro-execution.md),

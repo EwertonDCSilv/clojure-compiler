@@ -131,6 +131,10 @@ tags.
 
 ### Changed
 
+- Refresh every ADR `Status` field to reflect the delivered state: ADR-0001–0008 are
+  accepted and implemented, ADR-0011 and ADR-0016 are implemented, ADR-0012 is
+  partially implemented (file-size gate landed, module extraction pending), and
+  ADR-0013 is accepted with P0/P1 delivered (Gates 1–7) while P2/P3 remain pending.
 - Classify the conformance cases the manual Clojure/JVM 1.12.5 oracle cannot treat
   as equal (ADR-0016): 33 native-only or JVM-rejected cases become
   `oracle = not-applicable` and 11 deliberate representation/ordering/`*out*`-routing
