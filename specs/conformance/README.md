@@ -11,7 +11,7 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **461 cases** — 310 active, 119 expected failures, and 32 pending.
+Current inventory: **461 cases** — 319 active, 110 expected failures, and 32 pending.
 The I/O inventory remains intentionally incremental. Output, flushing, dynamic
 redirection, `slurp`/`spit`, `read-string`, string-backed streams, and the first
 compiled `cljn.io` path/filesystem wrappers have active coverage; the remaining

@@ -1,6 +1,6 @@
 # ADR-0016 — Classify conformance cases for the Clojure/JVM oracle
 
-- Status: **Accepted**
+- Status: **Accepted; implementada** (política aplicada em #94: equal/not-applicable/expected-diff)
 - Date: 2026-07-29
 - Related:
   [ADR-0007](0007-native-io-and-runtime-reader.md),

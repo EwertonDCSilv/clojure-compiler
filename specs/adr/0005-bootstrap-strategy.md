@@ -1,6 +1,6 @@
 # ADR-0005 — Estratégia de bootstrap
 
-- **Status:** Proposto
+- **Status:** Aceito e implementado (interpretador de bootstrap + oracle Clojure/JVM manual)
 - **Contexto:** precisamos de um caminho para ter `clojure.core` e o compilador
   funcionando sem cair em dependência circular nem reescrever toda a stdlib em Rust
   (start_spec §16/§30). A JVM só pode ser usada como **oracle de teste**, nunca no

@@ -52,7 +52,7 @@ Em 2026-07-28, o workspace já possui um corte vertical funcional:
   redirecionamento cobertos pela matriz executável.
 
 O workspace possui uma suíte Rust bloqueante. A matriz em
-[`tests/conformance/`](../tests/conformance) possui 461 casos: 310 ativos, 119 falhas
+[`tests/conformance/`](../tests/conformance) possui 461 casos: 319 ativos, 110 falhas
 esperadas e 32 itens pendentes. Os níveis D e E
 agora combinam recortes executáveis com lacunas `xfail` e projetos `pending`. O gate de
 cobertura exige 82% globais para linhas, funções e regiões, além de 30% de linhas por
@@ -110,8 +110,10 @@ Ordem sugerida:
 14. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
 15. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
     regressão.
-16. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-17. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+16. [TIDY_FIRST.md](TIDY_FIRST.md) — separação de mudanças estruturais e
+    comportamentais para agentes de IA.
+17. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+18. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 

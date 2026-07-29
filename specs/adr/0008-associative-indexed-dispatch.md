@@ -1,6 +1,6 @@
 # ADR-0008 — Dispatch por capacidades para `assoc` e `nth`
 
-- Status: **proposta**
+- Status: **aceita e implementada** (dispatch por capacidades para `assoc` e `nth`)
 - Data: 2026-07-27
 - Relacionadas: [ADR-0002](0002-memory-management.md),
   [ADR-0003](0003-value-representation.md),

@@ -1,6 +1,6 @@
 # ADR-0006 — Otimização do codegen numérico e do rooting de GC
 
-- **Status:** Proposto
+- **Status:** Aceito e implementado (fast paths de fixnum, rooting por safepoint, stores diretos de root)
 - **Contexto:** o backend Cranelift atual representa valores compilados em uma palavra
   tagged, mas envia toda aritmética e comparação à ABI C (`cljn_add`, `cljn_le`,
   `cljn_inc` etc.). Além disso, aplica rooting eager: todo resultado de expressão chama

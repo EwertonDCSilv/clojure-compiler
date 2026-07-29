@@ -14,7 +14,7 @@
   <rect width="1500" height="442" rx="16" fill="#0f172a"/>
   <text x="24" y="42" class="title">Exercism · n=8 · RSS</text>
   <text x="24" y="70" class="subtitle">MiB · log₂</text>
-  <text x="24" y="101" class="summary">P50 CLJN 8.1 MiB · JVM 244.2 MiB · W CLJN/JVM/= 7/1/0</text>
+  <text x="24" y="101" class="summary">P50 CLJN 7.7 MiB · JVM 429.4 MiB · W CLJN/JVM/= 7/1/0</text>
   <circle cx="31" cy="129" r="6" fill="#38bdf8"/>
 <text x="46" y="134" class="subtitle">CLJN</text>
 <path d="M 116 122 L 123 129 L 116 136 L 109 129 Z" fill="#c084fc"/>
@@ -49,58 +49,58 @@
   <rect x="12" y="196" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="196" x2="1488" y2="196" stroke="#1e293b"/>
   <text x="24" y="208.0" class="label" dominant-baseline="middle">01-practice/01-accumulate.clj</text>
-  <line x1="811.8" y1="208.0" x2="1101.5" y2="208.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="811.8" cy="208.0" r="5" fill="#38bdf8"><title>01-practice/01-accumulate.clj: CLJN 8.2 MiB</title></circle>
-  <path d="M 1101.5 202.0 L 1107.5 208.0 L 1101.5 214.0 L 1095.5 208.0 Z" fill="#c084fc"><title>01-practice/01-accumulate.clj: JVM 232.1 MiB</title></path>
-  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 28.4×</text>
+  <line x1="811.5" y1="208.0" x2="1162.4" y2="208.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="811.5" cy="208.0" r="5" fill="#38bdf8"><title>01-practice/01-accumulate.clj: CLJN 8.1 MiB</title></circle>
+  <path d="M 1162.4 202.0 L 1168.4 208.0 L 1162.4 214.0 L 1156.4 208.0 Z" fill="#c084fc"><title>01-practice/01-accumulate.clj: JVM 469.1 MiB</title></path>
+  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 57.6×</text>
   <rect x="12" y="220" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="220" x2="1488" y2="220" stroke="#1e293b"/>
   <text x="24" y="232.0" class="label" dominant-baseline="middle">01-practice/02-binary-search.clj</text>
-  <line x1="661.9" y1="232.0" x2="1041.3" y2="232.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="661.9" cy="232.0" r="5" fill="#38bdf8"><title>01-practice/02-binary-search.clj: CLJN 1.4 MiB</title></circle>
-  <path d="M 1041.3 226.0 L 1047.3 232.0 L 1041.3 238.0 L 1035.3 232.0 Z" fill="#c084fc"><title>01-practice/02-binary-search.clj: JVM 115.8 MiB</title></path>
-  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 80.1×</text>
+  <line x1="666.0" y1="232.0" x2="1102.4" y2="232.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="666.0" cy="232.0" r="5" fill="#38bdf8"><title>01-practice/02-binary-search.clj: CLJN 1.5 MiB</title></circle>
+  <path d="M 1102.4 226.0 L 1108.4 232.0 L 1102.4 238.0 L 1096.4 232.0 Z" fill="#c084fc"><title>01-practice/02-binary-search.clj: JVM 234.6 MiB</title></path>
+  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 154.8×</text>
   <rect x="12" y="244" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="244" x2="1488" y2="244" stroke="#1e293b"/>
   <text x="24" y="256.0" class="label" dominant-baseline="middle">01-practice/03-hello-world.clj</text>
-  <line x1="913.5" y1="256.0" x2="1041.4" y2="256.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="913.5" cy="256.0" r="5" fill="#38bdf8"><title>01-practice/03-hello-world.clj: CLJN 26.4 MiB</title></circle>
-  <path d="M 1041.4 250.0 L 1047.4 256.0 L 1041.4 262.0 L 1035.4 256.0 Z" fill="#c084fc"><title>01-practice/03-hello-world.clj: JVM 115.9 MiB</title></path>
-  <text x="1310" y="256.0" class="value" dominant-baseline="middle">CLJN 4.4×</text>
+  <line x1="804.6" y1="256.0" x2="1026.3" y2="256.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="804.6" cy="256.0" r="5" fill="#38bdf8"><title>01-practice/03-hello-world.clj: CLJN 7.5 MiB</title></circle>
+  <path d="M 1026.3 250.0 L 1032.3 256.0 L 1026.3 262.0 L 1020.3 256.0 Z" fill="#c084fc"><title>01-practice/03-hello-world.clj: JVM 97.3 MiB</title></path>
+  <text x="1310" y="256.0" class="value" dominant-baseline="middle">CLJN 13.0×</text>
   <rect x="12" y="268" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="268" x2="1488" y2="268" stroke="#1e293b"/>
   <text x="24" y="280.0" class="label" dominant-baseline="middle">01-practice/04-knapsack.clj</text>
-  <line x1="1137.3" y1="280.0" x2="1110.1" y2="280.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="1137.3" cy="280.0" r="5" fill="#38bdf8"><title>01-practice/04-knapsack.clj: CLJN 351.1 MiB</title></circle>
-  <path d="M 1110.1 274.0 L 1116.1 280.0 L 1110.1 286.0 L 1104.1 280.0 Z" fill="#c084fc"><title>01-practice/04-knapsack.clj: JVM 256.2 MiB</title></path>
-  <text x="1310" y="280.0" class="value" dominant-baseline="middle">JVM 1.4×</text>
+  <line x1="1275.7" y1="280.0" x2="1146.6" y2="280.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="1275.7" cy="280.0" r="5" fill="#38bdf8"><title>01-practice/04-knapsack.clj: CLJN 1736.1 MiB</title></circle>
+  <path d="M 1146.6 274.0 L 1152.6 280.0 L 1146.6 286.0 L 1140.6 280.0 Z" fill="#c084fc"><title>01-practice/04-knapsack.clj: JVM 390.9 MiB</title></path>
+  <text x="1310" y="280.0" class="value" dominant-baseline="middle">JVM 4.4×</text>
   <rect x="12" y="292" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="292" x2="1488" y2="292" stroke="#1e293b"/>
   <text x="24" y="304.0" class="label" dominant-baseline="middle">01-practice/05-prime-factors.clj</text>
-  <line x1="869.0" y1="304.0" x2="1236.4" y2="304.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="869.0" cy="304.0" r="5" fill="#38bdf8"><title>01-practice/05-prime-factors.clj: CLJN 15.8 MiB</title></circle>
-  <path d="M 1236.4 298.0 L 1242.4 304.0 L 1236.4 310.0 L 1230.4 304.0 Z" fill="#c084fc"><title>01-practice/05-prime-factors.clj: JVM 1102.7 MiB</title></path>
-  <text x="1310" y="304.0" class="value" dominant-baseline="middle">CLJN 69.7×</text>
+  <line x1="868.0" y1="304.0" x2="1218.3" y2="304.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="868.0" cy="304.0" r="5" fill="#38bdf8"><title>01-practice/05-prime-factors.clj: CLJN 15.6 MiB</title></circle>
+  <path d="M 1218.3 298.0 L 1224.3 304.0 L 1218.3 310.0 L 1212.3 304.0 Z" fill="#c084fc"><title>01-practice/05-prime-factors.clj: JVM 894.3 MiB</title></path>
+  <text x="1310" y="304.0" class="value" dominant-baseline="middle">CLJN 57.2×</text>
   <rect x="12" y="316" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="316" x2="1488" y2="316" stroke="#1e293b"/>
   <text x="24" y="328.0" class="label" dominant-baseline="middle">01-practice/06-square-root.clj</text>
-  <line x1="661.9" y1="328.0" x2="1035.2" y2="328.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="661.9" cy="328.0" r="5" fill="#38bdf8"><title>01-practice/06-square-root.clj: CLJN 1.4 MiB</title></circle>
-  <path d="M 1035.2 322.0 L 1041.2 328.0 L 1035.2 334.0 L 1029.2 328.0 Z" fill="#c084fc"><title>01-practice/06-square-root.clj: JVM 107.9 MiB</title></path>
-  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 74.7×</text>
+  <line x1="658.5" y1="328.0" x2="1040.0" y2="328.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="658.5" cy="328.0" r="5" fill="#38bdf8"><title>01-practice/06-square-root.clj: CLJN 1.4 MiB</title></circle>
+  <path d="M 1040.0 322.0 L 1046.0 328.0 L 1040.0 334.0 L 1034.0 328.0 Z" fill="#c084fc"><title>01-practice/06-square-root.clj: JVM 114.0 MiB</title></path>
+  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 82.0×</text>
   <rect x="12" y="340" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="340" x2="1488" y2="340" stroke="#1e293b"/>
   <text x="24" y="352.0" class="label" dominant-baseline="middle">01-practice/07-two-fer.clj</text>
-  <line x1="809.6" y1="352.0" x2="1142.3" y2="352.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="809.6" cy="352.0" r="5" fill="#38bdf8"><title>01-practice/07-two-fer.clj: CLJN 8.0 MiB</title></circle>
-  <path d="M 1142.3 346.0 L 1148.3 352.0 L 1142.3 358.0 L 1136.3 352.0 Z" fill="#c084fc"><title>01-practice/07-two-fer.clj: JVM 371.9 MiB</title></path>
-  <text x="1310" y="352.0" class="value" dominant-baseline="middle">CLJN 46.7×</text>
+  <line x1="809.7" y1="352.0" x2="1162.2" y2="352.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="809.7" cy="352.0" r="5" fill="#38bdf8"><title>01-practice/07-two-fer.clj: CLJN 8.0 MiB</title></circle>
+  <path d="M 1162.2 346.0 L 1168.2 352.0 L 1162.2 358.0 L 1156.2 352.0 Z" fill="#c084fc"><title>01-practice/07-two-fer.clj: JVM 467.8 MiB</title></path>
+  <text x="1310" y="352.0" class="value" dominant-baseline="middle">CLJN 58.7×</text>
   <rect x="12" y="364" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="364" x2="1488" y2="364" stroke="#1e293b"/>
   <text x="24" y="376.0" class="label" dominant-baseline="middle">02-concept/01-annalyns-infiltration.clj</text>
-  <line x1="661.9" y1="376.0" x2="1142.5" y2="376.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
-  <circle cx="661.9" cy="376.0" r="5" fill="#38bdf8"><title>02-concept/01-annalyns-infiltration.clj: CLJN 1.4 MiB</title></circle>
-  <path d="M 1142.5 370.0 L 1148.5 376.0 L 1142.5 382.0 L 1136.5 376.0 Z" fill="#c084fc"><title>02-concept/01-annalyns-infiltration.clj: JVM 372.8 MiB</title></path>
-  <text x="1310" y="376.0" class="value" dominant-baseline="middle">CLJN 257.9×</text>
+  <line x1="658.5" y1="376.0" x2="1182.6" y2="376.0" stroke="#64748b" stroke-width="2" opacity="0.75"/>
+  <circle cx="658.5" cy="376.0" r="5" fill="#38bdf8"><title>02-concept/01-annalyns-infiltration.clj: CLJN 1.4 MiB</title></circle>
+  <path d="M 1182.6 370.0 L 1188.6 376.0 L 1182.6 382.0 L 1176.6 376.0 Z" fill="#c084fc"><title>02-concept/01-annalyns-infiltration.clj: JVM 592.6 MiB</title></path>
+  <text x="1310" y="376.0" class="value" dominant-baseline="middle">CLJN 426.1×</text>
   <text x="24" y="422" class="footer">log₂ · ratio = JVM / CLJN</text>
 </svg>

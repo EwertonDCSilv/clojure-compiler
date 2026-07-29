@@ -10,6 +10,8 @@ The mandatory policies are:
   markers;
 - `specs/TDD_WORKFLOW.md`: failing test first, minimal implementation, refactor while
   green, and broader integration/conformance validation;
+- `specs/TIDY_FIRST.md`: separate small behavior-preserving structural changes from
+  behavior changes, using an independent branch and pull request;
 - `CONTRIBUTING.md`: repository hooks, language linters, and required local gates.
 
 New features also require a pre-existing issue in the `clojure-compiler Roadmap`, a
@@ -21,3 +23,7 @@ issues above 8 story points must be refined into independently estimated tasks f
 Do not weaken tests or change snapshots, fixture statuses, or checksums to hide a
 regression. Run the narrowest test during development, `make pre-commit` before commit,
 and `make pre-push` before handoff.
+
+Classify work before editing. Never combine a tidy and a behavior change in one branch,
+commit, or pull request. If a supposed tidy changes an observable contract, stop and
+follow the feature or bug-fix workflow.

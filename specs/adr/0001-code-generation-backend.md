@@ -1,6 +1,6 @@
 # ADR-0001 — Backend de geração de código
 
-- **Status:** Proposto (a confirmar pelos protótipos #1 e #11 da Fase 0)
+- **Status:** Aceito e implementado (confirmado pelos protótipos #1 e #11; backend Cranelift AOT em produção)
 - **Contexto:** precisamos gerar **código nativo autônomo** (sem JVM) para Linux e
   Windows, mantendo o projeto sustentável por equipe pequena e sem travar um futuro
   `eval`/REPL/JIT. Macros **não** dependem deste backend (rodam no interpretador —

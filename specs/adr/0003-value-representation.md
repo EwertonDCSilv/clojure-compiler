@@ -1,6 +1,6 @@
 # ADR-0003 — Representação de valores
 
-- **Status:** Proposto (a confirmar pelo protótipo #4)
+- **Status:** Aceito e implementado (fixnums, Char/Float, Bytes e ponteiros tagged em produção)
 - **Contexto:** todo valor Clojure em runtime precisa de uma representação uniforme que
   suporte imediatos rápidos (nil/bool/int/float/char), objetos de heap gerenciados pela GC,
   igualdade/hash consistentes, metadata e pattern-matching no runtime Rust. Ver

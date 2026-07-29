@@ -8,8 +8,21 @@ tags.
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
+- Release temporary GC roots when a function with no local root slots returns.
+
+### Added
+- Add the `cljn.io` random-access API (issue #138): `seek!`, `truncate!`, and
+  `position` over file readers/writers, backed by fseek/ftruncate/ftell runtime
+  primitives and `file-reader?`/`file-writer?` predicates, promoting 9 conformance
+  fixtures to `active`.
+
+- Add `make benchmark-page-refresh` to run tests, Native × JVM comparisons, status
+  validation, and deterministic Pages data/chart generation in one Bash workflow.
+- Add Tidy First rules for AI agents, including change classification, isolated
+  branches and pull requests, behavior-preserving evidence, and explicit stop
+  conditions.
 - Add weekly Dependabot updates for Cargo dependencies and GitHub Actions.
 - Add a gradual Rust module-size gate with explicit limits and grandfathered
   baselines that prevent oversized existing files from growing silently.
@@ -128,6 +141,12 @@ tags.
 
 ### Changed
 
+- Update the Cranelift backend crates to 0.134.2, `sha2` to 0.11, and `toml` to
+  1.1, including the required code-generation API migration.
+- Refresh every ADR `Status` field to reflect the delivered state: ADR-0001–0008 are
+  accepted and implemented, ADR-0011 and ADR-0016 are implemented, ADR-0012 is
+  partially implemented (file-size gate landed, module extraction pending), and
+  ADR-0013 is accepted with P0/P1 delivered (Gates 1–7) while P2/P3 remain pending.
 - Classify the conformance cases the manual Clojure/JVM 1.12.5 oracle cannot treat
   as equal (ADR-0016): 33 native-only or JVM-rejected cases become
   `oracle = not-applicable` and 11 deliberate representation/ordering/`*out*`-routing

@@ -1,6 +1,6 @@
 # ADR-0013 — Build the Pedestal-compatible native connector in compiled Clojure
 
-- Status: **proposed**
+- Status: **accepted; P0/P1 implementado** (Gates 1–7: módulos, conector `test-request`, provider HTTP loopback, serviço/roteador, fixture ativa, benchmark, diferencial, inventário); P2/P3 (compilar Pedestal upstream) permanecem pendentes
 - Date: 2026-07-28
 - Baseline: `b3be68d`
 - Related:

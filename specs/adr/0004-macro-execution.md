@@ -1,6 +1,6 @@
 # ADR-0004 — Execução de macros
 
-- **Status:** Proposto
+- **Status:** Aceito e implementado (subconjunto expandido em `expand.rs`: when/when-not/if-not/cond/and/or/->/->>/doto)
 - **Contexto:** macros de Clojure executam **código arbitrário em tempo de compilação**
   (não são substituição sintática — start_spec §30). Precisamos de um mecanismo para rodar
   `defmacro`, syntax-quote, `macroexpand`, e o código de topo necessário ao bootstrap,
