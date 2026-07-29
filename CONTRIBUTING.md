@@ -98,6 +98,14 @@ make lint-c
 make lint-clojure
 ```
 
+`make coverage` writes the machine-readable raw report and its crate/module summary to
+`target/coverage/`. Its versioned baseline is
+[`config/coverage-baseline.json`](config/coverage-baseline.json): lowering a recorded
+metric fails the ratchet. New or changed executable Rust lines must reach 90% coverage;
+non-executable lines are excluded from that calculation. Update a baseline only after
+reviewing the report and documenting the intentional coverage change in the same pull
+request.
+
 `clj-kondo` is installed automatically with a pinned checksum on Linux x86_64. On
 other platforms, set `CLJ_KONDO_BIN` or place it on `PATH`. Set `CC` to choose a
 GCC- or Clang-compatible C compiler.
