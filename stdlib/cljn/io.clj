@@ -288,3 +288,29 @@
   (if (and (file-reader? s) (not (stream-closed s)))
     (position-file s)
     (fail)))
+
+;; --- symbolic links and copy -------------------------------------------------
+
+(defn create-symlink!
+  "Creates a symbolic link `linkpath` pointing at `target`."
+  [target linkpath]
+  (if (and (string? target) (string? linkpath))
+    (guard (fn [] (create-symlink target linkpath)))
+    (fail)))
+
+(defn read-link
+  "Returns the target of a symbolic link."
+  [p]
+  (if (string? p) (guard (fn [] (read-link p))) (fail)))
+
+(defn symlink?
+  "Returns true when the path names a symbolic link."
+  [p]
+  (if (string? p) (native-symlink? p) (fail)))
+
+(defn copy!
+  "Copies the file at `src` to `dst`."
+  [src dst]
+  (if (and (string? src) (string? dst))
+    (guard (fn [] (spit-bytes dst (slurp-bytes src))))
+    (fail)))

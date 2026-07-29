@@ -384,6 +384,9 @@ struct Runtime {
     position_file: FuncId,           // (reader)->fixnum
     file_reader_p: FuncId,           // (x)->bool
     file_writer_p: FuncId,           // (x)->bool
+    create_symlink: FuncId,          // (target,link)->nil
+    read_link: FuncId,               // (path)->string
+    native_symlink_p: FuncId,        // (x)->bool
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -952,6 +955,9 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         position_file: una(m, "cljn_position_file"),
         file_reader_p: una(m, "cljn_file_reader_p"),
         file_writer_p: una(m, "cljn_file_writer_p"),
+        create_symlink: bin(m, "cljn_create_symlink"),
+        read_link: una(m, "cljn_read_link"),
+        native_symlink_p: una(m, "cljn_native_symlink_p"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -1095,6 +1101,8 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::PositionFile
             | Prim::FileReaderP
             | Prim::FileWriterP
+            | Prim::CreateSymlink
+            | Prim::NativeSymlinkP
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3575,6 +3583,9 @@ impl<'a> FnGen<'a> {
             Prim::PositionFile => self.una(self.rt.position_file, args),
             Prim::FileReaderP => self.una(self.rt.file_reader_p, args),
             Prim::FileWriterP => self.una(self.rt.file_writer_p, args),
+            Prim::CreateSymlink => self.bin(self.rt.create_symlink, args),
+            Prim::ReadLink => self.una(self.rt.read_link, args),
+            Prim::NativeSymlinkP => self.una(self.rt.native_symlink_p, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
