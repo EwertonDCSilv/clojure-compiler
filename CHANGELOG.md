@@ -13,6 +13,7 @@ tags.
 - Add Tidy First rules for AI agents, including change classification, isolated
   branches and pull requests, behavior-preserving evidence, and explicit stop
   conditions.
+- Add weekly Dependabot updates for Cargo dependencies and GitHub Actions.
 - Add a gradual Rust module-size gate with explicit limits and grandfathered
   baselines that prevent oversized existing files from growing silently.
 - Add a pull-request template and explicit AI-agent rules requiring issue linkage,
