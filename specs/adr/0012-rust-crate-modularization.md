@@ -110,8 +110,8 @@ revisão. Arquivos existentes acima dele são dívida **grandfathered**: não qu
 imediatamente, mas não podem crescer em saldo líquido, salvo correção urgente acompanhada
 de tracking para extração.
 
-Um script verificará tamanhos de arquivos Rust e manterá uma allowlist versionada com
-baseline e justificativa. O gate falha quando:
+`scripts/check-rust-file-size.sh` verifies Rust source-file sizes using the versioned
+`config/rust-file-size-baseline.json` allowlist. The gate fails when:
 
 - um arquivo novo excede seu limite;
 - um arquivo em dívida cresce além do baseline;

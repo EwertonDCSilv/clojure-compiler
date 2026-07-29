@@ -98,6 +98,10 @@ make lint-c
 make lint-clojure
 ```
 
+`make lint-files` also runs the gradual Rust module-size gate. New files must satisfy
+the ADR-0012 limit for their kind; files in `config/rust-file-size-baseline.json` are
+grandfathered only at their recorded line count and cannot grow silently.
+
 `clj-kondo` is installed automatically with a pinned checksum on Linux x86_64. On
 other platforms, set `CLJ_KONDO_BIN` or place it on `PATH`. Set `CC` to choose a
 GCC- or Clang-compatible C compiler.

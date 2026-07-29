@@ -10,6 +10,8 @@ tags.
 
 ### Added
 
+- Add a gradual Rust module-size gate with explicit limits and grandfathered
+  baselines that prevent oversized existing files from growing silently.
 - Add an AI-agent story-point guard that blocks feature implementation for
   unestimated Roadmap issues, epics, roll-ups, and issues above 8 points, with
   offline tests and fail-closed local commit/push hooks.
