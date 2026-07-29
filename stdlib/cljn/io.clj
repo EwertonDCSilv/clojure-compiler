@@ -24,6 +24,20 @@
   [x]
   (and (int? x) (not (neg? x)) (<= x 255)))
 
+;; A path value is a two-element vector `[:cljn-path "the/string"]`. `path`
+;; is the only constructor; the path-algebra functions require this shape so a
+;; bare string is rejected with `:invalid-input`, mirroring java.nio's Path type.
+
+(defn- path-value?
+  "True when `x` is a path value produced by `path`."
+  [x]
+  (and (vector? x) (= 2 (count x)) (= (nth x 0) :cljn-path)))
+
+(defn- path-str
+  "Returns the underlying string of a path value."
+  [p]
+  (nth p 1))
+
 (defn bytes
   "Builds an immutable byte array from a vector of 0..255 integers."
   [v]
@@ -55,9 +69,10 @@
   (if (bytes? b) (count b) (fail)))
 
 (defn path
-  "Coerces a string to a filesystem path (strings are paths in this subset)."
+  "Coerces a string into a path value. Path-algebra functions require a value
+  produced here rather than a bare string."
   [s]
-  (if (string? s) s (fail)))
+  (if (string? s) [:cljn-path s] (fail)))
 
 (defn exists?
   "Returns true when the path exists."
@@ -75,20 +90,20 @@
   (if (string? p) (file? p) (fail)))
 
 (defn file-name
-  "Returns the final path segment."
+  "Returns the final segment of a path value."
   [p]
-  (if (string? p) (file-name p) (fail)))
+  (if (path-value? p) (file-name (path-str p)) (fail)))
 
 (defn parent
-  "Returns the parent path, or nil at the root."
+  "Returns the parent of a path value, or nil at the root."
   [p]
-  (if (string? p) (parent p) (fail)))
+  (if (path-value? p) (parent (path-str p)) (fail)))
 
 (defn join
-  "Joins a base path with additional string segments."
+  "Joins a base path value with additional string segments."
   [base & segments]
-  (if (string? base)
-    (reduce (fn [acc s] (path-join acc s)) base segments)
+  (if (path-value? base)
+    (reduce (fn [acc s] (path-join acc s)) (path-str base) segments)
     (fail)))
 
 (defn create-directory!
@@ -313,4 +328,91 @@
   [src dst]
   (if (and (string? src) (string? dst))
     (guard (fn [] (spit-bytes dst (slurp-bytes src))))
+    (fail)))
+
+;; --- path algebra ------------------------------------------------------------
+
+(defn absolute?
+  "Returns true when the path value is absolute (leading `/`)."
+  [p]
+  (if (path-value? p) (path-absolute (path-str p)) (fail)))
+
+(defn normalize
+  "Lexically normalizes a path value, collapsing `.` and `..` without touching
+  the filesystem; returns a path value."
+  [p]
+  (if (path-value? p) (path (path-normalize (path-str p))) (fail)))
+
+(defn real-path
+  "Resolves a path value to its canonical form, following symlinks and requiring
+  every component to exist; returns a path value."
+  [p]
+  (if (path-value? p) (guard (fn [] (path (real-path (path-str p))))) (fail)))
+
+;; --- attributes and recursive operations -------------------------------------
+
+(defn attributes
+  "Returns a metadata map for an existing file path (string); raises
+  `:invalid-input` when the path does not exist."
+  [p]
+  (if (and (string? p) (file-exists? p))
+    {:size (file-size p) :directory? (directory? p)}
+    (fail)))
+
+(defn- copy-tree-into
+  "Recursively copies directory `src` into freshly-created `dst`, preserving
+  symbolic links as links and streaming regular files through byte arrays.
+  Assumes `src` is a real directory (validated by the caller)."
+  [src dst]
+  (do
+    (mkdirs dst)
+    (reduce
+      (fn [_ entry]
+        (let [s (path-join src entry)
+              d (path-join dst entry)]
+          (if (native-symlink? s)
+            (create-symlink (read-link s) d)
+            (if (directory? s)
+              (copy-tree-into s d)
+              (spit-bytes d (slurp-bytes s)))))
+        nil)
+      nil
+      (list-dir src))))
+
+(defn copy-tree!
+  "Recursively copies directory `src` to `dst`, preserving symbolic links.
+  Trailing options are accepted. Copying the filesystem root is rejected without
+  touching the filesystem."
+  [src dst & options]
+  (if (and (string? src) (string? dst) (not (= src "/")) (directory? src))
+    (guard (fn [] (copy-tree-into src dst)))
+    (fail)))
+
+(defn- delete-tree-rec
+  "Recursively removes directory `p` and its contents, unlinking symbolic links
+  without following them. Assumes `p` exists (validated by the caller)."
+  [p]
+  (do
+    (reduce
+      (fn [_ entry]
+        (let [c (path-join p entry)]
+          (if (native-symlink? c)
+            (delete-file c)
+            (if (directory? c)
+              (delete-tree-rec c)
+              (delete-file c))))
+        nil)
+      nil
+      (list-dir p))
+    (delete-file p)))
+
+(defn delete-tree!
+  "Recursively deletes directory `p`. With a trailing option, a missing target is
+  ignored instead of raising. Deleting the filesystem root is rejected without
+  touching the filesystem."
+  [p & options]
+  (if (and (string? p) (not (= p "/")))
+    (if (file-exists? p)
+      (guard (fn [] (delete-tree-rec p)))
+      (if (empty? options) (fail) nil))
     (fail)))

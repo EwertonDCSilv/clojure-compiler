@@ -640,6 +640,87 @@ Value cljn_native_symlink_p(Value path) {
     return b2v(ok);
 }
 
+extern char *realpath(const char *path, char *resolved);
+
+/* Predicate: path string is absolute (leading '/'). Pure lexical, no I/O. */
+Value cljn_path_absolute(Value path) {
+    if (obj_type(path) != T_STR) die("absolute?: esperava string");
+    char *cp = io_cstr(path);
+    int ok = cp[0] == '/';
+    free(cp);
+    return b2v(ok);
+}
+
+/* Lexically normalize a path string: collapse "." and resolve ".." against the
+ * accumulated segments without touching the filesystem. Preserves a leading '/'
+ * and returns "." for an empty relative result. Returns a fresh runtime string.
+ * GC: input remains rooted; output allocated after native work completes. */
+Value cljn_path_normalize(Value path) {
+    if (obj_type(path) != T_STR) die("normalize: esperava string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    long len = (long)strlen(cp);
+    int absolute = cp[0] == '/';
+    /* Collect kept segments as [start,end) slices into cp. */
+    long *starts = (long *)malloc(sizeof(long) * (size_t)(len + 1));
+    long *ends = (long *)malloc(sizeof(long) * (size_t)(len + 1));
+    long nseg = 0;
+    long i = 0;
+    while (i < len) {
+        while (i < len && cp[i] == '/') i++;
+        long s = i;
+        while (i < len && cp[i] != '/') i++;
+        long e = i;
+        if (e == s) continue;
+        long slen = e - s;
+        if (slen == 1 && cp[s] == '.') continue;
+        if (slen == 2 && cp[s] == '.' && cp[s + 1] == '.') {
+            if (nseg > 0 && !(ends[nseg - 1] - starts[nseg - 1] == 2 &&
+                              cp[starts[nseg - 1]] == '.' &&
+                              cp[starts[nseg - 1] + 1] == '.')) {
+                nseg--; /* pop a concrete segment */
+                continue;
+            }
+            if (absolute) continue; /* ".." above root is dropped */
+        }
+        starts[nseg] = s;
+        ends[nseg] = e;
+        nseg++;
+    }
+    /* Build result buffer: at most len + 2 bytes. */
+    char *out = (char *)malloc((size_t)len + 2);
+    long w = 0;
+    if (absolute) out[w++] = '/';
+    for (long k = 0; k < nseg; k++) {
+        if (k > 0) out[w++] = '/';
+        for (long j = starts[k]; j < ends[k]; j++) out[w++] = cp[j];
+    }
+    if (w == 0) out[w++] = '.'; /* empty relative result normalizes to "." */
+    free(starts);
+    free(ends);
+    free(cp);
+    cljn_gc_popn(1);
+    Value r = cljn_str_from(out, w);
+    free(out);
+    return r;
+}
+
+/* Resolve a path to its canonical absolute form via realpath(3), following
+ * symlinks and requiring every component to exist. Throws structured I/O
+ * ex-data when the target is missing. GC: input rooted across the call. */
+Value cljn_real_path(Value path) {
+    if (obj_type(path) != T_STR) die("real-path: esperava string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    char buf[4096];
+    char *res = realpath(cp, buf);
+    int e = errno;
+    free(cp);
+    cljn_gc_popn(1);
+    if (res == 0) io_throw(io_kind(e), "real-path", path, e);
+    return cljn_str_from(buf, (long)strlen(buf));
+}
+
 /* Invoke zero-arity thunk with *out* rebound to string capture.
  * Restores *out* and rethrows on exception; returns captured text normally.
  * GC: capture writer and prior *out* remain rooted across the thunk. */
