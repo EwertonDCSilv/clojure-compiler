@@ -324,6 +324,16 @@ pub enum Prim {
     ByteInputP,
     /// Predicate: value is a byte-output stream.
     ByteOutputP,
+    /// Seek a file reader to an absolute offset.
+    SeekFile,
+    /// Truncate a file writer to a length.
+    TruncateFile,
+    /// Return the byte position of a file reader.
+    PositionFile,
+    /// Predicate: value is a file-backed reader.
+    FileReaderP,
+    /// Predicate: value is a file-backed writer.
+    FileWriterP,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2436,6 +2446,11 @@ fn prim_of(name: &str) -> Option<Prim> {
         "read-block!" => Prim::ReadBlock,
         "byte-input?" => Prim::ByteInputP,
         "byte-output?" => Prim::ByteOutputP,
+        "seek-file" => Prim::SeekFile,
+        "truncate-file" => Prim::TruncateFile,
+        "position-file" => Prim::PositionFile,
+        "file-reader?" => Prim::FileReaderP,
+        "file-writer?" => Prim::FileWriterP,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2545,9 +2560,12 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::OutputBytes
         | Prim::ByteInputP
         | Prim::ByteOutputP
+        | Prim::PositionFile
+        | Prim::FileReaderP
+        | Prim::FileWriterP
         | Prim::Vals => 1,
         Prim::ByteOutputStream => 0,
-        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock => 2,
+        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock | Prim::SeekFile | Prim::TruncateFile => 2,
         Prim::StringWriter => 0,
         Prim::UnreadCharTo | Prim::WriteTo => 2,
         Prim::Add
@@ -2658,6 +2676,8 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ByteOutputStream => n == 0,
         Prim::ByteInputStream | Prim::OutputBytes | Prim::ByteInputP | Prim::ByteOutputP => n == 1,
         Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock => n == 2,
+        Prim::PositionFile | Prim::FileReaderP | Prim::FileWriterP => n == 1,
+        Prim::SeekFile | Prim::TruncateFile => n == 2,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
         Prim::HttpServerOpen
         | Prim::HttpServerPort

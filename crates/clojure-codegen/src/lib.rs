@@ -378,6 +378,11 @@ struct Runtime {
     read_block: FuncId,              // (reader,n)->string|bytes
     byte_input_p: FuncId,            // (x)->bool
     byte_output_p: FuncId,           // (x)->bool
+    seek_file: FuncId,               // (reader,n)->nil
+    truncate_file: FuncId,           // (writer,n)->nil
+    position_file: FuncId,           // (reader)->fixnum
+    file_reader_p: FuncId,           // (x)->bool
+    file_writer_p: FuncId,           // (x)->bool
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -941,6 +946,11 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         read_block: bin(m, "cljn_read_block"),
         byte_input_p: una(m, "cljn_byte_input_p"),
         byte_output_p: una(m, "cljn_byte_output_p"),
+        seek_file: bin(m, "cljn_seek_file"),
+        truncate_file: bin(m, "cljn_truncate_file"),
+        position_file: una(m, "cljn_position_file"),
+        file_reader_p: una(m, "cljn_file_reader_p"),
+        file_writer_p: una(m, "cljn_file_writer_p"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -1079,6 +1089,11 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::WriteBytes
             | Prim::ByteInputP
             | Prim::ByteOutputP
+            | Prim::SeekFile
+            | Prim::TruncateFile
+            | Prim::PositionFile
+            | Prim::FileReaderP
+            | Prim::FileWriterP
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3567,6 +3582,11 @@ impl<'a> FnGen<'a> {
             Prim::ReadBlock => self.bin(self.rt.read_block, args),
             Prim::ByteInputP => self.una(self.rt.byte_input_p, args),
             Prim::ByteOutputP => self.una(self.rt.byte_output_p, args),
+            Prim::SeekFile => self.bin(self.rt.seek_file, args),
+            Prim::TruncateFile => self.bin(self.rt.truncate_file, args),
+            Prim::PositionFile => self.una(self.rt.position_file, args),
+            Prim::FileReaderP => self.una(self.rt.file_reader_p, args),
+            Prim::FileWriterP => self.una(self.rt.file_writer_p, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
