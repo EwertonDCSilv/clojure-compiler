@@ -3025,6 +3025,7 @@
     </footer>
 
     <script src="./i18n.js"></script>
+    <script src="./assets/benchmarks/data.js"></script>
     <script>
       const menuButton = document.querySelector(".menu-button");
       const navLinks = document.querySelector("#nav-links");
@@ -3081,9 +3082,7 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cormen/results/extreme.csv",
-          wall: [27.23, 16.95],
-          cpu: [27.09, 32.08],
-          memory: [13.2, 270.8],
+          ...window.benchmarkPageData.cormen,
         },
         cracking: {
           labelKey: "benchmarks.cracking",
@@ -3092,9 +3091,7 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/cracking/results/extreme.csv",
-          wall: [8.05, 23.02],
-          cpu: [7.91, 47.35],
-          memory: [4.6, 114.8],
+          ...window.benchmarkPageData.cracking,
         },
         exercism: {
           labelKey: "benchmarks.exercism",
@@ -3103,9 +3100,7 @@
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/README.md",
           csv:
             "https://github.com/EwertonDCSilv/clojure-compiler/blob/master/benchmarks/exercism/results/extreme.csv",
-          wall: [7.15, 4.43],
-          cpu: [7.12, 8.44],
-          memory: [8.1, 244.2],
+          ...window.benchmarkPageData.exercism,
         },
       };
       const benchmarkMetrics = {

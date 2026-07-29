@@ -69,6 +69,7 @@ help:
 		"  benchmarks-cormen-ir     Executa o gate A/B da IR opcional no Cormen" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
 		"  benchmarks-compare       Compara as três suítes com Clojure/JVM AOT" \
+		"  benchmark-page-refresh   Testa, mede Native × JVM e atualiza a página" \
 		"  exercism-compatibility   Audita 101 práticas, 13 conceitos e 493 arquivos Exercism" \
 		"  install                  Instala clojure-native em ~/.local/bin" \
 		"  all                      Executa qualidade, cobertura, compatibilidade e benchmarks" \
@@ -195,6 +196,7 @@ test-coverage-report:
 
 test-benchmark-page-refresh:
 	tests/scripts/refresh-benchmark-page.sh
+	tests/scripts/render-benchmark-page-data.sh
 
 coverage: test-coverage-report
 	scripts/coverage.sh $(COVERAGE_ARGS)
