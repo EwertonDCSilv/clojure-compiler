@@ -280,6 +280,12 @@ pub enum Prim {
     BytesToString,
     /// Read one byte by index.
     Bget,
+    /// Builds an immutable byte array from a vector of 0..255 fixnums.
+    BytesOfVec,
+    /// Converts an immutable byte array to a vector of 0..255 fixnums.
+    BytesToVec,
+    /// Returns whether an immutable byte array holds well-formed UTF-8.
+    ValidUtf8,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2369,6 +2375,9 @@ fn prim_of(name: &str) -> Option<Prim> {
         "bytes" => Prim::Bytes,
         "bytes->string" => Prim::BytesToString,
         "bget" => Prim::Bget,
+        "bytes-of-vec" => Prim::BytesOfVec,
+        "bytes->vec" => Prim::BytesToVec,
+        "valid-utf8?" => Prim::ValidUtf8,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2435,6 +2444,9 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::Parent
         | Prim::Bytes
         | Prim::BytesToString
+        | Prim::BytesOfVec
+        | Prim::BytesToVec
+        | Prim::ValidUtf8
         | Prim::SlurpBytes
         | Prim::ReadString
         | Prim::ParseHttpRequest
@@ -2558,6 +2570,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
+        Prim::BytesOfVec | Prim::BytesToVec | Prim::ValidUtf8 => n == 1,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
         Prim::HttpServerOpen
         | Prim::HttpServerPort

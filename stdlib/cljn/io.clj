@@ -19,6 +19,41 @@
   [f]
   (try (f) (catch IOException _error (fail))))
 
+(defn- a-byte?
+  "True when `x` is an integer in the inclusive 0..255 byte range."
+  [x]
+  (and (int? x) (not (neg? x)) (<= x 255)))
+
+(defn bytes
+  "Builds an immutable byte array from a vector of 0..255 integers."
+  [v]
+  (if (and (vector? v) (every? a-byte? v)) (bytes-of-vec v) (fail)))
+
+(defn bytes?
+  "Returns true when `b` is an immutable byte array."
+  [b]
+  (bytes? b))
+
+(defn bytes->string
+  "Decodes a byte array as UTF-8 text, raising on invalid UTF-8."
+  [b]
+  (if (and (bytes? b) (valid-utf8? b)) (bytes->string b) (fail)))
+
+(defn bytes->vector
+  "Returns a vector of the 0..255 integers in a byte array."
+  [b]
+  (if (bytes? b) (bytes->vec b) (fail)))
+
+(defn string->bytes
+  "Encodes a string as its UTF-8 byte array."
+  [s]
+  (if (string? s) (bytes s) (fail)))
+
+(defn byte-count
+  "Returns the number of bytes in a byte array."
+  [b]
+  (if (bytes? b) (count b) (fail)))
+
 (defn path
   "Coerces a string to a filesystem path (strings are paths in this subset)."
   [s]
