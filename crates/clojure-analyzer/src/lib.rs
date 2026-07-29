@@ -308,6 +308,22 @@ pub enum Prim {
     BytesToVec,
     /// Returns whether an immutable byte array holds well-formed UTF-8.
     ValidUtf8,
+    /// Byte input stream over an immutable byte array.
+    ByteInputStream,
+    /// Byte output stream accumulating bytes.
+    ByteOutputStream,
+    /// Read up to n bytes from a byte-input stream.
+    ReadBytes,
+    /// Write a byte array to a byte-output stream.
+    WriteBytes,
+    /// Return the accumulated bytes of a byte-output stream.
+    OutputBytes,
+    /// Read a block of items from a reader.
+    ReadBlock,
+    /// Predicate: value is a byte-input stream.
+    ByteInputP,
+    /// Predicate: value is a byte-output stream.
+    ByteOutputP,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2412,6 +2428,14 @@ fn prim_of(name: &str) -> Option<Prim> {
         "bytes-of-vec" => Prim::BytesOfVec,
         "bytes->vec" => Prim::BytesToVec,
         "valid-utf8?" => Prim::ValidUtf8,
+        "byte-input-stream" => Prim::ByteInputStream,
+        "byte-output-stream" => Prim::ByteOutputStream,
+        "read-bytes" => Prim::ReadBytes,
+        "write-bytes!" => Prim::WriteBytes,
+        "output-bytes" => Prim::OutputBytes,
+        "read-block!" => Prim::ReadBlock,
+        "byte-input?" => Prim::ByteInputP,
+        "byte-output?" => Prim::ByteOutputP,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2517,7 +2541,13 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::ReadLineFrom
 | Prim::FlushWriter
         | Prim::CloseableP
+        | Prim::ByteInputStream
+        | Prim::OutputBytes
+        | Prim::ByteInputP
+        | Prim::ByteOutputP
         | Prim::Vals => 1,
+        Prim::ByteOutputStream => 0,
+        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock => 2,
         Prim::StringWriter => 0,
         Prim::UnreadCharTo | Prim::WriteTo => 2,
         Prim::Add
@@ -2625,6 +2655,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
         Prim::BytesOfVec | Prim::BytesToVec | Prim::ValidUtf8 => n == 1,
+        Prim::ByteOutputStream => n == 0,
+        Prim::ByteInputStream | Prim::OutputBytes | Prim::ByteInputP | Prim::ByteOutputP => n == 1,
+        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock => n == 2,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
         Prim::HttpServerOpen
         | Prim::HttpServerPort

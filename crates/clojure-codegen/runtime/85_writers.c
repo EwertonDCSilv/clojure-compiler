@@ -214,8 +214,8 @@ Value cljn_writer_p(Value x) { return b2v(obj_type(x) == T_WRITER); }
    stream, which cljn.io/close! must reject). */
 Value cljn_closeable_p(Value x) {
     int t = obj_type(x);
-    if (t == T_READER) { int64_t k = ((Reader *)x)->kind; return b2v(k == RD_STRING || k == RD_FILE); }
-    if (t == T_WRITER) { int64_t k = ((Writer *)x)->kind; return b2v(k == WR_STRING || k == WR_FILE); }
+    if (t == T_READER) { int64_t k = ((Reader *)x)->kind; return b2v(k == RD_STRING || k == RD_FILE || k == RD_BYTES); }
+    if (t == T_WRITER) { int64_t k = ((Writer *)x)->kind; return b2v(k == WR_STRING || k == WR_FILE || k == WR_BYTES); }
     return b2v(0);
 }
 
