@@ -348,3 +348,71 @@
   every component to exist; returns a path value."
   [p]
   (if (path-value? p) (guard (fn [] (path (real-path (path-str p))))) (fail)))
+
+;; --- attributes and recursive operations -------------------------------------
+
+(defn attributes
+  "Returns a metadata map for an existing file path (string); raises
+  `:invalid-input` when the path does not exist."
+  [p]
+  (if (and (string? p) (file-exists? p))
+    {:size (file-size p) :directory? (directory? p)}
+    (fail)))
+
+(defn- copy-tree-into
+  "Recursively copies directory `src` into freshly-created `dst`, preserving
+  symbolic links as links and streaming regular files through byte arrays.
+  Assumes `src` is a real directory (validated by the caller)."
+  [src dst]
+  (do
+    (mkdirs dst)
+    (reduce
+      (fn [_ entry]
+        (let [s (path-join src entry)
+              d (path-join dst entry)]
+          (if (native-symlink? s)
+            (create-symlink (read-link s) d)
+            (if (directory? s)
+              (copy-tree-into s d)
+              (spit-bytes d (slurp-bytes s)))))
+        nil)
+      nil
+      (list-dir src))))
+
+(defn copy-tree!
+  "Recursively copies directory `src` to `dst`, preserving symbolic links.
+  Trailing options are accepted. Copying the filesystem root is rejected without
+  touching the filesystem."
+  [src dst & options]
+  (if (and (string? src) (string? dst) (not (= src "/")) (directory? src))
+    (guard (fn [] (copy-tree-into src dst)))
+    (fail)))
+
+(defn- delete-tree-rec
+  "Recursively removes directory `p` and its contents, unlinking symbolic links
+  without following them. Assumes `p` exists (validated by the caller)."
+  [p]
+  (do
+    (reduce
+      (fn [_ entry]
+        (let [c (path-join p entry)]
+          (if (native-symlink? c)
+            (delete-file c)
+            (if (directory? c)
+              (delete-tree-rec c)
+              (delete-file c))))
+        nil)
+      nil
+      (list-dir p))
+    (delete-file p)))
+
+(defn delete-tree!
+  "Recursively deletes directory `p`. With a trailing option, a missing target is
+  ignored instead of raising. Deleting the filesystem root is rejected without
+  touching the filesystem."
+  [p & options]
+  (if (and (string? p) (not (= p "/")))
+    (if (file-exists? p)
+      (guard (fn [] (delete-tree-rec p)))
+      (if (empty? options) (fail) nil))
+    (fail)))
