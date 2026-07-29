@@ -21,6 +21,25 @@ into a dated version section without rewriting historical releases. Changelog-on
 release-bookkeeping commits do not need a self-referential entry. The staged
 pre-commit hook enforces this policy.
 
+## Feature issues, branches, and pull requests
+
+New features must be registered before implementation:
+
+1. create an issue in
+   [`EwertonDCSilv/clojure-compiler`](https://github.com/EwertonDCSilv/clojure-compiler/issues);
+2. add the issue to the public
+   [`clojure-compiler Roadmap`](https://github.com/users/EwertonDCSilv/projects/2);
+3. branch from the current `master` as
+   `feature/<issue-number>-<semantic-description>`;
+4. keep commits on that branch and run the gates required by the affected subsystem;
+5. open a pull request targeting `master` that references the issue; and
+6. merge the feature only through the pull request.
+
+Use lowercase kebab case for the semantic description, such as
+`feature/8-pedestal-syntax-support`. Update the issue and project before expanding the
+feature beyond its registered scope. Direct feature implementation or direct feature
+pushes on `master` are not accepted.
+
 ## Enable the repository hooks
 
 Run this once in each checkout:

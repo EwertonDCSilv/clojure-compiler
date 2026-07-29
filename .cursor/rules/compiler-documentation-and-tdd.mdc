@@ -12,3 +12,7 @@ In particular, read @specs/DOCUMENTATION_STYLE.md before changing technical
 documentation or source comments, and follow @specs/TDD_WORKFLOW.md for every
 behavior-changing implementation. Use Red–Green–Refactor, preserve unrelated work, and
 run the validation commands required by the affected subsystem.
+
+Before implementing a new feature, require its issue in the `clojure-compiler Roadmap`,
+create `feature/<issue-number>-<semantic-description>` from `master`, and deliver it
+through a pull request to `master` as specified by @AGENTS.md.
