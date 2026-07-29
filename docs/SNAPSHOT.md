@@ -39,27 +39,27 @@ como concluídas neste snapshot.
 ## Benchmark de referência
 
 As medições Native e Clojure/JVM foram refeitas no commit
-[`424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164).
-Cracking e Cormen usam escala 25×; Exercism usa escala 5×. O compilador nativo usa
-Cranelift `--opt-level none`, enquanto o outro caminho usa Clojure 1.12.5 sobre Java
-21. O snapshot registra uma execução completa de cada suíte: serve para triagem de
-regressões, não como afirmação estatística controlada.
+[`a1ecebd`](https://github.com/EwertonDCSilv/clojure-compiler/commit/a1ecebd).
+As três suítes usam escala 25×. O compilador nativo usa Cranelift
+`--opt-level none`, enquanto o outro caminho usa Clojure 1.12.5 sobre Java 21. O
+snapshot publica a mediana por caso de dez execuções completas de cada suíte e retém
+as amostras brutas em `target/` durante a geração.
 
 | Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 8,05 / 23,02 s | 7,91 / 47,35 s | 4,6 / 114,8 MiB |
-| Cormen/CLRS | 27,23 / 16,95 s | 27,09 / 32,08 s | 13,2 / 270,8 MiB |
-| Exercism | 7,15 / 4,43 s | 7,12 / 8,44 s | 8,1 / 244,2 MiB |
+| Cracking | 8,23 / 23,18 s | 8,06 / 49,68 s | 4,6 / 117,2 MiB |
+| Cormen/CLRS | 30,60 / 16,74 s | 30,38 / 31,82 s | 13,2 / 270,2 MiB |
+| Exercism | 35,05 / 8,48 s | 35,00 / 12,47 s | 7,7 / 430,9 MiB |
 
 Todos os 98 casos terminaram com status `OK` e checksums Native/JVM equivalentes. Os
 detalhes por caso estão nos relatórios
 [Cracking](../benchmarks/cracking/results/README.md),
 [Cormen](../benchmarks/cormen/results/README.md) e
 [Exercism](../benchmarks/exercism/results/README.md).
-O total de parede nativo do Cormen ficou 9,4% abaixo do snapshot imediatamente
-anterior, enquanto todos os checksums permaneceram estáveis. Uma rodada única não
-separa ruído ambiental de ganho real; o gate pareado definido na ADR-0014 continua
-sendo a referência para promover uma otimização.
+A mediana de parede nativa do Cormen ficou 11,7% abaixo do pico publicado
+imediatamente anterior, enquanto todos os checksums permaneceram estáveis. O gate
+pareado definido na ADR-0014 continua sendo a referência para promover ou atribuir
+uma otimização.
 
 ## Como conferir o marcador
 

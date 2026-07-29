@@ -23,14 +23,15 @@ It is a compatibility inventory and is not part of this performance report.
 
 | Component | Revision |
 | --- | --- |
-| Compiler checkout used for performance and compatibility | `424ba20e88fd91a641675e4d9d9bf111c63fc164` |
-| Measurement date | 2026-07-28 |
+| Compiler checkout used for performance | `a1ecebd` |
+| Measurement date | 2026-07-29 |
 | [`exercism/clojure`](https://github.com/exercism/clojure) | [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190) |
 | Clojure/JVM | 1.12.5, AOT with HotSpot enabled |
-| Internal load multiplier | 5× |
+| Internal load multiplier | 25× |
 
-The documentation/results commit is necessarily newer than the measured compiler
-baseline.
+The performance CSV contains per-case medians from ten complete rounds. The
+compatibility inventory remains associated with its separately documented upstream
+and compiler snapshots.
 
 ## Environment
 
@@ -63,19 +64,20 @@ baseline.
 ## Performance result
 
 - 8/8 workloads produced identical Native and JVM checksums.
-- Accumulated wall time: Native `7.15 s`, JVM `4.43 s`.
-- Accumulated CPU time: Native `7.12 s`, JVM `8.44 s`.
-- Native used less wall time in 4 cases and less CPU in 6 cases.
+- Accumulated wall time: Native `35.05 s`, JVM `8.48 s`.
+- Accumulated CPU time: Native `35.00 s`, JVM `12.47 s`.
+- Native used less wall time in 1 case and less CPU in 3 cases.
 - Native used less RSS in 7 cases. `knapsack` remains the exception at
-  `351.1 MiB` natively versus `256.2 MiB` on the JVM.
-- Median RSS: Native `8.1 MiB`, JVM `244.2 MiB`.
-- `prime-factors` remains the main native deficit: `3.84 s` versus `1.21 s` wall time.
+  `1,736.2 MiB` natively versus `396.5 MiB` on the JVM.
+- Median RSS: Native `7.7 MiB`, JVM `430.9 MiB`.
+- `prime-factors` remains the main native deficit: `18.84 s` versus `3.41 s` wall time.
 - The newly promoted `annalyns-infiltration` workload completed with matching
-  checksum; Native used `1.12 s` versus `0.61 s` JVM wall time.
+  checksum; Native used `5.58 s` versus `1.26 s` JVM wall time.
 
 The accumulated wall result favors the JVM because `prime-factors`, `knapsack`, and
-`annalyns-infiltration` dominate this small suite. Accumulated CPU and median memory
-favor Native. This is an engineering baseline, not a general performance claim.
+`annalyns-infiltration` dominate this small suite. Median memory favors Native. This
+is an engineering baseline, not a general performance claim. The older 5× snapshot
+must not be compared numerically with this 25× result.
 
 ## Charts
 
@@ -98,11 +100,11 @@ Native.
 
 | Caso | Tempo N/J (s) | Δ tempo | CPU N/J (s) | Δ CPU | RSS N/J (MiB) | Δ RSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `01-practice/01-accumulate.clj` | 0.18 / 0.44 | -59.1% | 0.17 / 0.91 | -81.3% | 8.2 / 232.1 | -96.5% |
-| `01-practice/02-binary-search.clj` | 0.11 / 0.36 | -69.4% | 0.11 / 0.79 | -86.1% | 1.4 / 115.8 | -98.8% |
-| `01-practice/03-hello-world.clj` | 0.26 / 0.35 | -25.7% | 0.25 / 0.78 | -67.9% | 26.4 / 115.9 | -77.2% |
-| `01-practice/04-knapsack.clj` | 1.06 / 0.59 | +79.7% | 1.05 / 1.25 | -16.0% | 351.1 / 256.2 | +37.0% |
-| `01-practice/05-prime-factors.clj` | 3.84 / 1.21 | +217.4% | 3.84 / 1.78 | +115.7% | 15.8 / 1102.7 | -98.6% |
-| `01-practice/06-square-root.clj` | 0.04 / 0.34 | -88.2% | 0.04 / 0.79 | -94.9% | 1.4 / 107.9 | -98.7% |
-| `01-practice/07-two-fer.clj` | 0.54 / 0.53 | +1.9% | 0.54 / 1.03 | -47.6% | 8.0 / 371.9 | -97.9% |
-| `02-concept/01-annalyns-infiltration.clj` | 1.12 / 0.61 | +83.6% | 1.12 / 1.11 | +0.9% | 1.4 / 372.8 | -99.6% |
+| `01-practice/01-accumulate.clj` | 0.90 / 0.70 | +27.7% | 0.90 / 1.19 | -24.4% | 8.1 / 465.3 | -98.3% |
+| `01-practice/02-binary-search.clj` | 0.58 / 0.46 | +26.1% | 0.58 / 0.88 | -34.1% | 1.4 / 232.8 | -99.4% |
+| `01-practice/03-hello-world.clj` | 0.79 / 0.33 | +139.4% | 0.79 / 0.71 | +10.5% | 7.5 / 94.8 | -92.1% |
+| `01-practice/04-knapsack.clj` | 5.26 / 1.14 | +363.4% | 5.25 / 1.79 | +192.8% | 1736.2 / 396.5 | +337.8% |
+| `01-practice/05-prime-factors.clj` | 18.84 / 3.41 | +452.6% | 18.82 / 4.00 | +371.1% | 15.8 / 961.9 | -98.4% |
+| `01-practice/06-square-root.clj` | 0.23 / 0.36 | -36.1% | 0.23 / 0.78 | -70.3% | 1.4 / 115.6 | -98.8% |
+| `01-practice/07-two-fer.clj` | 2.87 / 0.82 | +250.0% | 2.86 / 1.34 | +113.4% | 7.9 / 467.8 | -98.3% |
+| `02-concept/01-annalyns-infiltration.clj` | 5.58 / 1.26 | +342.9% | 5.57 / 1.78 | +211.8% | 1.4 / 593.2 | -99.8% |

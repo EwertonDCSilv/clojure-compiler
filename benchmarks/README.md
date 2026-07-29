@@ -371,19 +371,20 @@ make benchmarks-compare-exercism EXERCISM_COMPARE_ARGS="--scale 5"
 
 ## Consulte os resultados
 
-Snapshot medido em 2026-07-28 no compilador `424ba20`, com ambos os lados refeitos:
+Snapshot medido em 2026-07-29 no compilador `a1ecebd`, com medianas por caso de dez
+rodadas completas:
 
 | Suíte | Parede Native/JVM | CPU Native/JVM | RSS mediano Native/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 8,05 / 23,02 s | 7,91 / 47,35 s | 4,6 / 114,8 MiB |
-| Cormen/CLRS | 27,23 / 16,95 s | 27,09 / 32,08 s | 13,2 / 270,8 MiB |
-| Exercism | 7,15 / 4,43 s | 7,12 / 8,44 s | 8,1 / 244,2 MiB |
+| Cracking | 8,23 / 23,18 s | 8,06 / 49,68 s | 4,6 / 117,2 MiB |
+| Cormen/CLRS | 30,60 / 16,74 s | 30,38 / 31,82 s | 13,2 / 270,2 MiB |
+| Exercism | 35,05 / 8,48 s | 35,00 / 12,47 s | 7,7 / 430,9 MiB |
 
 Os 98 casos terminaram com status `OK` e checksums equivalentes.
-No Cormen, o tempo de parede nativo agregado caiu 9,4% frente à rodada anterior.
-Como os números são snapshots únicos, a variação continua subordinada ao gate pareado da
-[ADR-0014](../specs/adr/0014-optional-optimization-ir.md), não como causalidade
-atribuída.
+No Cormen, a mediana reduziu em 11,7% o pico do artefato anterior, mas ficou 12,4%
+acima do snapshot de uma rodada em `424ba20`. Essa diferença continua subordinada ao
+gate pareado da [ADR-0014](../specs/adr/0014-optional-optimization-ir.md), não como
+causalidade atribuída.
 
 | Suíte | Relatório comentado | CSV comparativo de referência |
 | --- | --- | --- |
