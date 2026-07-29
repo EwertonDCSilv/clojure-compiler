@@ -1,4 +1,8 @@
-## Issue
+<!-- Title: #<issue>: <behavior> (<measurable result>) when a concise metric exists. -->
+
+## Delivery
+
+<!-- State the delivery slice and parent issue when applicable. -->
 
 Closes #
 
@@ -7,9 +11,13 @@ Closes #
 - [ ] This PR implements only the linked issue.
 - [ ] Any material scope change is recorded on the issue and Roadmap item.
 
-## Changes
+## Runtime / Functions
 
-<!-- Describe observable behavior, implementation boundaries, and non-goals. -->
+<!-- Describe the affected runtime/API surface, or write Not applicable. -->
+
+## Result
+
+<!-- Record exact fixtures, checks, sanitizer and benchmark evidence. -->
 
 ## Validation
 
@@ -22,3 +30,5 @@ Closes #
 ## TDD exception or baseline failures
 
 <!-- State `None` or explain why failing-first did not apply and any unrelated failures. -->
+
+<!-- Do not add labels unless the user explicitly requests them. -->
