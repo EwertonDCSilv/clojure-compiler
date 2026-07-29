@@ -102,9 +102,12 @@ path-copying.
 `mapv`, `into` e acumuladores cuja unicidade é provada usam o vetor transient estrutural
 durante a construção e voltam à representação persistente na fronteira de escape.
 
-O GC é preciso, não móvel e single-thread. Cada função abre um frame de shadow stack com
-`cljn_gc_enter` e o encerra com `cljn_gc_leave`; slots intermediários são atualizados por
-load/store direto. O coletor não escaneia a pilha nativa.
+The GC is precise, non-moving, and single-threaded. Functions with local slots or a
+temporarily rooted heap result open a shadow-stack frame with `cljn_gc_enter` and close
+it with `cljn_gc_leave`; proven balanced zero-slot functions omit the frame according
+to [ADR-0017](adr/0017-selective-zero-slot-gc-frames.md). Generated code updates
+intermediate slots through direct loads and stores. The collector does not scan the
+native stack.
 
 ## Componentes planejados
 

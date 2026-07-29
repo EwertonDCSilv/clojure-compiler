@@ -151,7 +151,9 @@ O coletor atual é tracing mark-sweep preciso, não móvel e single-thread. Ele 
 escaneia conservadoramente a pilha nativa: o codegen mantém referências vivas em uma
 shadow stack.
 
-- Entrada e saída de função delimitam o frame de roots.
+- Functions with local slots or a temporarily rooted heap result delimit the root
+  frame; proven balanced zero-slot functions omit it according to
+  [ADR-0017](adr/0017-selective-zero-slot-gc-frames.md).
 - Slots locais e temporários são atualizados por loads/stores diretos no código gerado.
 - `gc_push`, `gc_popn` e `gc_set` continuam no runtime por compatibilidade, mas não são
   importados pelo novo objeto para o caminho comum.

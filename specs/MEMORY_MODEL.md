@@ -102,11 +102,13 @@ Testes de stress/ciclos/retenção e uso de **Miri** nos blocos `unsafe` do GC �
 **coletor mark-sweep preciso, não-móvel, single-thread com shadow-stack de roots**
 descrito acima:
 
-- **Roots**: o código gerado (`clojure-codegen`) mantém uma shadow stack — cada função
-  reserva `local_count` slots via `cljn_gc_enter`/`leave`. Locais e temporários usam
-  loads/stores diretos em `gc_stack`/`gc_sp`; o objeto gerado não importa
-  `cljn_gc_push`, `cljn_gc_popn` nem `cljn_gc_set` no caminho comum. O coletor varre
-  `[0, gc_sp)` e **nunca** escaneia a pilha nativa.
+- **Roots**: generated code (`clojure-codegen`) maintains a shadow stack. Functions
+  with local slots or a temporarily rooted heap result delimit a frame through
+  `cljn_gc_enter`/`leave`; proven balanced zero-slot functions omit both according to
+  [ADR-0017](adr/0017-selective-zero-slot-gc-frames.md). Locals and temporaries use
+  direct loads/stores in `gc_stack`/`gc_sp`; generated objects do not import
+  `cljn_gc_push`, `cljn_gc_popn`, or `cljn_gc_set` on the common path. The collector
+  scans `[0, gc_sp)` and **never** scans the native stack.
 - **Objetos** têm header (`mark` + lista global) para o sweep; `mark` itera a cauda de
   listas (não recursa) para não estourar a pilha em listas longas.
 - **Gatilho**: a cada `N` alocações; `CLJN_GC_STRESS=1` coleta a cada alocação

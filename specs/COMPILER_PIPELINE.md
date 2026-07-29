@@ -76,7 +76,9 @@ functions to Cranelift IR and emits one host object.
 - Higher-order calls use indirect-call signatures.
 - Common integer arithmetic and comparisons have guarded fast paths.
 - General or invalid cases call checked C ABI slow paths.
-- Each function owns a fixed shadow-stack root frame.
+- Functions with fixed root slots or an unbalanced heap result own a shadow-stack
+  frame; proven balanced zero-slot functions omit it according to
+  [ADR-0017](adr/0017-selective-zero-slot-gc-frames.md).
 - Heap values live across allocation remain in root slots.
 - Immediate-only vector literals use a permanently rooted site cache.
 

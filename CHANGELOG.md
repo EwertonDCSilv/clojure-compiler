@@ -186,6 +186,9 @@ tags.
 
 ### Performance
 
+- Elide zero-slot shadow-stack frames for rootless functions whose temporary-root
+  accounting is balanced, while preserving frame cleanup for heap results (issue
+  #149, ADR-0017).
 - Refresh all 98 Native versus Clojure/JVM measurements at `424ba20`, regenerate the
   report and GitHub Pages charts, and preserve matching checksums. Cormen native wall
   time fell from 30.06 s to 27.23 s and CPU from 29.95 s to 27.09 s in the new
