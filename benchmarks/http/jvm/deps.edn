@@ -1,0 +1,11 @@
+;; Pinned Clojure/JVM classpath for the ADR-0013 Gate 6 HTTP benchmark.
+;;
+;; The versions are frozen so the comparison is reproducible: the same Pedestal
+;; beta and http-kit release that the upstream Level E fixture
+;; (e.pedestal.hello_world_api) targets. Resolution needs network access to
+;; Clojars and Maven Central and therefore runs manually, outside CI, exactly
+;; like the manual JVM conformance oracle.
+{:paths ["src"]
+ :deps {io.pedestal/pedestal.http-kit {:mvn/version "0.8.2-beta-10"}
+        org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
+ :aliases {:server {:main-opts ["-m" "greet-server"]}}}
