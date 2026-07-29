@@ -190,7 +190,7 @@ outras plataformas, instale `clj-kondo` e exponha o executável no `PATH` ou em
 dois cores de bootstrap, exemplos, benchmarks de algoritmos e o oracle JVM são
 verificados com warnings tratados como erro.
 
-A matriz executável de compatibilidade contém atualmente 460 casos catalogados nos
+A matriz executável de compatibilidade contém atualmente 461 casos catalogados nos
 níveis A–E. As contagens correntes de ativos e falhas esperadas são produzidas por
 `make compatibility`. Os níveis D e E
 agora incluem recortes executáveis de bibliotecas puras e aplicações autônomas, além de

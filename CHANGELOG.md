@@ -102,6 +102,9 @@ tags.
   candidate, and the decision that compiling upstream Pedestal (P2) is not useful
   until general Java interop, an async model, and user macros exist — no P3 work is
   proposed.
+- Auto-load compiler-owned `cljn.io` and `cljn.process` modules for qualified calls
+  without `:require`, exposing the path/filesystem wrappers backed by existing
+  ADR-0007 primitives and stable `:invalid-input` data errors (issue #103).
 
 ### Changed
 

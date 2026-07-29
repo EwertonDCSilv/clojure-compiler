@@ -1,13 +1,13 @@
 id = "c.cljn_io.create_directory_.boundary"
 level = "C"
 area = "stdlib/cljn-io/filesystem"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = true
-reason = "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+reason = "Implemented by compiled cljn.io/cljn.process wrappers over ADR-0007 primitives (issue #103)."
 tracking = "specs/IO_SPEC.md"
 namespace = "cljn.io"
 [run]

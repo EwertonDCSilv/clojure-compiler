@@ -16,6 +16,11 @@ const CORE_COMPILED: &str = include_str!("core_compiled.clj");
 /// Compiler-owned built-in namespaces, embedded and resolved ahead of any local
 /// `--source-path` root (ADR-0013 §8). Offline and deterministic.
 const BUILTIN_MODULES: &[(&str, &str)] = &[
+    ("cljn.io", include_str!("../../../stdlib/cljn/io.clj")),
+    (
+        "cljn.process",
+        include_str!("../../../stdlib/cljn/process.clj"),
+    ),
     (
         "cljn.http.request",
         include_str!("../../../stdlib/cljn/http/request.clj"),
@@ -135,6 +140,45 @@ fn parse_requires(forms: &[clojure_syntax::SForm]) -> Vec<String> {
     out
 }
 
+/// Collects compiler-owned built-in namespaces referenced through a qualified
+/// symbol (for example `cljn.io/exists?`) without an explicit `:require`.
+///
+/// The `cljn.io` and `cljn.process` namespaces are always-available native I/O
+/// sugar (issue #103): using a qualified name is enough to pull in the built-in
+/// module. Only namespaces backed by [`builtin_source`] are auto-loaded, so a
+/// typo in a user namespace still fails as an unresolved reference.
+fn implicit_builtin_requires(forms: &[clojure_syntax::SForm]) -> Vec<String> {
+    use clojure_syntax::Form;
+    fn walk(form: &Form, out: &mut Vec<String>) {
+        match form {
+            Form::Symbol(s) => {
+                if let Some(ns) = &s.ns {
+                    if builtin_source(ns).is_some() && !out.iter().any(|n| n == ns) {
+                        out.push(ns.clone());
+                    }
+                }
+            }
+            Form::List(items) | Form::Vector(items) | Form::Set(items) => {
+                for i in items {
+                    walk(i.node.strip_meta(), out);
+                }
+            }
+            Form::Map(pairs) => {
+                for (k, v) in pairs {
+                    walk(k.node.strip_meta(), out);
+                    walk(v.node.strip_meta(), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for f in forms {
+        walk(f.node.strip_meta(), &mut out);
+    }
+    out
+}
+
 /// Resolves a namespace name to a source file within the given roots.
 ///
 /// Dots become directory separators and hyphens become underscores in each path
@@ -182,7 +226,12 @@ fn load_deps(
         };
         let sid = sm.add(source_name, text.clone());
         let forms = clojure_reader::read_all(sid, &text).map_err(|d| d.render(sm))?;
-        let sub = parse_requires(&forms);
+        let mut sub = parse_requires(&forms);
+        sub.extend(implicit_builtin_requires(&forms));
+        // A built-in module may reference its own qualified names (for example a
+        // `cljn.io` helper naming `cljn.io/IOException`); dropping the self-edge
+        // keeps the auto-load scan from reporting a spurious dependency cycle.
+        sub.retain(|dep| dep != ns);
         stack.push(ns.clone());
         load_deps(&sub, roots, sm, loaded, stack, out)?;
         stack.pop();
@@ -420,7 +469,8 @@ fn cmd_build(args: &[String]) -> ExitCode {
     };
     // Stage 1b: statically resolve `:require`d namespaces from the source path,
     // in dependency (topological) order, before the entry (ADR-0013 Gate 1).
-    let entry_requires = parse_requires(&entry_forms);
+    let mut entry_requires = parse_requires(&entry_forms);
+    entry_requires.extend(implicit_builtin_requires(&entry_forms));
     let mut loaded = std::collections::HashSet::new();
     let mut stack = Vec::new();
     if let Err(msg) = load_deps(
@@ -521,5 +571,36 @@ fn report(e: &clojure_interp::EvalError) {
     match e.span {
         Some(s) => eprintln!("erro: {} [{}:{}..{}]", e.msg, s.source, s.start, s.end),
         None => eprintln!("erro: {}", e.msg),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::implicit_builtin_requires;
+
+    fn read(source: &str) -> Vec<clojure_syntax::SForm> {
+        clojure_reader::read_all(0, source).expect("test source should parse")
+    }
+
+    #[test]
+    fn implicit_builtin_requires_walk_nested_forms_once_in_source_order() {
+        let forms = read(
+            "(ns app.core)\n\
+             (def calls [(cljn.io/exists? \"x\") \
+                         {:env (cljn.process/getenv \"HOME\")}])\n\
+             (cljn.io/file? \"x\")",
+        );
+
+        assert_eq!(
+            implicit_builtin_requires(&forms),
+            vec!["cljn.io".to_string(), "cljn.process".to_string()]
+        );
+    }
+
+    #[test]
+    fn implicit_builtin_requires_ignores_unbundled_namespaces() {
+        let forms = read("(ns app.core)\n(user.library/call)");
+
+        assert!(implicit_builtin_requires(&forms).is_empty());
     }
 }
