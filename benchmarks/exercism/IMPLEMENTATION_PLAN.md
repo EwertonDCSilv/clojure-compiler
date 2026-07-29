@@ -6,7 +6,7 @@ exemplars into an evolving external gate for `clojure-compiler`. It is based on 
 from the [Exercism Clojure Track](https://github.com/exercism/clojure), with full
 provenance documented in [`UPSTREAM.md`](UPSTREAM.md), and was most recently audited
 with compiler
-[`3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
+[`424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164).
 
 ## Baseline
 

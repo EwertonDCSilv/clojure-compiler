@@ -13,7 +13,7 @@ runtime. The repository is named `clojure-compiler`; its command-line binary is
 > Clojure and is not production-ready.
 
 > Documented snapshot and benchmark compiler:
-> [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
+> [`HEAD 424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164)
 > (2026-07-28).
 > See the [snapshot policy and current measurements](docs/SNAPSHOT.md).
 
@@ -235,19 +235,19 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   tracked separately by the conformance suite.
 
 Reference snapshots are pinned in each suite report. All three suites use compiler
-`3e71bc1`; Cracking and Cormen run at scale 25×, while Exercism uses upstream snapshot
+`424ba20`; Cracking and Cormen run at scale 25×, while Exercism uses upstream snapshot
 `4a4c4fd` at scale 5×:
 
 | Suite | Native/JVM wall | Native/JVM CPU | Native/JVM median RSS |
 | --- | ---: | ---: | ---: |
-| Cracking | 8.16 / 23.22 s | 8.06 / 50.93 s | 4.6 / 119.9 MiB |
-| Cormen/CLRS | 30.06 / 17.01 s | 29.95 / 32.66 s | 13.3 / 273.9 MiB |
-| Exercism (scale 5×) | 7.08 / 4.22 s | 7.05 / 8.04 s | 7.8 / 242.2 MiB |
+| Cracking | 8.05 / 23.02 s | 7.91 / 47.35 s | 4.6 / 114.8 MiB |
+| Cormen/CLRS | 27.23 / 16.95 s | 27.09 / 32.08 s | 13.2 / 270.8 MiB |
+| Exercism (scale 5×) | 7.15 / 4.43 s | 7.12 / 8.44 s | 8.1 / 244.2 MiB |
 
 All 98 benchmark cases have matching native/JVM checksums. The Cormen native run uses
-8.3% less aggregate CPU than the JVM, although its aggregate wall time is still higher.
-Its native wall total is 15.3% above the preceding single-run snapshot, a regression
-signal that must be confirmed with paired repetitions before attribution. In the
+15.6% less aggregate CPU than the JVM, although its aggregate wall time is still
+higher. Its native wall total is 9.4% below the preceding single-run snapshot; paired
+repetitions remain necessary before attributing that change to the compiler. In the
 external corpus, 10 of 114 complete upstream solutions currently build;
 the other 104 have a versioned first-blocker classification.
 

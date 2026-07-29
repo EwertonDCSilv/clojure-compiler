@@ -14,7 +14,7 @@
   <rect width="1500" height="970" rx="16" fill="#0f172a"/>
   <text x="24" y="42" class="title">Cormen/CLRS · n=30 · CPU</text>
   <text x="24" y="70" class="subtitle">ratio = JVM / CLJN · log₂</text>
-  <text x="24" y="101" class="summary">Σ CLJN 29.95 s · JVM 32.66 s · W CLJN/JVM/= 20/10/0</text>
+  <text x="24" y="101" class="summary">Σ CLJN 27.09 s · JVM 32.08 s · W CLJN/JVM/= 21/9/0</text>
   <rect x="24" y="122" width="14" height="14" rx="3" fill="#34d399"/>
 <text x="46" y="134" class="subtitle">CLJN</text>
 <rect x="132" y="122" width="14" height="14" rx="3" fill="#fb923c"/>
@@ -44,98 +44,98 @@
   <rect x="12" y="196" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="196" x2="1488" y2="196" stroke="#1e293b"/>
   <text x="24" y="208.0" class="label" dominant-baseline="middle">01-foundations-and-divide-conquer/01-binary-exponentiation.clj</text>
-  <rect x="930.0" y="202.0" width="228.4" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/01-binary-exponentiation.clj: CLJN 0.06 s; JVM 0.84 s; CLJN 14.00×</title></rect>
-  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 14.00×</text>
+  <rect x="930.0" y="202.0" width="210.9" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/01-binary-exponentiation.clj: CLJN 0.07 s; JVM 0.80 s; CLJN 11.43×</title></rect>
+  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 11.43×</text>
   <rect x="12" y="220" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="220" x2="1488" y2="220" stroke="#1e293b"/>
   <text x="24" y="232.0" class="label" dominant-baseline="middle">01-foundations-and-divide-conquer/02-horner-polynomial.clj</text>
-  <rect x="930.0" y="226.0" width="228.4" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/02-horner-polynomial.clj: CLJN 0.06 s; JVM 0.84 s; CLJN 14.00×</title></rect>
-  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 14.00×</text>
+  <rect x="930.0" y="226.0" width="224.2" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/02-horner-polynomial.clj: CLJN 0.06 s; JVM 0.80 s; CLJN 13.33×</title></rect>
+  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 13.33×</text>
   <rect x="12" y="244" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="244" x2="1488" y2="244" stroke="#1e293b"/>
   <text x="24" y="256.0" class="label" dominant-baseline="middle">01-foundations-and-divide-conquer/03-prefix-range-sums.clj</text>
-  <rect x="930.0" y="250.0" width="223.0" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/03-prefix-range-sums.clj: CLJN 0.07 s; JVM 0.92 s; CLJN 13.14×</title></rect>
-  <text x="1310" y="256.0" class="value" dominant-baseline="middle">CLJN 13.14×</text>
+  <rect x="930.0" y="250.0" width="201.5" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/03-prefix-range-sums.clj: CLJN 0.08 s; JVM 0.82 s; CLJN 10.25×</title></rect>
+  <text x="1310" y="256.0" class="value" dominant-baseline="middle">CLJN 10.25×</text>
   <rect x="12" y="268" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="268" x2="1488" y2="268" stroke="#1e293b"/>
   <text x="24" y="280.0" class="label" dominant-baseline="middle">01-foundations-and-divide-conquer/04-iterative-binary-search.clj</text>
-  <rect x="930.0" y="274.0" width="137.3" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/04-iterative-binary-search.clj: CLJN 0.17 s; JVM 0.83 s; CLJN 4.88×</title></rect>
-  <text x="1310" y="280.0" class="value" dominant-baseline="middle">CLJN 4.88×</text>
+  <rect x="930.0" y="274.0" width="129.6" height="12" rx="4" fill="#34d399"><title>01-foundations-and-divide-conquer/04-iterative-binary-search.clj: CLJN 0.17 s; JVM 0.76 s; CLJN 4.47×</title></rect>
+  <text x="1310" y="280.0" class="value" dominant-baseline="middle">CLJN 4.47×</text>
   <rect x="12" y="292" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="292" x2="1488" y2="292" stroke="#1e293b"/>
   <text x="24" y="304.0" class="label" dominant-baseline="middle">01-foundations-and-divide-conquer/05-maximum-subarray-divide.clj</text>
-  <rect x="897.9" y="298.0" width="32.1" height="12" rx="4" fill="#fb923c"><title>01-foundations-and-divide-conquer/05-maximum-subarray-divide.clj: CLJN 1.42 s; JVM 0.98 s; JVM 1.45×</title></rect>
-  <text x="1310" y="304.0" class="value" dominant-baseline="middle">JVM 1.45×</text>
+  <rect x="889.0" y="298.0" width="41.0" height="12" rx="4" fill="#fb923c"><title>01-foundations-and-divide-conquer/05-maximum-subarray-divide.clj: CLJN 1.43 s; JVM 0.89 s; JVM 1.61×</title></rect>
+  <text x="1310" y="304.0" class="value" dominant-baseline="middle">JVM 1.61×</text>
   <rect x="12" y="316" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="316" x2="1488" y2="316" stroke="#1e293b"/>
   <text x="24" y="328.0" class="label" dominant-baseline="middle">02-sorting-and-order-statistics/01-insertion-sort.clj</text>
-  <rect x="930.0" y="322.0" width="39.6" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/01-insertion-sort.clj: CLJN 0.62 s; JVM 0.98 s; CLJN 1.58×</title></rect>
-  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 1.58×</text>
+  <rect x="930.0" y="322.0" width="48.2" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/01-insertion-sort.clj: CLJN 0.51 s; JVM 0.89 s; CLJN 1.75×</title></rect>
+  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 1.75×</text>
   <rect x="12" y="340" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="340" x2="1488" y2="340" stroke="#1e293b"/>
   <text x="24" y="352.0" class="label" dominant-baseline="middle">02-sorting-and-order-statistics/02-selection-sort.clj</text>
-  <rect x="930.0" y="346.0" width="82.2" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/02-selection-sort.clj: CLJN 0.36 s; JVM 0.93 s; CLJN 2.58×</title></rect>
-  <text x="1310" y="352.0" class="value" dominant-baseline="middle">CLJN 2.58×</text>
+  <rect x="930.0" y="346.0" width="94.1" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/02-selection-sort.clj: CLJN 0.30 s; JVM 0.89 s; CLJN 2.97×</title></rect>
+  <text x="1310" y="352.0" class="value" dominant-baseline="middle">CLJN 2.97×</text>
   <rect x="12" y="364" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="364" x2="1488" y2="364" stroke="#1e293b"/>
   <text x="24" y="376.0" class="label" dominant-baseline="middle">02-sorting-and-order-statistics/03-counting-sort.clj</text>
-  <rect x="930.0" y="370.0" width="129.8" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/03-counting-sort.clj: CLJN 0.23 s; JVM 1.03 s; CLJN 4.48×</title></rect>
-  <text x="1310" y="376.0" class="value" dominant-baseline="middle">CLJN 4.48×</text>
+  <rect x="930.0" y="370.0" width="135.5" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/03-counting-sort.clj: CLJN 0.23 s; JVM 1.10 s; CLJN 4.78×</title></rect>
+  <text x="1310" y="376.0" class="value" dominant-baseline="middle">CLJN 4.78×</text>
   <rect x="12" y="388" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="388" x2="1488" y2="388" stroke="#1e293b"/>
   <text x="24" y="400.0" class="label" dominant-baseline="middle">02-sorting-and-order-statistics/04-merge-sort.clj</text>
-  <rect x="930.0" y="394.0" width="22.5" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/04-merge-sort.clj: CLJN 1.01 s; JVM 1.31 s; CLJN 1.30×</title></rect>
-  <text x="1310" y="400.0" class="value" dominant-baseline="middle">CLJN 1.30×</text>
+  <rect x="930.0" y="394.0" width="36.1" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/04-merge-sort.clj: CLJN 0.87 s; JVM 1.32 s; CLJN 1.52×</title></rect>
+  <text x="1310" y="400.0" class="value" dominant-baseline="middle">CLJN 1.52×</text>
   <rect x="12" y="412" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="412" x2="1488" y2="412" stroke="#1e293b"/>
   <text x="24" y="424.0" class="label" dominant-baseline="middle">02-sorting-and-order-statistics/05-quickselect.clj</text>
-  <rect x="930.0" y="418.0" width="34.7" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/05-quickselect.clj: CLJN 1.36 s; JVM 2.03 s; CLJN 1.49×</title></rect>
-  <text x="1310" y="424.0" class="value" dominant-baseline="middle">CLJN 1.49×</text>
+  <rect x="930.0" y="418.0" width="26.5" height="12" rx="4" fill="#34d399"><title>02-sorting-and-order-statistics/05-quickselect.clj: CLJN 1.31 s; JVM 1.78 s; CLJN 1.36×</title></rect>
+  <text x="1310" y="424.0" class="value" dominant-baseline="middle">CLJN 1.36×</text>
   <rect x="12" y="436" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="436" x2="1488" y2="436" stroke="#1e293b"/>
   <text x="24" y="448.0" class="label" dominant-baseline="middle">03-data-structures/01-build-max-heap.clj</text>
-  <rect x="930.0" y="442.0" width="98.9" height="12" rx="4" fill="#34d399"><title>03-data-structures/01-build-max-heap.clj: CLJN 0.30 s; JVM 0.94 s; CLJN 3.13×</title></rect>
-  <text x="1310" y="448.0" class="value" dominant-baseline="middle">CLJN 3.13×</text>
+  <rect x="930.0" y="442.0" width="103.9" height="12" rx="4" fill="#34d399"><title>03-data-structures/01-build-max-heap.clj: CLJN 0.28 s; JVM 0.93 s; CLJN 3.32×</title></rect>
+  <text x="1310" y="448.0" class="value" dominant-baseline="middle">CLJN 3.32×</text>
   <rect x="12" y="460" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="460" x2="1488" y2="460" stroke="#1e293b"/>
   <text x="24" y="472.0" class="label" dominant-baseline="middle">03-data-structures/02-disjoint-set-union.clj</text>
-  <rect x="930.0" y="466.0" width="20.6" height="12" rx="4" fill="#34d399"><title>03-data-structures/02-disjoint-set-union.clj: CLJN 0.78 s; JVM 0.99 s; CLJN 1.27×</title></rect>
-  <text x="1310" y="472.0" class="value" dominant-baseline="middle">CLJN 1.27×</text>
+  <rect x="930.0" y="466.0" width="26.1" height="12" rx="4" fill="#34d399"><title>03-data-structures/02-disjoint-set-union.clj: CLJN 0.74 s; JVM 1.00 s; CLJN 1.35×</title></rect>
+  <text x="1310" y="472.0" class="value" dominant-baseline="middle">CLJN 1.35×</text>
   <rect x="12" y="484" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="484" x2="1488" y2="484" stroke="#1e293b"/>
   <text x="24" y="496.0" class="label" dominant-baseline="middle">03-data-structures/03-chained-hash-table.clj</text>
-  <rect x="930.0" y="490.0" width="68.5" height="12" rx="4" fill="#34d399"><title>03-data-structures/03-chained-hash-table.clj: CLJN 0.53 s; JVM 1.17 s; CLJN 2.21×</title></rect>
-  <text x="1310" y="496.0" class="value" dominant-baseline="middle">CLJN 2.21×</text>
+  <rect x="930.0" y="490.0" width="80.8" height="12" rx="4" fill="#34d399"><title>03-data-structures/03-chained-hash-table.clj: CLJN 0.46 s; JVM 1.17 s; CLJN 2.54×</title></rect>
+  <text x="1310" y="496.0" class="value" dominant-baseline="middle">CLJN 2.54×</text>
   <rect x="12" y="508" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="508" x2="1488" y2="508" stroke="#1e293b"/>
   <text x="24" y="520.0" class="label" dominant-baseline="middle">03-data-structures/04-circular-queue.clj</text>
-  <rect x="930.0" y="514.0" width="138.5" height="12" rx="4" fill="#34d399"><title>03-data-structures/04-circular-queue.clj: CLJN 0.21 s; JVM 1.04 s; CLJN 4.95×</title></rect>
-  <text x="1310" y="520.0" class="value" dominant-baseline="middle">CLJN 4.95×</text>
+  <rect x="930.0" y="514.0" width="139.3" height="12" rx="4" fill="#34d399"><title>03-data-structures/04-circular-queue.clj: CLJN 0.21 s; JVM 1.05 s; CLJN 5.00×</title></rect>
+  <text x="1310" y="520.0" class="value" dominant-baseline="middle">CLJN 5.00×</text>
   <rect x="12" y="532" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="532" x2="1488" y2="532" stroke="#1e293b"/>
   <text x="24" y="544.0" class="label" dominant-baseline="middle">03-data-structures/05-binary-search-tree.clj</text>
-  <rect x="866.6" y="538.0" width="63.4" height="12" rx="4" fill="#fb923c"><title>03-data-structures/05-binary-search-tree.clj: CLJN 2.06 s; JVM 0.99 s; JVM 2.08×</title></rect>
-  <text x="1310" y="544.0" class="value" dominant-baseline="middle">JVM 2.08×</text>
+  <rect x="879.0" y="538.0" width="51.0" height="12" rx="4" fill="#fb923c"><title>03-data-structures/05-binary-search-tree.clj: CLJN 1.73 s; JVM 0.96 s; JVM 1.80×</title></rect>
+  <text x="1310" y="544.0" class="value" dominant-baseline="middle">JVM 1.80×</text>
   <rect x="12" y="556" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="556" x2="1488" y2="556" stroke="#1e293b"/>
   <text x="24" y="568.0" class="label" dominant-baseline="middle">04-dynamic-programming-and-greedy/01-rod-cutting.clj</text>
-  <rect x="873.1" y="562.0" width="56.9" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/01-rod-cutting.clj: CLJN 1.89 s; JVM 0.98 s; JVM 1.93×</title></rect>
-  <text x="1310" y="568.0" class="value" dominant-baseline="middle">JVM 1.93×</text>
+  <rect x="874.2" y="562.0" width="55.8" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/01-rod-cutting.clj: CLJN 1.83 s; JVM 0.96 s; JVM 1.91×</title></rect>
+  <text x="1310" y="568.0" class="value" dominant-baseline="middle">JVM 1.91×</text>
   <rect x="12" y="580" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="580" x2="1488" y2="580" stroke="#1e293b"/>
   <text x="24" y="592.0" class="label" dominant-baseline="middle">04-dynamic-programming-and-greedy/02-matrix-chain-order.clj</text>
-  <rect x="916.3" y="586.0" width="13.7" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/02-matrix-chain-order.clj: CLJN 1.30 s; JVM 1.11 s; JVM 1.17×</title></rect>
-  <text x="1310" y="592.0" class="value" dominant-baseline="middle">JVM 1.17×</text>
+  <rect x="920.7" y="586.0" width="9.3" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/02-matrix-chain-order.clj: CLJN 1.18 s; JVM 1.06 s; JVM 1.11×</title></rect>
+  <text x="1310" y="592.0" class="value" dominant-baseline="middle">JVM 1.11×</text>
   <rect x="12" y="604" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="604" x2="1488" y2="604" stroke="#1e293b"/>
   <text x="24" y="616.0" class="label" dominant-baseline="middle">04-dynamic-programming-and-greedy/03-longest-common-subsequence.clj</text>
-  <rect x="850.4" y="610.0" width="79.6" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/03-longest-common-subsequence.clj: CLJN 3.51 s; JVM 1.40 s; JVM 2.51×</title></rect>
-  <text x="1310" y="616.0" class="value" dominant-baseline="middle">JVM 2.51×</text>
+  <rect x="856.0" y="610.0" width="74.0" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/03-longest-common-subsequence.clj: CLJN 3.15 s; JVM 1.34 s; JVM 2.35×</title></rect>
+  <text x="1310" y="616.0" class="value" dominant-baseline="middle">JVM 2.35×</text>
   <rect x="12" y="628" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="628" x2="1488" y2="628" stroke="#1e293b"/>
   <text x="24" y="640.0" class="label" dominant-baseline="middle">04-dynamic-programming-and-greedy/04-zero-one-knapsack.clj</text>
-  <rect x="884.4" y="634.0" width="45.6" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/04-zero-one-knapsack.clj: CLJN 2.10 s; JVM 1.24 s; JVM 1.69×</title></rect>
-  <text x="1310" y="640.0" class="value" dominant-baseline="middle">JVM 1.69×</text>
+  <rect x="883.9" y="634.0" width="46.1" height="12" rx="4" fill="#fb923c"><title>04-dynamic-programming-and-greedy/04-zero-one-knapsack.clj: CLJN 2.01 s; JVM 1.18 s; JVM 1.70×</title></rect>
+  <text x="1310" y="640.0" class="value" dominant-baseline="middle">JVM 1.70×</text>
   <rect x="12" y="652" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="652" x2="1488" y2="652" stroke="#1e293b"/>
   <text x="24" y="664.0" class="label" dominant-baseline="middle">04-dynamic-programming-and-greedy/05-activity-selection.clj</text>
@@ -144,52 +144,52 @@
   <rect x="12" y="676" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="676" x2="1488" y2="676" stroke="#1e293b"/>
   <text x="24" y="688.0" class="label" dominant-baseline="middle">05-graph-algorithms/01-breadth-first-search.clj</text>
-  <rect x="918.8" y="682.0" width="11.2" height="12" rx="4" fill="#fb923c"><title>05-graph-algorithms/01-breadth-first-search.clj: CLJN 1.15 s; JVM 1.01 s; JVM 1.14×</title></rect>
-  <text x="1310" y="688.0" class="value" dominant-baseline="middle">JVM 1.14×</text>
+  <rect x="930.0" y="682.0" width="9.9" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/01-breadth-first-search.clj: CLJN 0.91 s; JVM 1.02 s; CLJN 1.12×</title></rect>
+  <text x="1310" y="688.0" class="value" dominant-baseline="middle">CLJN 1.12×</text>
   <rect x="12" y="700" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="700" x2="1488" y2="700" stroke="#1e293b"/>
   <text x="24" y="712.0" class="label" dominant-baseline="middle">05-graph-algorithms/02-depth-first-search.clj</text>
-  <rect x="930.0" y="706.0" width="13.1" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/02-depth-first-search.clj: CLJN 0.86 s; JVM 1.00 s; CLJN 1.16×</title></rect>
-  <text x="1310" y="712.0" class="value" dominant-baseline="middle">CLJN 1.16×</text>
+  <rect x="930.0" y="706.0" width="19.1" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/02-depth-first-search.clj: CLJN 0.81 s; JVM 1.01 s; CLJN 1.25×</title></rect>
+  <text x="1310" y="712.0" class="value" dominant-baseline="middle">CLJN 1.25×</text>
   <rect x="12" y="724" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="724" x2="1488" y2="724" stroke="#1e293b"/>
   <text x="24" y="736.0" class="label" dominant-baseline="middle">05-graph-algorithms/03-topological-sort.clj</text>
-  <rect x="906.3" y="730.0" width="23.7" height="12" rx="4" fill="#fb923c"><title>05-graph-algorithms/03-topological-sort.clj: CLJN 1.42 s; JVM 1.08 s; JVM 1.31×</title></rect>
-  <text x="1310" y="736.0" class="value" dominant-baseline="middle">JVM 1.31×</text>
+  <rect x="927.6" y="730.0" width="2.4" height="12" rx="4" fill="#fb923c"><title>05-graph-algorithms/03-topological-sort.clj: CLJN 1.12 s; JVM 1.09 s; JVM 1.03×</title></rect>
+  <text x="1310" y="736.0" class="value" dominant-baseline="middle">JVM 1.03×</text>
   <rect x="12" y="748" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="748" x2="1488" y2="748" stroke="#1e293b"/>
   <text x="24" y="760.0" class="label" dominant-baseline="middle">05-graph-algorithms/04-bellman-ford.clj</text>
-  <rect x="930.0" y="754.0" width="70.2" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/04-bellman-ford.clj: CLJN 0.40 s; JVM 0.90 s; CLJN 2.25×</title></rect>
-  <text x="1310" y="760.0" class="value" dominant-baseline="middle">CLJN 2.25×</text>
+  <rect x="930.0" y="754.0" width="81.6" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/04-bellman-ford.clj: CLJN 0.37 s; JVM 0.95 s; CLJN 2.57×</title></rect>
+  <text x="1310" y="760.0" class="value" dominant-baseline="middle">CLJN 2.57×</text>
   <rect x="12" y="772" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="772" x2="1488" y2="772" stroke="#1e293b"/>
   <text x="24" y="784.0" class="label" dominant-baseline="middle">05-graph-algorithms/05-floyd-warshall.clj</text>
-  <rect x="930.0" y="778.0" width="30.5" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/05-floyd-warshall.clj: CLJN 0.71 s; JVM 1.01 s; CLJN 1.42×</title></rect>
-  <text x="1310" y="784.0" class="value" dominant-baseline="middle">CLJN 1.42×</text>
+  <rect x="930.0" y="778.0" width="42.0" height="12" rx="4" fill="#34d399"><title>05-graph-algorithms/05-floyd-warshall.clj: CLJN 0.64 s; JVM 1.04 s; CLJN 1.62×</title></rect>
+  <text x="1310" y="784.0" class="value" dominant-baseline="middle">CLJN 1.62×</text>
   <rect x="12" y="796" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="796" x2="1488" y2="796" stroke="#1e293b"/>
   <text x="24" y="808.0" class="label" dominant-baseline="middle">06-number-theory-and-string-matching/01-extended-euclid.clj</text>
-  <rect x="865.8" y="802.0" width="64.2" height="12" rx="4" fill="#fb923c"><title>06-number-theory-and-string-matching/01-extended-euclid.clj: CLJN 2.12 s; JVM 1.01 s; JVM 2.10×</title></rect>
-  <text x="1310" y="808.0" class="value" dominant-baseline="middle">JVM 2.10×</text>
+  <rect x="880.6" y="802.0" width="49.4" height="12" rx="4" fill="#fb923c"><title>06-number-theory-and-string-matching/01-extended-euclid.clj: CLJN 1.84 s; JVM 1.04 s; JVM 1.77×</title></rect>
+  <text x="1310" y="808.0" class="value" dominant-baseline="middle">JVM 1.77×</text>
   <rect x="12" y="820" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="820" x2="1488" y2="820" stroke="#1e293b"/>
   <text x="24" y="832.0" class="label" dominant-baseline="middle">06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj</text>
-  <rect x="881.7" y="826.0" width="48.3" height="12" rx="4" fill="#fb923c"><title>06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj: CLJN 4.28 s; JVM 2.45 s; JVM 1.75×</title></rect>
-  <text x="1310" y="832.0" class="value" dominant-baseline="middle">JVM 1.75×</text>
+  <rect x="894.1" y="826.0" width="35.9" height="12" rx="4" fill="#fb923c"><title>06-number-theory-and-string-matching/02-sieve-of-eratosthenes.clj: CLJN 3.86 s; JVM 2.55 s; JVM 1.51×</title></rect>
+  <text x="1310" y="832.0" class="value" dominant-baseline="middle">JVM 1.51×</text>
   <rect x="12" y="844" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="844" x2="1488" y2="844" stroke="#1e293b"/>
   <text x="24" y="856.0" class="label" dominant-baseline="middle">06-number-theory-and-string-matching/03-naive-string-matching.clj</text>
-  <rect x="930.0" y="850.0" width="53.3" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/03-naive-string-matching.clj: CLJN 0.47 s; JVM 0.87 s; CLJN 1.85×</title></rect>
-  <text x="1310" y="856.0" class="value" dominant-baseline="middle">CLJN 1.85×</text>
+  <rect x="930.0" y="850.0" width="59.0" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/03-naive-string-matching.clj: CLJN 0.44 s; JVM 0.87 s; CLJN 1.98×</title></rect>
+  <text x="1310" y="856.0" class="value" dominant-baseline="middle">CLJN 1.98×</text>
   <rect x="12" y="868" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="868" x2="1488" y2="868" stroke="#1e293b"/>
   <text x="24" y="880.0" class="label" dominant-baseline="middle">06-number-theory-and-string-matching/04-rabin-karp.clj</text>
-  <rect x="930.0" y="874.0" width="125.4" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/04-rabin-karp.clj: CLJN 0.27 s; JVM 1.15 s; CLJN 4.26×</title></rect>
-  <text x="1310" y="880.0" class="value" dominant-baseline="middle">CLJN 4.26×</text>
+  <rect x="930.0" y="874.0" width="128.7" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/04-rabin-karp.clj: CLJN 0.26 s; JVM 1.15 s; CLJN 4.42×</title></rect>
+  <text x="1310" y="880.0" class="value" dominant-baseline="middle">CLJN 4.42×</text>
   <rect x="12" y="892" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="892" x2="1488" y2="892" stroke="#1e293b"/>
   <text x="24" y="904.0" class="label" dominant-baseline="middle">06-number-theory-and-string-matching/05-knuth-morris-pratt.clj</text>
-  <rect x="930.0" y="898.0" width="133.3" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/05-knuth-morris-pratt.clj: CLJN 0.18 s; JVM 0.84 s; CLJN 4.67×</title></rect>
-  <text x="1310" y="904.0" class="value" dominant-baseline="middle">CLJN 4.67×</text>
+  <rect x="930.0" y="898.0" width="141.3" height="12" rx="4" fill="#34d399"><title>06-number-theory-and-string-matching/05-knuth-morris-pratt.clj: CLJN 0.17 s; JVM 0.87 s; CLJN 5.12×</title></rect>
+  <text x="1310" y="904.0" class="value" dominant-baseline="middle">CLJN 5.12×</text>
   <text x="24" y="950" class="footer">log₂ · ratio = JVM / CLJN · * CLJN &lt; 0.01 s</text>
 </svg>

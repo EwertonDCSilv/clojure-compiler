@@ -4,7 +4,7 @@ Este diretório reúne os guias correntes do `clojure-compiler` e a página publ
 GitHub Pages. O repositório se chama `clojure-compiler`; o executável produzido se chama
 `clojure-native`.
 
-> Snapshot documentado: [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
+> Snapshot documentado: [`HEAD 424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164)
 > em 2026-07-28. Consulte [SNAPSHOT.md](SNAPSHOT.md) para distinguir o HEAD auditado do
 > commit do compilador medido.
 

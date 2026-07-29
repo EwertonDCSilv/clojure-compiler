@@ -13,7 +13,7 @@ chama `clojure-native`.
 > documentado de Clojure e ainda não está pronto para produção.
 
 > Snapshot documentado e compilador medido:
-> [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
+> [`HEAD 424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164)
 > (2026-07-28).
 > Consulte a [política do snapshot e as medições atuais](docs/SNAPSHOT.md).
 
@@ -236,20 +236,20 @@ make benchmarks-cracking CRACKING_ARGS="--chapter 08 --scale 10"
   soluções é mantido separadamente pela suíte de conformidade.
 
 Os snapshots ficam fixados no relatório de cada suíte. As três suítes usam o compilador
-`3e71bc1`; Cracking e Cormen rodam em escala 25×, enquanto Exercism usa o snapshot
+`424ba20`; Cracking e Cormen rodam em escala 25×, enquanto Exercism usa o snapshot
 upstream `4a4c4fd` e escala 5×:
 
 | Suíte | Parede nativo/JVM | CPU nativo/JVM | RSS mediano nativo/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 8,16 / 23,22 s | 8,06 / 50,93 s | 4,6 / 119,9 MiB |
-| Cormen/CLRS | 30,06 / 17,01 s | 29,95 / 32,66 s | 13,3 / 273,9 MiB |
-| Exercism (escala 5×) | 7,08 / 4,22 s | 7,05 / 8,04 s | 7,8 / 242,2 MiB |
+| Cracking | 8,05 / 23,02 s | 7,91 / 47,35 s | 4,6 / 114,8 MiB |
+| Cormen/CLRS | 27,23 / 16,95 s | 27,09 / 32,08 s | 13,2 / 270,8 MiB |
+| Exercism (escala 5×) | 7,15 / 4,43 s | 7,12 / 8,44 s | 8,1 / 244,2 MiB |
 
 Os 98 casos de benchmark possuem checksums nativo/JVM equivalentes. No Cormen, o nativo
-usa 8,3% menos CPU acumulada que a JVM, embora o tempo de parede agregado ainda seja
-maior. O total nativo de parede ficou 15,3% acima do snapshot anterior de uma execução;
-é um sinal de regressão que precisa de repetições pareadas antes de ser atribuído a uma
-mudança. No corpus externo, 10 das 114 soluções upstream completas compilam; as outras 104
+usa 15,6% menos CPU acumulada que a JVM, embora o tempo de parede agregado ainda seja
+maior. O total nativo de parede ficou 9,4% abaixo do snapshot anterior de uma execução;
+repetições pareadas continuam necessárias antes de atribuir essa variação ao
+compilador. No corpus externo, 10 das 114 soluções upstream completas compilam; as outras 104
 possuem classificação versionada do primeiro bloqueador.
 
 ## Estrutura do projeto

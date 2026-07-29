@@ -51,6 +51,11 @@ tags.
 
 ### Performance
 
+- Refresh all 98 Native versus Clojure/JVM measurements at `424ba20`, regenerate the
+  report and GitHub Pages charts, and preserve matching checksums. Cormen native wall
+  time fell from 30.06 s to 27.23 s and CPU from 29.95 s to 27.09 s in the new
+  single-run snapshot; paired measurements remain authoritative for optimization
+  promotion.
 - Preserve all 30 Cormen checksums in the seven-pair, scale-25 IR comparison and pass
   the blocking non-regression gate. The opt-in `safe` profile records
   candidate/control ratios of 0.9568 for wall time and 0.9565 for CPU, corresponding

@@ -3,7 +3,7 @@
 [Índice da documentação](README.md) · [Uso](usage.md) ·
 [Arquitetura](architecture.md) · [Especificações](../specs/README.md)
 
-> Estado auditado no [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf).
+> Estado auditado no [`HEAD 424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164).
 > Detalhes do snapshot: [SNAPSHOT.md](SNAPSHOT.md).
 
 O repositório `clojure-compiler` implementa um compilador nativo experimental de
@@ -85,12 +85,12 @@ runtimes. A auditoria de 101 práticas, 13 conceitos e 493 arquivos alimenta a
 conformidade, não os resultados de desempenho. As três suítes exportam CSV com tempo
 de parede, CPU e pico de memória para o nativo e para Clojure/JVM.
 
-No snapshot de referência, Cracking acumula 8,16 s nativos contra 23,22 s na JVM. Cormen
-acumula 30,06 s nativos contra 17,01 s de parede na JVM, mas usa 29,95 s de CPU contra
-32,66 s da JVM. No Exercism em escala 5×, o nativo soma 7,08 s de parede e 7,05 s de
-CPU, contra 4,22 s e 8,04 s na JVM. Os 98 checksums coincidem. A parede nativa do
-Cormen subiu 15,3% contra o snapshot anterior; o dado é um sinal a confirmar com
-repetições pareadas, não uma atribuição causal. Ambiente, repetição e valores por caso
+No snapshot de referência, Cracking acumula 8,05 s nativos contra 23,02 s na JVM. Cormen
+acumula 27,23 s nativos contra 16,95 s de parede na JVM, mas usa 27,09 s de CPU contra
+32,08 s da JVM. No Exercism em escala 5×, o nativo soma 7,15 s de parede e 7,12 s de
+CPU, contra 4,43 s e 8,44 s na JVM. Os 98 checksums coincidem. A parede nativa do
+Cormen caiu 9,4% contra o snapshot anterior; repetições pareadas continuam necessárias
+antes de atribuir essa variação ao compilador. Ambiente, repetição e valores por caso
 estão nos relatórios das suítes.
 
 Os gates correntes são expostos pelo [`Makefile`](../Makefile):
