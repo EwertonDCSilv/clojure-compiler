@@ -334,6 +334,18 @@ pub enum Prim {
     FileReaderP,
     /// Predicate: value is a file-backed writer.
     FileWriterP,
+    /// Create a symbolic link.
+    CreateSymlink,
+    /// Read a symbolic link's target.
+    ReadLink,
+    /// Predicate: path names a symbolic link.
+    NativeSymlinkP,
+    /// Predicate: path string is absolute (leading '/').
+    PathAbsolute,
+    /// Lexically normalize a path string.
+    PathNormalize,
+    /// Resolve a path to its canonical form (realpath).
+    RealPath,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2451,6 +2463,12 @@ fn prim_of(name: &str) -> Option<Prim> {
         "position-file" => Prim::PositionFile,
         "file-reader?" => Prim::FileReaderP,
         "file-writer?" => Prim::FileWriterP,
+        "create-symlink" => Prim::CreateSymlink,
+        "read-link" => Prim::ReadLink,
+        "native-symlink?" => Prim::NativeSymlinkP,
+        "path-absolute" => Prim::PathAbsolute,
+        "path-normalize" => Prim::PathNormalize,
+        "real-path" => Prim::RealPath,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2563,9 +2581,14 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::PositionFile
         | Prim::FileReaderP
         | Prim::FileWriterP
+        | Prim::ReadLink
+        | Prim::NativeSymlinkP
+        | Prim::PathAbsolute
+        | Prim::PathNormalize
+        | Prim::RealPath
         | Prim::Vals => 1,
         Prim::ByteOutputStream => 0,
-        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock | Prim::SeekFile | Prim::TruncateFile => 2,
+        Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock | Prim::SeekFile | Prim::TruncateFile | Prim::CreateSymlink => 2,
         Prim::StringWriter => 0,
         Prim::UnreadCharTo | Prim::WriteTo => 2,
         Prim::Add
@@ -2677,6 +2700,9 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ByteInputStream | Prim::OutputBytes | Prim::ByteInputP | Prim::ByteOutputP => n == 1,
         Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock => n == 2,
         Prim::PositionFile | Prim::FileReaderP | Prim::FileWriterP => n == 1,
+        Prim::ReadLink | Prim::NativeSymlinkP => n == 1,
+        Prim::PathAbsolute | Prim::PathNormalize | Prim::RealPath => n == 1,
+        Prim::CreateSymlink => n == 2,
         Prim::SeekFile | Prim::TruncateFile => n == 2,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
         Prim::HttpServerOpen
