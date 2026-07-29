@@ -55,6 +55,8 @@ tags.
   `cljn.pedestal.service` lifecycle (`start!`/`serve!`/`serve-one!`/`server-port`/
   `stop!`) that drives the connector's shared dispatch over the provider and shuts
   down cleanly on a signal or a dispatch-path stop (ADR-0013 §3/§6, Gate 5).
+- Add the root `native_http_server.clj` runnable example with loopback health checks
+  and a bounded JSON body-dump endpoint for manual `curl` validation.
 - Emit response headers in deterministic lowercase lexical order and cover the
   no-descriptor-leak service contract with a multi-request end-to-end test
   (ADR-0013 Gate 4 acceptance #6, Gate 5).
