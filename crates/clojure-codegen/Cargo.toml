@@ -11,7 +11,7 @@ clojure-ir.workspace = true
 cranelift-codegen = "0.124"
 cranelift-frontend = "0.124"
 cranelift-module = "0.134"
-cranelift-object = "0.124"
+cranelift-object = "0.134"
 target-lexicon = "0.13"
 
 [lints.rust]
