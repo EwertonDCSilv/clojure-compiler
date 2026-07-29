@@ -548,6 +548,53 @@ Value cljn_flush(void) {
     return NIL;
 }
 
+/* Seek a file reader to absolute byte offset n and sync the cursor. The compiled
+   wrapper validates a non-negative offset and a file reader first. */
+Value cljn_seek_file(Value rv, Value nv) {
+    if (obj_type(rv) != T_READER) die("seek!: esperava reader");
+    Reader *r = (Reader *)rv;
+    int64_t n = FIX(nv);
+    if (r->kind == RD_FILE && r->fp) fseek((FILE *)r->fp, (long)n, SEEK_SET);
+    r->pos = n;
+    r->pushback = NIL;
+    return NIL;
+}
+/* POSIX declarations kept explicit so the strict C-lint feature-macro level does
+   not treat them as implicit. Linux x86_64 only: `off_t` is `long` (SAFETY). */
+extern int ftruncate(int fildes, long length);
+extern int fileno(FILE *stream);
+
+/* Truncate a file writer to n bytes, flushing buffered output first. */
+Value cljn_truncate_file(Value wv, Value nv) {
+    if (obj_type(wv) != T_WRITER) die("truncate!: esperava writer");
+    Writer *w = (Writer *)wv;
+    int64_t n = FIX(nv);
+    if (w->kind == WR_FILE && w->fp) {
+        fflush((FILE *)w->fp);
+        int rc = ftruncate(fileno((FILE *)w->fp), (long)n);
+        (void)rc;
+    }
+    return NIL;
+}
+/* Return the current byte position of a file reader. */
+Value cljn_position_file(Value rv) {
+    if (obj_type(rv) != T_READER) die("position: esperava reader");
+    Reader *r = (Reader *)rv;
+    if (r->kind == RD_FILE && r->fp) {
+        long p = ftell((FILE *)r->fp);
+        return MK_FIX(p < 0 ? r->pos : (int64_t)p);
+    }
+    return MK_FIX(r->pos);
+}
+/* Predicate: value is a file-backed Reader. */
+Value cljn_file_reader_p(Value x) {
+    return b2v(obj_type(x) == T_READER && ((Reader *)x)->kind == RD_FILE);
+}
+/* Predicate: value is a file-backed Writer. */
+Value cljn_file_writer_p(Value x) {
+    return b2v(obj_type(x) == T_WRITER && ((Writer *)x)->kind == WR_FILE);
+}
+
 /* Invoke zero-arity thunk with *out* rebound to string capture.
  * Restores *out* and rethrows on exception; returns captured text normally.
  * GC: capture writer and prior *out* remain rooted across the thunk. */

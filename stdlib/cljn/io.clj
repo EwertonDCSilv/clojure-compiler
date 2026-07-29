@@ -265,3 +265,26 @@
   (if (and (reader? s) (not (stream-closed s)) (int? n) (not (neg? n)))
     (read-block! s n)
     (fail)))
+
+;; --- random access -----------------------------------------------------------
+
+(defn seek!
+  "Seeks an open file reader to absolute byte offset `n`."
+  [s n]
+  (if (and (file-reader? s) (not (stream-closed s)) (int? n) (not (neg? n)))
+    (seek-file s n)
+    (fail)))
+
+(defn truncate!
+  "Truncates an open file writer to `n` bytes."
+  [s n]
+  (if (and (file-writer? s) (not (stream-closed s)) (int? n) (not (neg? n)))
+    (truncate-file s n)
+    (fail)))
+
+(defn position
+  "Returns the current byte position of an open file reader."
+  [s]
+  (if (and (file-reader? s) (not (stream-closed s)))
+    (position-file s)
+    (fail)))
