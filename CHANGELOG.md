@@ -76,6 +76,12 @@ tags.
   and runs a native `cljn.pedestal.*` router connector through the in-memory
   `test-request` dispatch path with no JVM or network, while the upstream
   `e.pedestal.hello_world_api` fixture stays `pending` (ADR-0013 §11, Gate 5).
+- Add the separate `benchmarks/http/` suite (ADR-0013 Gate 6) that drives the native
+  `cljn.pedestal.*` connector and the pinned upstream Pedestal http-kit connector
+  (0.8.2-beta-10) through one shared load client, proves byte-identical responses by
+  SHA-256 before comparing timing, and records medians over repetitions with
+  environment metadata. It is versioned apart from the language conformance and
+  Cracking/Cormen/Exercism catalogs and runs on demand outside CI.
 
 ### Changed
 

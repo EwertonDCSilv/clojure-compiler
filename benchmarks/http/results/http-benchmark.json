@@ -1,0 +1,63 @@
+{
+  "benchmark": "adr-0013-http-hello-world",
+  "generated": "2026-07-29T04:10:58.169146+00:00",
+  "route": "GET /greet -> 200 \"Hello, world!\\n\"",
+  "load_model": "closed-loop, single connection, fresh socket per request, Connection: close",
+  "equivalent_response": true,
+  "shared_body_sha256": [
+    "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
+  ],
+  "environment": {
+    "git_rev": "a18b16f",
+    "cpu": "AMD Ryzen 5 8600G w/ Radeon 760M Graphics",
+    "cores": "12",
+    "java_runtime": "21.0.9+10-Ubuntu-125.04",
+    "clojure": "1.12.5",
+    "pedestal": "0.8.2-beta-10",
+    "http_kit": "2.8.1"
+  },
+  "native": {
+    "repetitions": 5,
+    "requests_per_rep": 20000,
+    "throughput_rps_median": 12389,
+    "throughput_rps_all": [
+      12519,
+      12273,
+      12021,
+      12580,
+      12389
+    ],
+    "mean_us_median": 52.42,
+    "p50_us_median": 46.52,
+    "p95_us_median": 73.89,
+    "p99_us_median": 105.11,
+    "max_us_median": 3495.77,
+    "body_sha256": [
+      "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
+    ],
+    "mismatches_total": 0
+  },
+  "jvm": {
+    "repetitions": 5,
+    "requests_per_rep": 20000,
+    "throughput_rps_median": 6576,
+    "throughput_rps_all": [
+      6542,
+      6576,
+      6622,
+      6490,
+      6590
+    ],
+    "mean_us_median": 118.94,
+    "p50_us_median": 109.07,
+    "p95_us_median": 181.14,
+    "p99_us_median": 237.7,
+    "max_us_median": 3625.93,
+    "body_sha256": [
+      "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
+    ],
+    "mismatches_total": 0
+  },
+  "native_over_jvm_throughput": 1.884,
+  "jvm_over_native_p50_latency": 2.345
+}
