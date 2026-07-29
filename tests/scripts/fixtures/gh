@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${FAKE_GH_EXIT:-0}" != "0" ]]; then
+  printf '%s\n' "simulated GitHub failure" >&2
+  exit "${FAKE_GH_EXIT}"
+fi
+
+printf '%s\n' "${FAKE_GH_ROW:-}"

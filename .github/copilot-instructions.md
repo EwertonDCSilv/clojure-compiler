@@ -14,7 +14,9 @@ The mandatory policies are:
 
 New features also require a pre-existing issue in the `clojure-compiler Roadmap`, a
 `feature/<issue-number>-<semantic-description>` branch, and a pull request targeting
-`master`, as defined by `AGENTS.md`.
+`master`, as defined by `AGENTS.md`. Run `make agent-feature-guard
+ISSUE=<issue-number>` before implementation. Missing estimates, epics, roll-ups, and
+issues above 8 story points must be refined into independently estimated tasks first.
 
 Do not weaken tests or change snapshots, fixture statuses, or checksums to hide a
 regression. Run the narrowest test during development, `make pre-commit` before commit,

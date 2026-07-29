@@ -29,16 +29,25 @@ New features must be registered before implementation:
    [`EwertonDCSilv/clojure-compiler`](https://github.com/EwertonDCSilv/clojure-compiler/issues);
 2. add the issue to the public
    [`clojure-compiler Roadmap`](https://github.com/users/EwertonDCSilv/projects/2);
-3. branch from the current `master` as
+3. assign at most 8 `Story points` and run
+   `make agent-feature-guard ISSUE=<issue-number>`;
+4. branch from the current `master` as
    `feature/<issue-number>-<semantic-description>`;
-4. keep commits on that branch and run the gates required by the affected subsystem;
-5. open a pull request targeting `master` that references the issue; and
-6. merge the feature only through the pull request.
+5. keep commits on that branch and run the gates required by the affected subsystem;
+6. open a pull request targeting `master` that references the issue; and
+7. merge the feature only through the pull request.
 
 Use lowercase kebab case for the semantic description, such as
 `feature/8-pedestal-syntax-support`. Update the issue and project before expanding the
 feature beyond its registered scope. Direct feature implementation or direct feature
 pushes on `master` are not accepted.
+
+An issue without an estimate, above 8 story points, or classified as an epic/roll-up
+cannot enter implementation. Refine it first, preferably as independent sub-issues
+with their own acceptance criteria and estimates of at most 8 points. The repository
+hooks repeat this fail-closed check on feature branches. The check requires an
+authenticated `gh` session with Projects v2 read access; a failed lookup blocks the
+feature commit rather than silently bypassing the policy.
 
 ## Enable the repository hooks
 
