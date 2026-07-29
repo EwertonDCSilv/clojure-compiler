@@ -3,4 +3,5 @@
 set -euo pipefail
 
 repository="$(git rev-parse --show-toplevel)"
+"${repository}/scripts/check-agent-story-points.sh"
 exec "${repository}/scripts/pre-commit.sh"

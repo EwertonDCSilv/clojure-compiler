@@ -50,9 +50,21 @@ done
 for feature_policy in \
   "feature/<issue-number>-<semantic-description>" \
   "clojure-compiler Roadmap" \
+  "make agent-feature-guard ISSUE=<issue-number>" \
+  "at most 8" \
   "pull request from the feature branch to"; do
   if ! grep -Fq "${feature_policy}" AGENTS.md; then
     echo "AGENTS.md does not contain mandatory feature workflow: ${feature_policy}" >&2
+    exit 1
+  fi
+done
+
+for guard_file in \
+  scripts/check-agent-story-points.sh \
+  tests/scripts/check-agent-story-points.sh \
+  tests/scripts/fixtures/gh; do
+  if [[ ! -x "${guard_file}" ]]; then
+    echo "missing executable agent story-point guard file: ${guard_file}" >&2
     exit 1
   fi
 done
