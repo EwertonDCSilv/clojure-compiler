@@ -110,8 +110,10 @@ Ordem sugerida:
 14. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — testes, cobertura e oracle manual.
 15. [TDD_WORKFLOW.md](TDD_WORKFLOW.md) — evolução Red–Green–Refactor e contratos de
     regressão.
-16. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
-17. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+16. [TIDY_FIRST.md](TIDY_FIRST.md) — separação de mudanças estruturais e
+    comportamentais para agentes de IA.
+17. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
+18. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
 
 Documentos operacionais:
 

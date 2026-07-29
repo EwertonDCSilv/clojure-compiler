@@ -15,6 +15,13 @@ All behavior-changing work follows the Red–Green–Refactor cycle in
 [`specs/DOCUMENTATION_STYLE.md`](specs/DOCUMENTATION_STYLE.md) and is updated with the
 contract it describes.
 
+Preparatory refactors follow [`specs/TIDY_FIRST.md`](specs/TIDY_FIRST.md). A tidy is a
+small behavior-preserving structural change in its own
+`tidy/<issue-number>-<semantic-description>` branch and pull request. Run the same
+focused characterization or structural check before and after it. If an observable
+contract, fixture, snapshot, checksum, diagnostic, ABI, GC behavior, or benchmark
+expectation must change, it is not a tidy and must follow the behavior workflow.
+
 Every commit also updates the relevant category under
 [`CHANGELOG.md`](CHANGELOG.md) `Unreleased`. Release preparation moves those entries
 into a dated version section without rewriting historical releases. Changelog-only and
