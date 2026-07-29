@@ -784,12 +784,7 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
     } else {
         "not-applicable"
     };
-    let class = if oracle == "equal" {
-        "official"
-    } else {
-        "unsupported"
-    };
-    let active = matches!(
+    let core_active = matches!(
         (api.namespace, api.function, scenario),
         ("clojure.core", "flush", "normal")
             | ("clojure.core", "read-string", "normal" | "boundary")
@@ -799,6 +794,31 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
             | ("clojure.core", "with-open", "boundary")
             | ("clojure.core", "with-out-str", "normal" | "boundary")
     );
+    let native_wrapper_active = matches!(
+        (api.namespace, api.function, scenario),
+        (
+            "cljn.io",
+            "path"
+                | "join"
+                | "file-name"
+                | "exists?"
+                | "file?"
+                | "directory?"
+                | "list"
+                | "create-directory!"
+                | "create-directories!"
+                | "move!"
+                | "delete!",
+            "normal" | "boundary" | "error"
+        ) | ("cljn.io", "parent", "normal" | "boundary")
+            | ("cljn.process", "getenv", "normal" | "boundary" | "error")
+    );
+    let active = core_active || native_wrapper_active;
+    let class = if oracle == "equal" || native_wrapper_active {
+        "official"
+    } else {
+        "unsupported"
+    };
     let mut value = fixture(
         'C',
         leak(format!("{}/{}", api.directory, function_slug)),
@@ -813,7 +833,9 @@ fn io_api_case(api: IoApi, scenario: &'static str, expression: &'static str) -> 
         "build-run",
         oracle,
         scenario == "boundary",
-        if active {
+        if native_wrapper_active {
+            "Implemented by compiled cljn.io/cljn.process wrappers over ADR-0007 primitives (issue #103)."
+        } else if active {
             "Implemented by the current native clojure.core I/O path."
         } else {
             "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."

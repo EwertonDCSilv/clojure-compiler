@@ -2266,7 +2266,14 @@ mod tests {
             case.manifest.namespace.as_deref() == Some("cljn.io")
                 && case.manifest.id != "c.cljn_io.filesystem.isolated_tree_and_symlink"
         }) {
-            assert_eq!(case.manifest.status, CaseStatus::Xfail);
+            // The native cljn.io surface is tracked with three scenarios per API on
+            // Linux and is never evaluated by the Clojure/JVM oracle. Scenarios are
+            // promoted from xfail to active as each API's backing primitive lands
+            // (issue #99), so status may be either while the surface is completed.
+            assert!(matches!(
+                case.manifest.status,
+                CaseStatus::Xfail | CaseStatus::Active
+            ));
             assert_eq!(case.manifest.oracle, Oracle::NotApplicable);
             assert_eq!(case.manifest.run.platforms, ["linux"]);
             let (api, scenario) = case

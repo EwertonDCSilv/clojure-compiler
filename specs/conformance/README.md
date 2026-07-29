@@ -11,11 +11,11 @@ compiler's current behavior by compatibility levels A–E from
 [`COMPATIBILITY_SPEC.md`](../COMPATIBILITY_SPEC.md). Classification follows the code
 that is executable today, rather than aspirational scope documents.
 
-Current inventory: **460 cases** — 186 active, 242 expected failures, and 32 pending.
+Current inventory: **461 cases** — 225 active, 204 expected failures, and 32 pending.
 The I/O inventory remains intentionally incremental. Output, flushing, dynamic
-redirection, `slurp`/`spit`, `read-string`, and string-backed streams have active
-coverage; the remaining `xfail` cases keep the full proposed I/O gate from being
-reported as delivered.
+redirection, `slurp`/`spit`, `read-string`, string-backed streams, and the first
+compiled `cljn.io` path/filesystem wrappers have active coverage; the remaining
+`xfail` cases keep the full proposed I/O gate from being reported as delivered.
 
 The 13 official Exercism concept exemplars are included at Level D as an external
 language/stdlib corpus: 2 are active and 11 are `xfail`. They verify observable support

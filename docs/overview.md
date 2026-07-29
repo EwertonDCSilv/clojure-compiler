@@ -67,15 +67,16 @@ somente nos safepoints de alocação.
 ## Qualidade e compatibilidade
 
 A suíte executável em [`tests/conformance/`](../tests/conformance) cobre os níveis A–E.
-Ela possui 460 casos: 186 ativos, 242 falhas esperadas e 32 itens pendentes. D inclui
+Ela possui 461 casos: 225 ativos, 204 falhas esperadas e 32 itens pendentes. D inclui
 bibliotecas puras autocontidas; E inclui aplicações nativas integradas de arquivo único
 e lacunas executáveis de ecossistema, além de um projeto-alvo de API HTTP Hello World
 em Pedestal. A verificação é offline, não depende de JVM e gera relatórios em
 `target/conformance/`.
 
 O inventário também cobre o gate proposto de I/O. Já estão ativos output, flush,
-redirecionamento, `slurp`/`spit`, `read-string` e streams de string; filesystem amplo,
-binários, EDN completo e vários contratos de erro/lifecycle permanecem `xfail`. O
+redirecionamento, `slurp`/`spit`, `read-string`, streams de string e o primeiro recorte
+de paths/filesystem em `cljn.io`; filesystem amplo, binários, EDN completo e vários
+contratos de erro/lifecycle permanecem `xfail`. O
 contrato está em [`specs/IO_SPEC.md`](../specs/IO_SPEC.md).
 
 As suítes de algoritmos ficam em [`benchmarks/cracking/`](../benchmarks/cracking) e
