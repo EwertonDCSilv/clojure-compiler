@@ -82,6 +82,12 @@ tags.
   SHA-256 before comparing timing, and records medians over repetitions with
   environment metadata. It is versioned apart from the language conformance and
   Cracking/Cormen/Exercism catalogs and runs on demand outside CI.
+- Add the `tests/differential/pedestal/` interceptor-chain differential (ADR-0013
+  Gate 3) that runs a scenario corpus through the compiled `cljn.pedestal.chain` and
+  the pinned upstream `io.pedestal.interceptor.chain` under the same
+  terminate-on-`:response` rule and diffs the observable output, proving native
+  interceptor order, termination, unwind, and recovery match the manual oracle. It
+  resolves Pedestal from Clojars and runs on demand outside CI.
 
 ### Changed
 

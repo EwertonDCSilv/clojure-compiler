@@ -1,0 +1,7 @@
+;; Pinned classpath for the ADR-0013 Gate 3 differential JVM side.
+;; Same Pedestal beta and http-kit release as the HTTP benchmark and the upstream
+;; Level E fixture, resolved manually from Clojars/Maven Central outside CI.
+{:paths ["src"]
+ :deps {io.pedestal/pedestal.http-kit {:mvn/version "0.8.2-beta-10"}
+        org.slf4j/slf4j-simple {:mvn/version "2.0.17"}}
+ :aliases {:corpus {:main-opts ["-m" "jvm-chain"]}}}
