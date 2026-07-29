@@ -346,6 +346,17 @@ struct Runtime {
     with_binding: FuncId,            // (id, value, thunk) -> body result.
     read_line: FuncId,               // () -> string|nil from *in*.
     string_reader: FuncId,           // (string) -> reader.
+    string_writer: FuncId,           // () -> writer.
+    writer_to_string: FuncId,        // (writer) -> string.
+    stream_closed: FuncId,           // (x) -> nil|bool.
+    reader_p: FuncId,                // (x) -> bool.
+    writer_p: FuncId,                // (x) -> bool.
+    read_char_from: FuncId,          // (reader) -> char|nil.
+    read_line_from: FuncId,          // (reader) -> string|nil.
+    unread_char_to: FuncId,          // (reader,char) -> nil.
+    write_to: FuncId,                // (writer,string) -> nil.
+    flush_writer: FuncId,            // (writer) -> nil.
+    closeable_p: FuncId,             // (x) -> bool.
     char_of: FuncId,                 // (int|char)->char
     int_of: FuncId,                  // (char|int)->int
     charp: FuncId,                   // (x)->bool
@@ -878,6 +889,22 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
                 .unwrap()
         },
         string_reader: una(m, "cljn_string_reader"),
+        string_writer: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_string_writer", Linkage::Import, &s)
+                .unwrap()
+        },
+        writer_to_string: una(m, "cljn_writer_to_string"),
+        stream_closed: una(m, "cljn_stream_closed"),
+        reader_p: una(m, "cljn_reader_p"),
+        writer_p: una(m, "cljn_writer_p"),
+        read_char_from: una(m, "cljn_read_char_from"),
+        read_line_from: una(m, "cljn_read_line_from"),
+        unread_char_to: bin(m, "cljn_unread_char_to"),
+        write_to: bin(m, "cljn_write_to"),
+        flush_writer: una(m, "cljn_flush_writer"),
+        closeable_p: una(m, "cljn_closeable_p"),
         char_of: una(m, "cljn_char"),
         int_of: una(m, "cljn_int"),
         charp: una(m, "cljn_charp"),
@@ -1024,6 +1051,14 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
+            | Prim::StreamClosed
+            | Prim::StreamReaderP
+            | Prim::StreamWriterP
+            | Prim::ReadCharFrom
+            | Prim::UnreadCharTo
+            | Prim::WriteTo
+            | Prim::FlushWriter
+            | Prim::CloseableP
             | Prim::Mkdir
             | Prim::Mkdirs
             | Prim::DeleteFile
@@ -3469,6 +3504,17 @@ impl<'a> FnGen<'a> {
             Prim::WithBinding => self.tern(self.rt.with_binding, args),
             Prim::ReadLine => Ok(self.call0(self.rt.read_line)),
             Prim::StringReader => self.una(self.rt.string_reader, args),
+            Prim::StringWriter => Ok(self.call0(self.rt.string_writer)),
+            Prim::WriterToString => self.una(self.rt.writer_to_string, args),
+            Prim::StreamClosed => self.una(self.rt.stream_closed, args),
+            Prim::StreamReaderP => self.una(self.rt.reader_p, args),
+            Prim::StreamWriterP => self.una(self.rt.writer_p, args),
+            Prim::ReadCharFrom => self.una(self.rt.read_char_from, args),
+            Prim::ReadLineFrom => self.una(self.rt.read_line_from, args),
+            Prim::UnreadCharTo => self.bin(self.rt.unread_char_to, args),
+            Prim::WriteTo => self.bin(self.rt.write_to, args),
+            Prim::FlushWriter => self.una(self.rt.flush_writer, args),
+            Prim::CloseableP => self.una(self.rt.closeable_p, args),
             Prim::CharOf => self.una(self.rt.char_of, args),
             Prim::IntOf => self.una(self.rt.int_of, args),
             Prim::CharP => self.una(self.rt.charp, args),

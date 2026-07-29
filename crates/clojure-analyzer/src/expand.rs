@@ -2,9 +2,9 @@
 //!
 //! AOT compilation does not execute a general macro interpreter. This module
 //! expands the supported `clojure.core` macros (`when`, `when-not`, `if-not`,
-//! `cond`, `and`, `or`, `->`, and `->>`) into forms handled directly by semantic
-//! analysis. Special forms, `let`, and `defn` remain intact, and quoted data is
-//! never traversed.
+//! `cond`, `and`, `or`, `->`, `->>`, and `doto`) into forms handled directly by
+//! semantic analysis. Special forms, `let`, and `defn` remain intact, and quoted
+//! data is never traversed.
 //!
 //! Expansion mirrors the bootstrap interpreter without creating a dependency on
 //! it. Generated symbols use a deterministic per-call counter.
@@ -174,6 +174,18 @@ impl Expander {
                 }
                 Some(expr)
             }
+            "doto" => {
+                let obj = args.first()?.clone();
+                let g = self.gensym("doto");
+                let gsym = Spanned::new(Form::sym(&g), span);
+                let binding = Spanned::new(Form::Vector(vec![gsym.clone(), obj]), span);
+                let mut body = vec![sym("let*"), binding];
+                for step in &args[1..] {
+                    body.push(thread_into(step, gsym.clone(), true, span));
+                }
+                body.push(gsym.clone());
+                Some(list(body))
+            }
             _ => None,
         }
     }
@@ -221,6 +233,21 @@ mod tests {
         assert_eq!(expanded("(if-not ready 1 2)"), "(if ready 2 1)");
         assert_eq!(expanded("(if-not ready 1)"), "(if ready nil 1)");
         assert_eq!(expanded("(cond a 1 b 2 :else 3)"), "(if a 1 (if b 2 3))");
+    }
+
+    #[test]
+    fn expands_doto_threading_the_object_and_returning_it() {
+        let out = expanded("(doto (mk) (f 1) g)");
+        assert!(out.contains("let*"), "doto uses let*: {out}");
+        assert!(
+            out.contains("(f __cljn_doto_1 1)"),
+            "threads object first: {out}"
+        );
+        assert!(out.contains("(g __cljn_doto_1)"), "bare symbol step: {out}");
+        assert!(
+            out.trim_end().ends_with("__cljn_doto_1)"),
+            "returns the object: {out}"
+        );
     }
 
     #[test]

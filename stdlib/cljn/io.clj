@@ -91,3 +91,101 @@
   (if (and (string? src) (string? dst) (file-exists? src))
     (rename src dst)
     (fail)))
+
+;; --- streams -----------------------------------------------------------------
+
+(defn- open-reader?
+  "True when `r` is an open reader handle."
+  [r]
+  (and (reader? r) (not (stream-closed r))))
+
+(defn- open-writer?
+  "True when `w` is an open writer handle."
+  [w]
+  (and (writer? w) (not (stream-closed w))))
+
+(defn- open-in
+  "Opens a file path for reading, raising `:invalid-input` on failure."
+  [p]
+  (if (string? p) (guard (fn [] (reader p))) (fail)))
+
+(defn- open-out
+  "Opens a file path for writing, raising `:invalid-input` on failure."
+  [p]
+  (if (string? p) (guard (fn [] (writer p))) (fail)))
+
+(defn reader
+  "Opens a file path as a character reader; trailing options are accepted."
+  [p & options]
+  (open-in p))
+
+(defn input-stream
+  "Opens a file path as a binary input stream (a reader in this subset)."
+  [p & options]
+  (open-in p))
+
+(defn writer
+  "Opens a file path as a character writer; trailing options are accepted."
+  [p & options]
+  (open-out p))
+
+(defn output-stream
+  "Opens a file path as a binary output stream (a writer in this subset)."
+  [p & options]
+  (open-out p))
+
+(defn string-reader
+  "Returns a reader over an in-memory string."
+  [s]
+  (if (string? s) (string-reader s) (fail)))
+
+(defn string-writer
+  "Returns an in-memory string writer; an optional non-negative capacity hint is
+  accepted."
+  [& options]
+  (if (or (empty? options) (not (neg? (first options))))
+    (string-writer)
+    (fail)))
+
+(defn writer-string
+  "Returns the accumulated text of a string writer."
+  [w]
+  (if (writer? w) (writer->string w) (fail)))
+
+(defn read-char
+  "Reads one character from an open reader, or nil at end of input."
+  [r]
+  (if (open-reader? r) (read-char-from r) (fail)))
+
+(defn read-line
+  "Reads one line (without the newline) from an open reader, or nil at end."
+  [r]
+  (if (open-reader? r) (read-line-from r) (fail)))
+
+(defn unread-char
+  "Pushes character `ch` back into open reader `r` for the next read, requiring a
+  prior read."
+  [r ch]
+  (if (and (open-reader? r) (unread-char-to r ch)) nil (fail)))
+
+(defn write!
+  "Writes string `s` to open writer `w`."
+  [w s]
+  (if (and (open-writer? w) (string? s)) (write-to w s) (fail)))
+
+(defn flush!
+  "Flushes an open writer."
+  [w]
+  (if (open-writer? w) (flush-writer w) (fail)))
+
+(defn close!
+  "Closes a file or string reader/writer handle; closing twice is allowed.
+  Standard streams cannot be closed."
+  [x]
+  (if (closeable? x) (close x) (fail)))
+
+(defn closed?
+  "Returns true when the stream handle is closed."
+  [x]
+  (let [c (stream-closed x)]
+    (if (nil? c) (fail) c)))
