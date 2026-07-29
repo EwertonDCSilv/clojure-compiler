@@ -1,6 +1,6 @@
 # ADR-0002 — Gerenciamento de memória
 
-- **Status:** Proposto (a confirmar pelos protótipos #5 e #6)
+- **Status:** Aceito e implementado (GC mark-sweep preciso e não-movente com shadow-stack em produção)
 - **Contexto:** Clojure exige gerenciamento **automático** de memória com closures, lazy
   seqs (potencialmente cíclicas), estruturas persistentes com muito compartilhamento,
   Vars de longa duração e muito garbage temporário de sequências. Detalhes em

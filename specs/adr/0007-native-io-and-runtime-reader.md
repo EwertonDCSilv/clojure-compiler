@@ -1,6 +1,6 @@
 # ADR-0007 — I/O nativo atrás da ABI C e reader de runtime em Clojure
 
-- Status: **proposta**
+- Status: **aceita e implementada** (slurp/spit, streams de arquivo/string/bytes, paths, binding, reader de runtime; superfície `cljn.io`/`cljn.process` em progresso — #103)
 - Data: 2026-07-27
 - Relacionadas: [ADR-0002](0002-memory-management.md),
   [ADR-0003](0003-value-representation.md),
