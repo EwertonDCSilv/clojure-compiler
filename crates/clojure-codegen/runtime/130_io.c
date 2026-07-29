@@ -595,6 +595,51 @@ Value cljn_file_writer_p(Value x) {
     return b2v(obj_type(x) == T_WRITER && ((Writer *)x)->kind == WR_FILE);
 }
 
+/* POSIX declarations kept explicit for the strict C-lint feature-macro level
+   (SAFETY: Linux x86_64; `readlink` returns `ssize_t` = `long`). */
+extern int symlink(const char *target, const char *linkpath);
+extern long readlink(const char *pathname, char *buf, unsigned long bufsiz);
+extern int lstat(const char *pathname, struct stat *statbuf);
+
+/* Create a symbolic link `linkpath` pointing at `target`. Throws structured I/O
+   ex-data on failure (for example when the link path already exists). */
+Value cljn_create_symlink(Value target, Value linkpath) {
+    if (obj_type(target) != T_STR || obj_type(linkpath) != T_STR) die("create-symlink!: esperava strings");
+    cljn_gc_push(target);
+    cljn_gc_push(linkpath);
+    char *ct = io_cstr(target);
+    char *cl = io_cstr(linkpath);
+    int r = symlink(ct, cl);
+    int e = errno;
+    free(ct);
+    free(cl);
+    cljn_gc_popn(2);
+    if (r != 0) io_throw(io_kind(e), "create-symlink!", linkpath, e);
+    return NIL;
+}
+/* Read a symbolic link's target as a runtime string; throws when not a link. */
+Value cljn_read_link(Value path) {
+    if (obj_type(path) != T_STR) die("read-link: esperava string");
+    cljn_gc_push(path);
+    char *cp = io_cstr(path);
+    char buf[4096];
+    long n = readlink(cp, buf, sizeof(buf) - 1);
+    int e = errno;
+    free(cp);
+    cljn_gc_popn(1);
+    if (n < 0) io_throw(io_kind(e), "read-link", path, e);
+    return cljn_str_from(buf, (long)n);
+}
+/* Predicate: path names a symbolic link (lstat + S_ISLNK). */
+Value cljn_native_symlink_p(Value path) {
+    if (obj_type(path) != T_STR) die("symlink?: esperava string");
+    char *cp = io_cstr(path);
+    struct stat st;
+    int ok = (lstat(cp, &st) == 0) && S_ISLNK(st.st_mode);
+    free(cp);
+    return b2v(ok);
+}
+
 /* Invoke zero-arity thunk with *out* rebound to string capture.
  * Restores *out* and rethrows on exception; returns captured text normally.
  * GC: capture writer and prior *out* remain rooted across the thunk. */

@@ -11,8 +11,13 @@ tags.
 ### Fixed
 
 - Release temporary GC roots when a function with no local root slots returns.
+- Pin `cranelift-module` to the 0.124 line so it matches `cranelift-codegen`/`object`;
+  the Dependabot bump to 0.134 (#131) broke `ObjectModule` and left `master` unbuildable.
 
 ### Added
+- Add the `cljn.io` symbolic-link and copy API (issue #140): `create-symlink!`,
+  `read-link`, `symlink?`, and `copy!`, backed by symlink/readlink/lstat runtime
+  primitives, promoting 12 conformance fixtures to `active`.
 - Add the `cljn.io` random-access API (issue #138): `seek!`, `truncate!`, and
   `position` over file readers/writers, backed by fseek/ftruncate/ftell runtime
   primitives and `file-reader?`/`file-writer?` predicates, promoting 9 conformance
