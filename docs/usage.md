@@ -92,6 +92,7 @@ Alvos auxiliares:
 | `make benchmarks-list` | lista os casos das três suítes |
 | `make benchmarks-ci` | recorte de checksums usado na CI |
 | `make benchmarks-charts` | regenera os SVGs dos relatórios e da página do projeto |
+| `make benchmark-page-refresh` | executa testes, benchmarks nativos e regenera os gráficos da página |
 | `make benchmarks-compare-cracking` | comparação JVM somente da suíte Cracking |
 | `make benchmarks-compare-cormen` | comparação JVM somente da suíte Cormen |
 | `make benchmarks-compare-exercism` | comparação JVM do subconjunto Exercism promovido |

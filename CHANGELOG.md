@@ -10,6 +10,8 @@ tags.
 
 ### Added
 
+- Add `make benchmark-page-refresh` to run tests, native benchmarks, and the Pages
+  benchmark-chart refresh in one reproducible Bash workflow.
 - Add a gradual Rust module-size gate with explicit limits and grandfathered
   baselines that prevent oversized existing files from growing silently.
 - Add a pull-request template and explicit AI-agent rules requiring issue linkage,
