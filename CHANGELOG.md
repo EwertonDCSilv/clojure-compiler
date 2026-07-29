@@ -8,6 +8,10 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Release temporary GC roots when a function with no local root slots returns.
+
 ### Added
 
 - Add `make benchmark-page-refresh` to run tests, Native × JVM comparisons, status
