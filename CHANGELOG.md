@@ -10,6 +10,8 @@ tags.
 
 ### Added
 
+- Add a pull-request template and explicit AI-agent rules requiring issue linkage,
+  scoped changes, TDD evidence, and truthful validation records.
 - Add an AI-agent story-point guard that blocks feature implementation for
   unestimated Roadmap issues, epics, roll-ups, and issues above 8 points, with
   offline tests and fail-closed local commit/push hooks.
