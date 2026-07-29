@@ -184,3 +184,10 @@
   "Eagerly counts items in `coll` for which `pred` is truthy."
   [pred coll]
   (reduce (fn [acc x] (if (pred x) (inc acc) acc)) 0 coll))
+
+(defn ex-data
+  "Returns the payload map carried by a thrown value, or nil for non-map values.
+
+  The native runtime throws data maps directly (there is no JVM `ExceptionInfo`),
+  so this is map identity. Native I/O handlers read `:kind` from it."
+  [e] (if (map? e) e nil))

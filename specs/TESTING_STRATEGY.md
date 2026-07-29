@@ -93,10 +93,10 @@ tests/conformance/
 └── level-e-ecosystem/
 ```
 
-O inventário atual contém 460 casos:
+O inventário atual contém 461 casos:
 
-- 186 `active`: executados e bloqueantes;
-- 242 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
+- 225 `active`: executados e bloqueantes;
+- 204 `xfail`: precisam falhar pela razão declarada; um passe inesperado também bloqueia;
 - 32 `pending`: schema e checksum são validados, mas o caso não é executado.
 
 Níveis A–C classificam a sintaxe, a semântica e a biblioteca realmente executáveis.

@@ -1460,19 +1460,6 @@ impl<'a> Analyzer<'a> {
         args: &[SForm],
         span: Span,
     ) -> Result<Ast, Diagnostic> {
-        // The compiler-owned `cljn.io`/`cljn.process` namespaces expose native I/O
-        // as always-available sugar: `cljn.io/exists?` lowers directly to the backing
-        // runtime primitive with no `:require` and no compiled wrapper (issue #99).
-        if let Some(ns_name) = ns {
-            if let Some(prim) = cljn_builtin_prim(ns_name, name) {
-                check_prim_arity(prim, args.len(), span)?;
-                let a = self.analyze_seq(args)?;
-                return Ok(Ast::Call {
-                    callee: Callee::Prim(prim),
-                    args: a,
-                });
-            }
-        }
         if ns.is_none() {
             if let Some(prim) = prim_of(name) {
                 check_prim_arity(prim, args.len(), span)?;
@@ -2321,21 +2308,6 @@ fn optimize_transients(functions: &mut [Function], main_body: &mut [Ast]) {
     }
 }
 
-/// Maps a compiler-owned `cljn.io`/`cljn.process` qualified name to its backing
-/// runtime primitive, if one already exists. This is the read/path/filesystem
-/// subset served by ADR-0007 primitives; stream state, typed `cljn.io/IOException`
-/// errors, and byte-stream constructors are added in later slices of issue #99.
-fn cljn_builtin_prim(ns: &str, name: &str) -> Option<Prim> {
-    let simple = match (ns, name) {
-        ("cljn.io", "exists?") => "file-exists?",
-        ("cljn.io", "directory?") => "directory?",
-        ("cljn.io", "file?") => "file?",
-        ("cljn.process", "getenv") => "getenv",
-        _ => return None,
-    };
-    prim_of(simple)
-}
-
 fn prim_of(name: &str) -> Option<Prim> {
     Some(match name {
         "+" => Prim::Add,
@@ -2645,37 +2617,6 @@ mod tests {
     fn err(src: &str) -> Diagnostics {
         let forms = clojure_reader::read_all(0, src).expect("lê");
         analyze(&forms).unwrap_err()
-    }
-
-    #[test]
-    fn cljn_io_qualified_names_lower_to_native_prims() {
-        // `cljn.io`/`cljn.process` qualified calls resolve to the backing runtime
-        // primitive with no `:require` (issue #99).
-        let p = prog("(ns h.core)\n(defn a [] (cljn.io/exists? \"x\"))\n(defn b [] (cljn.process/getenv \"Y\"))");
-        let a = p
-            .functions
-            .iter()
-            .find(|x| x.name.ends_with("__a"))
-            .unwrap();
-        assert!(matches!(
-            a.methods[0].body,
-            Ast::Call {
-                callee: Callee::Prim(Prim::FileExists),
-                ..
-            }
-        ));
-        let b = p
-            .functions
-            .iter()
-            .find(|x| x.name.ends_with("__b"))
-            .unwrap();
-        assert!(matches!(
-            b.methods[0].body,
-            Ast::Call {
-                callee: Callee::Prim(Prim::Getenv),
-                ..
-            }
-        ));
     }
 
     #[test]

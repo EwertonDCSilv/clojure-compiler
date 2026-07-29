@@ -7,7 +7,7 @@ target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = false
-reason = "Native cljn.io/cljn.process API backed by an existing ADR-0007 primitive; the Clojure/JVM oracle cannot resolve the native namespace (ADR-0016, issue #99)."
+reason = "Implemented by compiled cljn.io/cljn.process wrappers over ADR-0007 primitives (issue #103)."
 tracking = "specs/IO_SPEC.md"
 namespace = "cljn.io"
 [run]

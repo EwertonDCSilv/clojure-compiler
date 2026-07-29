@@ -96,12 +96,9 @@ tags.
   candidate, and the decision that compiling upstream Pedestal (P2) is not useful
   until general Java interop, an async model, and user macros exist — no P3 work is
   proposed.
-- Resolve compiler-owned `cljn.io`/`cljn.process` qualified calls to their backing
-  native primitives with no `:require` (issue #99, first slice): `cljn.io/exists?`,
-  `cljn.io/directory?`, `cljn.io/file?`, and `cljn.process/getenv` lower directly to
-  the existing ADR-0007 runtime primitives, promoting their conformance fixtures from
-  `xfail` to `active` (195 active). Stream state, path constructors, byte streams, and
-  typed `cljn.io/IOException` errors follow in later slices.
+- Auto-load compiler-owned `cljn.io` and `cljn.process` modules for qualified calls
+  without `:require`, exposing the path/filesystem wrappers backed by existing
+  ADR-0007 primitives and stable `:invalid-input` data errors (issue #103).
 
 ### Changed
 
