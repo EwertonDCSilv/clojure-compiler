@@ -1651,11 +1651,8 @@ impl<'a> FnGen<'a> {
         self.stats.borrow_mut().raw_fixnum_bindings += 1;
     }
 
-    /// Enters a compact GC frame, omitting it when no local needs a root.
+    /// Enters a compact GC frame, including a zero-slot rootless frame.
     fn enter_planned_frame(&mut self) {
-        if self.root_slots.is_empty() {
-            return;
-        }
         {
             let mut stats = self.stats.borrow_mut();
             stats.root_slots += self.root_slots.len() as u64;

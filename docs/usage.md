@@ -92,6 +92,7 @@ Alvos auxiliares:
 | `make benchmarks-list` | lista os casos das três suítes |
 | `make benchmarks-ci` | recorte de checksums usado na CI |
 | `make benchmarks-charts` | regenera os SVGs dos relatórios e da página do projeto |
+| `make benchmark-page-refresh` | testa, mede Native × JVM e regenera dados e gráficos da página |
 | `make benchmarks-compare-cracking` | comparação JVM somente da suíte Cracking |
 | `make benchmarks-compare-cormen` | comparação JVM somente da suíte Cormen |
 | `make benchmarks-compare-exercism` | comparação JVM do subconjunto Exercism promovido |
@@ -212,6 +213,13 @@ de parede, CPU e memória. `make benchmarks` não requer JVM; somente os alvos
 `benchmarks-compare*` usam Java e os artefatos Clojure fixados. O alvo
 `benchmarks-charts` usa os CSVs comparativos versionados para atualizar tanto os
 relatórios quanto o painel de benchmarks da página do projeto.
+
+`make benchmark-page-refresh` executa o fluxo completo: testes, as três comparações
+Native × JVM, validação dos status, geração do dataset
+`docs/assets/benchmarks/data.js` e atualização dos SVGs. Os valores apresentados no
+painel são agregados diretamente dos CSVs versionados; não devem ser transcritos
+manualmente no HTML. O texto editorial e a interpretação dos resultados continuam
+sujeitos a revisão humana.
 
 Consulte o [catálogo central](../benchmarks/README.md) e os READMEs de
 [`Cracking`](../benchmarks/cracking/README.md) e

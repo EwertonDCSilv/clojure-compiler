@@ -36,11 +36,11 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	help all ci quality docs-check pre-commit pre-push hooks-install agent-feature-guard \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report coverage \
+	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh coverage \
 	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
-	benchmarks-charts \
+	benchmarks-charts benchmark-page-refresh \
 	benchmarks-ci benchmarks-compare benchmarks-compare-cracking \
 	benchmarks-compare-cormen benchmarks-compare-exercism \
 	install \
@@ -69,6 +69,7 @@ help:
 		"  benchmarks-cormen-ir     Executa o gate A/B da IR opcional no Cormen" \
 		"  benchmarks-charts        Atualiza os gráficos SVG dos resultados" \
 		"  benchmarks-compare       Compara as três suítes com Clojure/JVM AOT" \
+		"  benchmark-page-refresh   Testa, mede Native × JVM e atualiza a página" \
 		"  exercism-compatibility   Audita 101 práticas, 13 conceitos e 493 arquivos Exercism" \
 		"  install                  Instala clojure-native em ~/.local/bin" \
 		"  all                      Executa qualidade, cobertura, compatibilidade e benchmarks" \
@@ -162,7 +163,7 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report
+test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh
 	$(CARGO) test --workspace
 
 test-agent-guard:
@@ -192,6 +193,10 @@ test-cormen-build-gate:
 
 test-coverage-report:
 	tests/scripts/coverage-report.sh
+
+test-benchmark-page-refresh:
+	tests/scripts/refresh-benchmark-page.sh
+	tests/scripts/render-benchmark-page-data.sh
 
 coverage: test-coverage-report
 	scripts/coverage.sh $(COVERAGE_ARGS)
@@ -273,6 +278,9 @@ benchmarks-charts: $(BENCHMARK_CHART_RENDERER)
 		benchmarks/exercism/results/extreme.csv \
 		docs/assets/benchmarks/exercism \
 		"Exercism"
+
+benchmark-page-refresh:
+	scripts/refresh-benchmark-page.sh
 
 benchmarks-ci: release
 	benchmarks/cracking/run.sh --chapter 01

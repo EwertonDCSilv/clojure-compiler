@@ -8,12 +8,18 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Release temporary GC roots when a function with no local root slots returns.
+
 ### Added
 - Add the `cljn.io` random-access API (issue #138): `seek!`, `truncate!`, and
   `position` over file readers/writers, backed by fseek/ftruncate/ftell runtime
   primitives and `file-reader?`/`file-writer?` predicates, promoting 9 conformance
   fixtures to `active`.
 
+- Add `make benchmark-page-refresh` to run tests, Native × JVM comparisons, status
+  validation, and deterministic Pages data/chart generation in one Bash workflow.
 - Add Tidy First rules for AI agents, including change classification, isolated
   branches and pull requests, behavior-preserving evidence, and explicit stop
   conditions.
