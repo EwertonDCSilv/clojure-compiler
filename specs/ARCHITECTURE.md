@@ -33,7 +33,7 @@ O core compilável em `crates/clojure-native-cli/src/core_compiled.clj` é anali
 com o programa do usuário em todo `build`.
 
 No snapshot documentado em
-[`3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf),
+[`424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164),
 o analyzer também executa um pós-passe conservador de unicidade para acumuladores de
 vetor. O primeiro subconjunto interprocedural propaga um parâmetro linear entre funções
 de topo; ausência de prova mantém o caminho persistente.

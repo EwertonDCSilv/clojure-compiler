@@ -23,7 +23,7 @@ It is a compatibility inventory and is not part of this performance report.
 
 | Component | Revision |
 | --- | --- |
-| Compiler checkout used for performance and compatibility | `3e71bc1996b689233c80516b4b4aff52259c2cdf` |
+| Compiler checkout used for performance and compatibility | `424ba20e88fd91a641675e4d9d9bf111c63fc164` |
 | Measurement date | 2026-07-28 |
 | [`exercism/clojure`](https://github.com/exercism/clojure) | [`4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190`](https://github.com/exercism/clojure/tree/4a4c4fd0eb5a232ad1e5f2b81c751bfbfcbd0190) |
 | Clojure/JVM | 1.12.5, AOT with HotSpot enabled |
@@ -63,16 +63,15 @@ baseline.
 ## Performance result
 
 - 8/8 workloads produced identical Native and JVM checksums.
-- Accumulated wall time: Native `7.08 s`, JVM `4.22 s`.
-- Accumulated CPU time: Native `7.05 s`, JVM `8.04 s`.
+- Accumulated wall time: Native `7.15 s`, JVM `4.43 s`.
+- Accumulated CPU time: Native `7.12 s`, JVM `8.44 s`.
 - Native used less wall time in 4 cases and less CPU in 6 cases.
 - Native used less RSS in 7 cases. `knapsack` remains the exception at
-  `351.2 MiB` natively versus `258.5 MiB` on the JVM.
-- Median RSS: Native `7.8 MiB`, JVM `242.2 MiB`.
-- `prime-factors` remains the main native deficit: `3.55 s` versus `1.16 s` wall
-  time in the previous snapshot and `3.85 s` versus `1.16 s` now.
+  `351.1 MiB` natively versus `256.2 MiB` on the JVM.
+- Median RSS: Native `8.1 MiB`, JVM `244.2 MiB`.
+- `prime-factors` remains the main native deficit: `3.84 s` versus `1.21 s` wall time.
 - The newly promoted `annalyns-infiltration` workload completed with matching
-  checksum; Native used `1.13 s` versus `0.60 s` JVM wall time.
+  checksum; Native used `1.12 s` versus `0.61 s` JVM wall time.
 
 The accumulated wall result favors the JVM because `prime-factors`, `knapsack`, and
 `annalyns-infiltration` dominate this small suite. Accumulated CPU and median memory
@@ -99,19 +98,11 @@ Native.
 
 | Caso | Tempo N/J (s) | Δ tempo | CPU N/J (s) | Δ CPU | RSS N/J (MiB) | Δ RSS |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `01-practice/01-accumulate.clj` | 0.17 / 0.43 | -60.5% | 0.17 / 0.91 | -81.3% | 8.1 / 234.4 | -96.6% |
-| `01-practice/02-binary-search.clj` | 0.11 / 0.34 | -67.6% | 0.11 / 0.76 | -85.5% | 1.4 / 113.4 | -98.7% |
-| `01-practice/03-hello-world.clj` | 0.16 / 0.32 | -50.0% | 0.15 / 0.73 | -79.5% | 7.6 / 102.3 | -92.6% |
-| `01-practice/04-knapsack.clj` | 1.08 / 0.55 | +96.4% | 1.07 / 1.12 | -4.5% | 351.1 / 250.0 | +40.4% |
-| `01-practice/05-prime-factors.clj` | 3.85 / 1.16 | +231.9% | 3.84 / 1.74 | +120.7% | 16.1 / 1010.4 | -98.4% |
-| `01-practice/06-square-root.clj` | 0.04 / 0.33 | -87.9% | 0.04 / 0.73 | -94.5% | 1.5 / 99.8 | -98.5% |
-| `01-practice/07-two-fer.clj` | 0.54 / 0.49 | +10.2% | 0.54 / 0.97 | -44.3% | 7.9 / 334.6 | -97.6% |
-| `02-concept/01-annalyns-infiltration.clj` | 1.13 / 0.60 | +88.3% | 1.13 / 1.08 | +4.6% | 1.4 / 366.0 | -99.6% |
-
-Reproduce:
-
-```bash
-benchmarks/exercism/compare-clojure.sh \
-  --scale 5 \
-  --csv benchmarks/exercism/results/extreme.csv
-```
+| `01-practice/01-accumulate.clj` | 0.18 / 0.44 | -59.1% | 0.17 / 0.91 | -81.3% | 8.2 / 232.1 | -96.5% |
+| `01-practice/02-binary-search.clj` | 0.11 / 0.36 | -69.4% | 0.11 / 0.79 | -86.1% | 1.4 / 115.8 | -98.8% |
+| `01-practice/03-hello-world.clj` | 0.26 / 0.35 | -25.7% | 0.25 / 0.78 | -67.9% | 26.4 / 115.9 | -77.2% |
+| `01-practice/04-knapsack.clj` | 1.06 / 0.59 | +79.7% | 1.05 / 1.25 | -16.0% | 351.1 / 256.2 | +37.0% |
+| `01-practice/05-prime-factors.clj` | 3.84 / 1.21 | +217.4% | 3.84 / 1.78 | +115.7% | 15.8 / 1102.7 | -98.6% |
+| `01-practice/06-square-root.clj` | 0.04 / 0.34 | -88.2% | 0.04 / 0.79 | -94.9% | 1.4 / 107.9 | -98.7% |
+| `01-practice/07-two-fer.clj` | 0.54 / 0.53 | +1.9% | 0.54 / 1.03 | -47.6% | 8.0 / 371.9 | -97.9% |
+| `02-concept/01-annalyns-infiltration.clj` | 1.12 / 0.61 | +83.6% | 1.12 / 1.11 | +0.9% | 1.4 / 372.8 | -99.6% |

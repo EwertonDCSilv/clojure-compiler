@@ -22,19 +22,22 @@ rooting continua eager; as seções de liveness/safepoints descrevem o principal
 restante. `CodegenOptions` também já expõe `none`, `speed` e `speed-and-size`, mas
 `none` permanece padrão após regressão medida no gate Cormen.
 
-Ganhos posteriores, revalidados no `HEAD 3e71bc1`, ampliaram o escopo original:
+Ganhos posteriores, revalidados no `HEAD 424ba20`, ampliaram o escopo original:
 
 - `mapv` e `into` constroem vetores por transiente estrutural;
 - acumuladores frescos de `loop` podem ser promovidos automaticamente, incluindo o
   primeiro sumário conservador de parâmetro linear interprocedural (`e87456e`);
 - vetores literais constantes de imediatos são cacheados por site e registrados como
   roots permanentes (`1ca1d79`).
+- a IR própria opt-in possui um perfil `safe` parcial e um gate Cormen pareado;
+- o experimento isolado da ADR-0015 mede unboxing interno, roots compactos e chamadas
+  especializadas sem promovê-los ao perfil estável.
 
-Na rodada completa mais recente, o Cormen chegou a 30,06 s de parede e 29,95 s de CPU,
-contra 17,01 s e 32,66 s na JVM medida na mesma revisão. A parede nativa aumentou 15,3%
+Na rodada completa mais recente, o Cormen chegou a 27,23 s de parede e 27,09 s de CPU,
+contra 16,95 s e 32,08 s na JVM medida na mesma revisão. A parede nativa caiu 9,4%
 contra o snapshot anterior; o sinal deve ser confirmado pelo gate pareado da ADR-0014
-antes de qualquer atribuição. Essas entregas não implementam rooting por liveness,
-tuplas de retorno sem heap nem uma IR própria. A análise completa está na
+antes de qualquer atribuição. Essas entregas ainda não implementam rooting por liveness
+nem tuplas de retorno sem heap, e a IR própria continua parcial e opt-in. A análise completa está na
 [ADR-0009](adr/0009-benchmark-performance-study.md), e a decisão interprocedural na
 [ADR-0010](adr/0010-interprocedural-ephemeral-vectors.md). The planned verified IR and
 its blocking Cormen non-regression rules are defined by

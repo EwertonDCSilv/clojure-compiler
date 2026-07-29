@@ -145,7 +145,7 @@
       "honesty.label": "Experimental por design",
       "honesty.bodyHtml":
         "<strong>Este projeto ainda não é um substituto para Clojure/JVM.</strong> Interop Java, bignums, sequências lazy, namespaces dinâmicos e resolução geral de dependências continuam fora do caminho nativo. Fontes locais multi-arquivo já podem ser carregadas estaticamente.",
-      "honesty.status": "v0.0.1 · em evolução",
+      "honesty.status": "v0.0.2 · em evolução",
       "start.kicker": "Comece em minutos",
       "start.title": "Do clone ao binário nativo.",
       "start.lead":
@@ -167,7 +167,7 @@
       "stats.behaviors": "comportamentos implementados",
       "stats.benchmarks": "benchmarks de algoritmos",
       "stats.jvm": "no runtime do binário",
-      "stats.note": "números documentados no repositório · versão 0.0.1",
+      "stats.note": "números documentados no repositório · versão 0.0.2",
       "cta.title": "Explore. Compile. Contribua.",
       "cta.body":
         "O código, as especificações, os benchmarks e as decisões arquiteturais estão abertos. Veja o estado atual e ajude a construir o próximo passo.",
@@ -312,7 +312,7 @@
       "honesty.label": "Experimental por diseño",
       "honesty.bodyHtml":
         "<strong>Este proyecto aún no sustituye a Clojure/JVM.</strong> La interoperabilidad Java, bignums, secuencias lazy, namespaces dinámicos y la resolución general de dependencias siguen fuera de la ruta nativa. Las fuentes locales multiarchivo ya pueden cargarse de forma estática.",
-      "honesty.status": "v0.0.1 · en evolución",
+      "honesty.status": "v0.0.2 · en evolución",
       "start.kicker": "Empieza en minutos",
       "start.title": "Del clon al binario nativo.",
       "start.lead":
@@ -334,7 +334,7 @@
       "stats.behaviors": "comportamientos implementados",
       "stats.benchmarks": "benchmarks de algoritmos",
       "stats.jvm": "en el runtime del binario",
-      "stats.note": "cifras documentadas en el repositorio · versión 0.0.1",
+      "stats.note": "cifras documentadas en el repositorio · versión 0.0.2",
       "cta.title": "Explora. Compila. Contribuye.",
       "cta.body":
         "El código, las especificaciones, los benchmarks y las decisiones de arquitectura son abiertos. Consulta el estado actual y ayuda a construir el siguiente paso.",
@@ -479,7 +479,7 @@
       "honesty.label": "Experimental by design",
       "honesty.bodyHtml":
         "<strong>This project is not yet a replacement for Clojure/JVM.</strong> Java interop, bignums, lazy sequences, dynamic namespaces, and general dependency resolution remain outside the native path. Local multi-file sources can now be loaded statically.",
-      "honesty.status": "v0.0.1 · evolving",
+      "honesty.status": "v0.0.2 · evolving",
       "start.kicker": "Start in minutes",
       "start.title": "From clone to native binary.",
       "start.lead":
@@ -501,7 +501,7 @@
       "stats.behaviors": "implemented behaviors",
       "stats.benchmarks": "algorithm benchmarks",
       "stats.jvm": "in the binary runtime",
-      "stats.note": "numbers documented in the repository · version 0.0.1",
+      "stats.note": "numbers documented in the repository · version 0.0.2",
       "cta.title": "Explore. Compile. Contribute.",
       "cta.body":
         "The code, specifications, benchmarks, and architecture decisions are open. See the current status and help build the next step.",
@@ -646,7 +646,7 @@
       "honesty.label": "Expérimental par conception",
       "honesty.bodyHtml":
         "<strong>Ce projet ne remplace pas encore Clojure/JVM.</strong> L'interop Java, les bignums, les séquences lazy, les namespaces dynamiques et la résolution générale des dépendances restent hors de la voie native. Les sources locales multi-fichiers peuvent désormais être chargées statiquement.",
-      "honesty.status": "v0.0.1 · en évolution",
+      "honesty.status": "v0.0.2 · en évolution",
       "start.kicker": "Démarrez en quelques minutes",
       "start.title": "Du clone au binaire natif.",
       "start.lead":
@@ -668,7 +668,7 @@
       "stats.behaviors": "comportements implémentés",
       "stats.benchmarks": "benchmarks d'algorithmes",
       "stats.jvm": "dans le runtime du binaire",
-      "stats.note": "chiffres documentés dans le dépôt · version 0.0.1",
+      "stats.note": "chiffres documentés dans le dépôt · version 0.0.2",
       "cta.title": "Explorez. Compilez. Contribuez.",
       "cta.body":
         "Le code, les spécifications, les benchmarks et les décisions d'architecture sont ouverts. Consultez l'état actuel et contribuez à la prochaine étape.",
@@ -813,7 +813,7 @@
       "honesty.label": "Экспериментальный по замыслу",
       "honesty.bodyHtml":
         "<strong>Проект пока не заменяет Clojure/JVM.</strong> Java interop, bignums, ленивые последовательности, динамические namespaces и общая система разрешения зависимостей остаются за пределами нативного пути. Локальные многофайловые исходники уже можно загружать статически.",
-      "honesty.status": "v0.0.1 · развивается",
+      "honesty.status": "v0.0.2 · развивается",
       "start.kicker": "Начните за несколько минут",
       "start.title": "От клонирования до нативного бинарного файла.",
       "start.lead":
@@ -835,7 +835,7 @@
       "stats.behaviors": "реализованных поведений",
       "stats.benchmarks": "алгоритмических бенчмарков",
       "stats.jvm": "в runtime бинарного файла",
-      "stats.note": "цифры задокументированы в репозитории · версия 0.0.1",
+      "stats.note": "цифры задокументированы в репозитории · версия 0.0.2",
       "cta.title": "Изучайте. Компилируйте. Участвуйте.",
       "cta.body":
         "Код, спецификации, бенчмарки и архитектурные решения открыты. Ознакомьтесь с текущим состоянием и помогите сделать следующий шаг.",
@@ -973,7 +973,7 @@
       "honesty.label": "有意保持实验性",
       "honesty.bodyHtml":
         "<strong>本项目目前还不能替代 Clojure/JVM。</strong> Java interop、bignums、惰性序列、动态 namespaces 和通用依赖解析仍不在原生路径范围内。本地多文件源码现在可以静态加载。",
-      "honesty.status": "v0.0.1 · 持续演进",
+      "honesty.status": "v0.0.2 · 持续演进",
       "start.kicker": "几分钟即可开始",
       "start.title": "从克隆到原生二进制文件。",
       "start.lead": "以 release 模式构建 CLI，将任何兼容示例转换为适用于宿主平台的独立可执行文件。",
@@ -993,7 +993,7 @@
       "stats.behaviors": "已实现行为",
       "stats.benchmarks": "算法基准测试",
       "stats.jvm": "二进制 runtime 中",
-      "stats.note": "数据记录于仓库 · 版本 0.0.1",
+      "stats.note": "数据记录于仓库 · 版本 0.0.2",
       "cta.title": "探索。编译。贡献。",
       "cta.body": "代码、规范、基准测试和架构决策全部开放。查看当前状态，一起构建下一步。",
       "cta.button": "在 GitHub 上打开",

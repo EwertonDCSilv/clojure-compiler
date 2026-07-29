@@ -297,3 +297,23 @@ o resultado é um sinal de regressão, não evidência causal sobre uma mudança
 A investigação e qualquer futura promoção da IR opcional devem usar repetições pareadas
 e os limites bloqueantes definidos na
 [ADR-0014](0014-optional-optimization-ir.md).
+
+## 13. Snapshot após a IR opcional e o experimento ADR-0015
+
+Uma nova execução integral no compilador `424ba20`, ainda com escala 25×,
+`--opt-level none` e ambos os runtimes refeitos, mediu:
+
+| Métrica Cormen | Native | Clojure/JVM |
+| --- | ---: | ---: |
+| Tempo de parede acumulado | 27,23 s | 16,95 s |
+| Tempo de CPU acumulado | 27,09 s | 32,08 s |
+| RSS mediano | 13,2 MiB | 270,8 MiB |
+| Vitórias por tempo de parede | 14 | 16 |
+| Vitórias por CPU | 21 | 9 |
+| Vitórias por RSS | 30 | 0 |
+
+Os 30 checksums coincidiram. A parede nativa caiu 9,4% e a CPU 9,5% frente ao snapshot
+`3e71bc1`; o agregado de CPU usa 15,6% menos tempo que a JVM. Esses valores continuam
+sendo uma medição única por caso. A admissão de perfis de IR permanece condicionada ao
+gate pareado da [ADR-0014](0014-optional-optimization-ir.md), que controla ordem,
+repetições e incerteza.

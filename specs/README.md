@@ -9,7 +9,7 @@ Este diretório registra a arquitetura, o escopo e as decisões do compilador na
 nome do produto e do binário é `clojure-native`; o repositório se chama
 `clojure-compiler`.
 
-> Snapshot documentado: [`HEAD 3e71bc1`](https://github.com/EwertonDCSilv/clojure-compiler/commit/3e71bc1996b689233c80516b4b4aff52259c2cdf)
+> Snapshot documentado: [`HEAD 424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164)
 > em 2026-07-28. A política e o benchmark de referência estão em
 > [`docs/SNAPSHOT.md`](../docs/SNAPSHOT.md).
 
@@ -60,10 +60,10 @@ arquivo.
 
 O benchmark numérico de 100 milhões de iterações caiu de 3,02 s para 0,66 s após os
 fast paths e os stores diretos de roots. No snapshot mais recente, Cracking acumula
-8,16 s nativos contra 23,22 s na JVM; Cormen acumula 30,06 s contra 17,01 s de parede,
-mas 29,95 s contra 32,66 s de CPU. Os 98 checksums são equivalentes. O aumento de 15,3%
-na parede nativa do Cormen contra o snapshot anterior permanece como sinal de regressão
-a confirmar com medições pareadas. O corpus
+8,05 s nativos contra 23,02 s na JVM; Cormen acumula 27,23 s contra 16,95 s de parede,
+mas 27,09 s contra 32,08 s de CPU. Os 98 checksums são equivalentes. A queda de 9,4%
+na parede nativa do Cormen contra o snapshot anterior é positiva, mas ainda exige
+medições pareadas antes de ser atribuída ao compilador. O corpus
 externo Exercism audita 101 soluções práticas e 13 exemplares conceituais oficiais:
 10 compilam e 104 registram o primeiro bloqueador. Oito cargas adequadas formam uma
 suíte de desempenho Native × JVM separada; os demais casos pertencem ao relatório de

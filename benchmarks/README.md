@@ -358,18 +358,17 @@ make benchmarks-compare-exercism EXERCISM_COMPARE_ARGS="--scale 5"
 
 ## Consulte os resultados
 
-Snapshot medido em 2026-07-28 no compilador `3e71bc1`, com ambos os lados refeitos:
+Snapshot medido em 2026-07-28 no compilador `424ba20`, com ambos os lados refeitos:
 
 | Suíte | Parede Native/JVM | CPU Native/JVM | RSS mediano Native/JVM |
 | --- | ---: | ---: | ---: |
-| Cracking | 8,16 / 23,22 s | 8,06 / 50,93 s | 4,6 / 119,9 MiB |
-| Cormen/CLRS | 30,06 / 17,01 s | 29,95 / 32,66 s | 13,3 / 273,9 MiB |
-| Exercism | 7,08 / 4,22 s | 7,05 / 8,04 s | 7,8 / 242,2 MiB |
+| Cracking | 8,05 / 23,02 s | 7,91 / 47,35 s | 4,6 / 114,8 MiB |
+| Cormen/CLRS | 27,23 / 16,95 s | 27,09 / 32,08 s | 13,2 / 270,8 MiB |
+| Exercism | 7,15 / 4,43 s | 7,12 / 8,44 s | 8,1 / 244,2 MiB |
 
 Os 98 casos terminaram com status `OK` e checksums equivalentes.
-No Cormen, o tempo de parede nativo agregado aumentou 15,3% frente à rodada anterior.
-Como os números são snapshots únicos, isso é tratado como sinal de regressão a
-confirmar pelo gate pareado da
+No Cormen, o tempo de parede nativo agregado caiu 9,4% frente à rodada anterior.
+Como os números são snapshots únicos, a variação continua subordinada ao gate pareado da
 [ADR-0014](../specs/adr/0014-optional-optimization-ir.md), não como causalidade
 atribuída.
 
