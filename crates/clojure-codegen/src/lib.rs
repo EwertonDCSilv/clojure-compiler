@@ -356,6 +356,9 @@ struct Runtime {
     bytes: FuncId,                   // (string)->bytes
     bytes_to_string: FuncId,         // (bytes)->string
     bget: FuncId,                    // (bytes,i)->fixnum
+    bytes_of_vec: FuncId,            // (vec)->bytes
+    bytes_to_vec: FuncId,            // (bytes)->vec
+    valid_utf8: FuncId,              // (bytes)->bool
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -887,6 +890,9 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         bytes: una(m, "cljn_bytes"),
         bytes_to_string: una(m, "cljn_bytes_to_string"),
         bget: bin(m, "cljn_bget"),
+        bytes_of_vec: una(m, "cljn_bytes_of_vec"),
+        bytes_to_vec: una(m, "cljn_bytes_to_vec"),
+        valid_utf8: una(m, "cljn_valid_utf8"),
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -1021,6 +1027,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::CharP
             | Prim::ReadChar
             | Prim::Bget
+            | Prim::ValidUtf8
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3479,6 +3486,9 @@ impl<'a> FnGen<'a> {
             Prim::Bytes => self.una(self.rt.bytes, args),
             Prim::BytesToString => self.una(self.rt.bytes_to_string, args),
             Prim::Bget => self.bin(self.rt.bget, args),
+            Prim::BytesOfVec => self.una(self.rt.bytes_of_vec, args),
+            Prim::BytesToVec => self.una(self.rt.bytes_to_vec, args),
+            Prim::ValidUtf8 => self.una(self.rt.valid_utf8, args),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
