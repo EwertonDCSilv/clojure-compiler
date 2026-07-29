@@ -36,7 +36,7 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	help all ci quality docs-check pre-commit pre-push hooks-install agent-feature-guard \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer coverage \
+	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-coverage-report coverage \
 	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
@@ -82,6 +82,7 @@ help:
 		"  test-agent-guard         Testa o guard rail de story points sem rede" \
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
 		"  test-ir-ab-analyzer      Testa o analisador estatístico do gate de IR" \
+		"  test-coverage-report     Testa o relatório e ratchet de cobertura" \
 		"  compatibility-list       Lista casos da matriz de compatibilidade" \
 		"  compatibility-oracle     Compara com o oracle Clojure/JVM manual" \
 		"  benchmarks-list          Lista todos os casos das três suítes" \
@@ -160,7 +161,7 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer
+test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer test-coverage-report
 	$(CARGO) test --workspace
 
 test-agent-guard:
@@ -182,7 +183,10 @@ $(IR_AB_ANALYZER_TESTS): benchmarks/analyze-ir-ab.rs
 test-ir-ab-analyzer: $(IR_AB_ANALYZER_TESTS)
 	$(IR_AB_ANALYZER_TESTS)
 
-coverage:
+test-coverage-report:
+	tests/scripts/coverage-report.sh
+
+coverage: test-coverage-report
 	scripts/coverage.sh $(COVERAGE_ARGS)
 
 compatibility:

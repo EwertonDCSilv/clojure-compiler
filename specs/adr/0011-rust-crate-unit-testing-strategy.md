@@ -1,6 +1,6 @@
 # ADR-0011 — Estratégia de testes unitários para os crates Rust
 
-- Status: **proposta**
+- Status: **accepted**
 - Data: 2026-07-27
 - Relacionadas: [ADR-0004](0004-macro-execution.md),
   [ADR-0006](0006-codegen-optimization.md),
@@ -157,18 +157,24 @@ não é uma forma permanente de aceitar regressão.
 
 ### Cobertura e gates
 
-Os gates atuais de `scripts/coverage.sh` permanecem bloqueantes:
+`scripts/coverage.sh` writes `target/coverage/coverage.json` and
+`target/coverage/summary.json` for every run. The versioned
+[`config/coverage-baseline.json`](../../config/coverage-baseline.json) records all
+crate metrics plus the initially high-risk modules. A report parser rejects a lower
+line, function, or region metric for every recorded entry.
+
+The existing aggregate gates remain blocking:
 
 - linhas globais: 82%;
 - funções globais: 82%;
 - regiões globais: 82%;
 - linhas por arquivo: 30%.
 
-Esses valores são piso, não objetivo final. Após a separação inicial dos módulos, a CI
-registra a cobertura por crate e adota **ratchet**: o baseline de um crate não pode cair
-sem justificativa explícita na mudança. Código novo ou substancialmente alterado deve
-atingir 90% de linhas e funções no diff, ou documentar branches defensivos/plataforma
-que não são executáveis na matriz.
+Those values are a floor, not the final objective. New or modified executable Rust
+lines must reach 90% line coverage in the Git diff. Comments, blank lines, and lines
+without an LLVM coverage segment do not count in that denominator. Defensive or
+platform branches remain executable and must be tested; they are not a silent
+exclusion.
 
 Exclusões não são silenciosas: cada uma informa arquivo, razão, plataforma e issue. Não
 se adicionam testes sem assertiva relevante nem se duplica o mesmo caminho apenas para
@@ -195,8 +201,8 @@ performance. Uma camada não substitui a anterior.
 3. Cobrir primeiro analyzer, codegen e test-support, onde tamanho e risco são maiores.
 4. Separar testes monolíticos por responsabilidade junto com a modularização, sem mudar
    as assertivas.
-5. Publicar cobertura por crate e fixar os baselines de ratchet.
-6. Adicionar o gate de cobertura do diff depois que o baseline estiver estável.
+5. Publish coverage by crate and establish ratchet baselines. **Completed:** issue #108.
+6. Add the diff-coverage gate after the baseline is stable. **Completed:** issue #108.
 
 Cada etapa contém apenas testes, fixtures ou refatorações necessárias à testabilidade.
 Novas features são entregas separadas.
