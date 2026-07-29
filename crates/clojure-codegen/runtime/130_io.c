@@ -239,6 +239,82 @@ Value cljn_bytes_to_string(Value b) {
     Bytes *bb = (Bytes *)b;
     return cljn_str_from((char *)bb->data, (long)bb->len);
 }
+/* Build an immutable byte array from a vector of fixnums 0..255.
+   ABI: aborts on a non-vector, non-fixnum element, or out-of-range value; the
+   compiled cljn.io/bytes wrapper validates first, so reaching those is an
+   internal error. GC: roots the source vector across allocation. */
+Value cljn_bytes_of_vec(Value v) {
+    if (obj_type(v) != T_VEC) die("bytes: esperava vetor");
+    int64_t n = ((PVec *)v)->count;
+    cljn_gc_push(v);
+    Value bv = bytes_alloc(n);
+    for (int64_t i = 0; i < n; i++) {
+        Value e = cljn_nth(v, MK_FIX(i));
+        if (!IS_FIX(e)) die("bytes: elemento não é inteiro");
+        int64_t byte = FIX(e);
+        if (byte < 0 || byte > 255) die("bytes: byte fora de 0..255");
+        ((Bytes *)bv)->data[i] = (uint8_t)byte;
+    }
+    cljn_gc_popn(1);
+    return bv;
+}
+/* Convert an immutable byte array to a persistent vector of fixnums 0..255.
+   GC: roots the source and disables collection while conjoining. */
+Value cljn_bytes_to_vec(Value b) {
+    if (obj_type(b) != T_BYTES) die("bytes->vector: esperava bytes");
+    cljn_gc_push(b);
+    gc_disabled++;
+    Value v = cljn_vec_empty();
+    Bytes *bb = (Bytes *)b;
+    for (int64_t i = 0; i < bb->len; i++) {
+        v = cljn_conj(v, MK_FIX((int64_t)bb->data[i]));
+    }
+    gc_disabled--;
+    cljn_gc_popn(1);
+    return v;
+}
+/* Return TRUE when the byte array holds well-formed UTF-8, else FALSE.
+   Rejects overlong forms, surrogates, and out-of-range code points. */
+Value cljn_valid_utf8(Value b) {
+    if (obj_type(b) != T_BYTES) return b2v(0);
+    Bytes *bb = (Bytes *)b;
+    const uint8_t *d = bb->data;
+    int64_t n = bb->len, i = 0;
+    while (i < n) {
+        uint8_t c = d[i];
+        int extra;
+        uint32_t cp;
+        if (c < 0x80) {
+            i++;
+            continue;
+        } else if ((c & 0xE0) == 0xC0) {
+            extra = 1;
+            cp = (uint32_t)(c & 0x1F);
+            if (c < 0xC2) return b2v(0);
+        } else if ((c & 0xF0) == 0xE0) {
+            extra = 2;
+            cp = (uint32_t)(c & 0x0F);
+        } else if ((c & 0xF8) == 0xF0) {
+            extra = 3;
+            cp = (uint32_t)(c & 0x07);
+            if (c > 0xF4) return b2v(0);
+        } else {
+            return b2v(0);
+        }
+        if (i + extra >= n) return b2v(0);
+        for (int k = 1; k <= extra; k++) {
+            uint8_t cc = d[i + k];
+            if ((cc & 0xC0) != 0x80) return b2v(0);
+            cp = (cp << 6) | (uint32_t)(cc & 0x3F);
+        }
+        if (cp > 0x10FFFF) return b2v(0);
+        if (cp >= 0xD800 && cp <= 0xDFFF) return b2v(0);
+        if (extra == 2 && cp < 0x800) return b2v(0);
+        if (extra == 3 && cp < 0x10000) return b2v(0);
+        i += extra + 1;
+    }
+    return b2v(1);
+}
 /* Return byte at tagged fixnum index as a fixnum from 0 through 255. */
 Value cljn_bget(Value b, Value i) {
     if (obj_type(b) != T_BYTES) die("bget: esperava bytes");

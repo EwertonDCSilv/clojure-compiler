@@ -110,6 +110,10 @@ tags.
   `read-line`/`unread-char`/`write!`/`flush!`/`close!`/`closed?`/`writer-string`, and
   the `doto` threading macro, backed by reader/writer closed-state and pushback plus
   new stream runtime primitives, promoting 48 conformance fixtures to `active`.
+- Add the `cljn.io` byte API (issue #119): `bytes` (from a 0..255 vector), `bytes?`,
+  `bytes->string` (UTF-8-validated), `bytes->vector`, `string->bytes`, and
+  `byte-count`, backed by new `bytes-of-vec`/`bytes->vec`/`valid-utf8?` runtime
+  primitives, promoting 18 conformance fixtures from `xfail` to `active`.
 
 ### Changed
 
