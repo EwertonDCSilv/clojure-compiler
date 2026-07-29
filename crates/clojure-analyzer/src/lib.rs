@@ -260,6 +260,28 @@ pub enum Prim {
     ReadLine,
     /// Create an in-memory string reader.
     StringReader,
+    /// Create an in-memory string writer.
+    StringWriter,
+    /// Return the accumulated text of a string writer.
+    WriterToString,
+    /// Return nil for a non-stream, else the stream's closed flag.
+    StreamClosed,
+    /// Predicate: value is a reader.
+    StreamReaderP,
+    /// Predicate: value is a writer.
+    StreamWriterP,
+    /// Predicate: value is a closeable file/string stream.
+    CloseableP,
+    /// Read one character from an explicit reader handle.
+    ReadCharFrom,
+    /// Read one line from an explicit reader handle.
+    ReadLineFrom,
+    /// Push one character back into an explicit reader handle.
+    UnreadCharTo,
+    /// Write a string to an explicit writer handle.
+    WriteTo,
+    /// Flush an explicit writer handle.
+    FlushWriter,
     /// Convert an integer to a character.
     CharOf,
     /// Convert a character to its integer code point.
@@ -2375,6 +2397,18 @@ fn prim_of(name: &str) -> Option<Prim> {
         "bytes" => Prim::Bytes,
         "bytes->string" => Prim::BytesToString,
         "bget" => Prim::Bget,
+        "string-reader" => Prim::StringReader,
+        "string-writer" => Prim::StringWriter,
+        "writer->string" => Prim::WriterToString,
+        "stream-closed" => Prim::StreamClosed,
+        "reader?" => Prim::StreamReaderP,
+        "writer?" => Prim::StreamWriterP,
+        "closeable?" => Prim::CloseableP,
+        "read-char-from" => Prim::ReadCharFrom,
+        "read-line-from" => Prim::ReadLineFrom,
+        "unread-char-to" => Prim::UnreadCharTo,
+        "write-to" => Prim::WriteTo,
+        "flush-writer" => Prim::FlushWriter,
         "bytes-of-vec" => Prim::BytesOfVec,
         "bytes->vec" => Prim::BytesToVec,
         "valid-utf8?" => Prim::ValidUtf8,
@@ -2475,7 +2509,17 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::VectorP
         | Prim::MapP
         | Prim::BytesP
+        | Prim::WriterToString
+        | Prim::StreamClosed
+        | Prim::StreamReaderP
+        | Prim::StreamWriterP
+        | Prim::ReadCharFrom
+        | Prim::ReadLineFrom
+| Prim::FlushWriter
+        | Prim::CloseableP
         | Prim::Vals => 1,
+        Prim::StringWriter => 0,
+        Prim::UnreadCharTo | Prim::WriteTo => 2,
         Prim::Add
         | Prim::Sub
         | Prim::Mul
@@ -2563,6 +2607,16 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::ReadLine => n == 0,
         Prim::ReadChar => n == 0,
         Prim::StringReader => n == 1,
+        Prim::StringWriter => n == 0,
+        Prim::WriterToString
+        | Prim::StreamClosed
+        | Prim::StreamReaderP
+        | Prim::StreamWriterP
+        | Prim::ReadCharFrom
+        | Prim::ReadLineFrom
+        | Prim::FlushWriter
+        | Prim::CloseableP => n == 1,
+        Prim::UnreadCharTo | Prim::WriteTo => n == 2,
         Prim::CharOf | Prim::IntOf | Prim::CharP => n == 1,
         Prim::StringP | Prim::IntP | Prim::KeywordP | Prim::VectorP | Prim::MapP | Prim::BytesP => {
             n == 1

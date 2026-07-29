@@ -105,6 +105,11 @@ tags.
 - Auto-load compiler-owned `cljn.io` and `cljn.process` modules for qualified calls
   without `:require`, exposing the path/filesystem wrappers backed by existing
   ADR-0007 primitives and stable `:invalid-input` data errors (issue #103).
+- Add the `cljn.io` stream API (issue #121): file and in-memory `reader`/`writer`/
+  `input-stream`/`output-stream`/`string-reader`/`string-writer`, handle `read-char`/
+  `read-line`/`unread-char`/`write!`/`flush!`/`close!`/`closed?`/`writer-string`, and
+  the `doto` threading macro, backed by reader/writer closed-state and pushback plus
+  new stream runtime primitives, promoting 48 conformance fixtures to `active`.
 - Add the `cljn.io` byte API (issue #119): `bytes` (from a 0..255 vector), `bytes?`,
   `bytes->string` (UTF-8-validated), `bytes->vector`, `string->bytes`, and
   `byte-count`, backed by new `bytes-of-vec`/`bytes->vec`/`valid-utf8?` runtime

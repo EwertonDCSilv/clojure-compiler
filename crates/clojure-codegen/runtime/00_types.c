@@ -78,10 +78,11 @@ typedef struct { Obj h; int64_t count; Value root; } Sorted; /* T_SMAP / T_SSET 
 typedef struct { Obj h; } Edit;
 /* Writer destination for standard streams, string capture, or FILE*. */
 enum { WR_STDOUT = 0, WR_STDERR = 1, WR_STRING = 2, WR_FILE = 3 };
-typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; void *fp; } Writer; /* T_WRITER; fp=FILE* p/ WR_FILE */
+typedef struct { Obj h; int64_t kind; char *buf; size_t len; size_t cap; void *fp; int64_t closed; } Writer; /* T_WRITER; fp=FILE* p/ WR_FILE */
 /* Reader source for stdin, an in-memory Str cursor, or FILE*. */
 enum { RD_STDIN = 0, RD_STRING = 1, RD_FILE = 2 };
-typedef struct { Obj h; int64_t kind; Value src; int64_t pos; void *fp; } Reader; /* T_READER; fp=FILE* p/ RD_FILE */
+/* `pushback` holds one unread immediate Char (or NIL); `closed` gates further I/O. */
+typedef struct { Obj h; int64_t kind; Value src; int64_t pos; void *fp; Value pushback; int64_t closed; } Reader; /* T_READER; fp=FILE* p/ RD_FILE */
 /* Immutable binary array. GC treats it as a leaf and sweep frees `data`. */
 typedef struct { Obj h; int64_t len; uint8_t *data; } Bytes; /* T_BYTES */
 /* Boxed IEEE-754 double. GC leaf; arithmetic promotes fixnums to this. */

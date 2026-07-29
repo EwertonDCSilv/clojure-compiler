@@ -422,6 +422,7 @@ Value cljn_writer(Value path) {
     w->len = 0;
     w->cap = 0;
     w->fp = f;
+    w->closed = 0;
     cljn_gc_popn(1);
     return (Value)w;
 }
@@ -438,18 +439,23 @@ Value cljn_reader(Value path) {
     r->src = NIL;
     r->pos = 0;
     r->fp = f;
+    r->pushback = NIL;
+    r->closed = 0;
     cljn_gc_popn(1);
     return (Value)r;
 }
-/* Idempotently close a file Reader/Writer; standard/string streams are no-ops. */
+/* Idempotently close a Reader/Writer and mark it closed; closing releases any
+   file descriptor and gates further stream I/O. Non-streams are a no-op. */
 Value cljn_close(Value x) {
     int t = obj_type(x);
     if (t == T_WRITER) {
         Writer *w = (Writer *)x;
         if (w->kind == WR_FILE && w->fp) { fclose((FILE *)w->fp); w->fp = NULL; }
+        w->closed = 1;
     } else if (t == T_READER) {
         Reader *r = (Reader *)x;
         if (r->kind == RD_FILE && r->fp) { fclose((FILE *)r->fp); r->fp = NULL; }
+        r->closed = 1;
     }
     return NIL;
 }
