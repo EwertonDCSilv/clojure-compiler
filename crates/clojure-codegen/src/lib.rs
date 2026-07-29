@@ -26,8 +26,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 use target_lexicon::Triple;
 
+mod gc_frame;
 mod ir_adapter;
-
 macro_rules! embed_runtime_modules {
     ($(($name:literal, $path:literal)),+ $(,)?) => {
         /// Amalgamated C runtime source compiled during the native link step.
@@ -1663,7 +1663,7 @@ impl<'a> FnGen<'a> {
 
     /// GC: enters a frame unless zero fixed slots and a balanced result prove it redundant.
     fn enter_planned_frame(&mut self, result_rooted: bool) {
-        if self.root_slots.is_empty() && !result_rooted {
+        if !gc_frame::needs_gc_frame(self.root_slots.len(), result_rooted) {
             return;
         }
         self.stats.borrow_mut().root_slots += self.root_slots.len() as u64;

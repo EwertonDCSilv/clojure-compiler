@@ -107,7 +107,8 @@ path and would widen the exception-unwind surface unnecessarily.
 
 ## Validation
 
-The structural regression test compares generated frame counts for:
+The pure policy unit test covers every combination of fixed slots and a rooted
+result. The structural regression test then compares generated frame counts for:
 
 - an immediate rootless result, which adds no frame;
 - allocating operands whose temporary roots are balanced before an immediate
