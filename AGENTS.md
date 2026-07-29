@@ -70,6 +70,28 @@ Bug fixes, documentation, maintenance, release, and investigation branches may u
 their established workflow. Work that adds user-visible or compiler/runtime capability
 is a feature and must follow the workflow above.
 
+## Tidy First
+
+Before editing, classify the change as structural (`tidy`) or behavioral. Follow
+[`specs/TIDY_FIRST.md`](specs/TIDY_FIRST.md) whenever a small preparatory refactor
+would reduce the risk or review cost of a following task.
+
+AI agents must:
+
+- keep a tidy behavior-preserving, limited to one structural objective, and useful
+  independently of the following change;
+- use `tidy/<issue-number>-<semantic-description>` for a tracked tidy and open a
+  separate PR targeting `master`;
+- record the same focused characterization or structural check before and after the
+  edit;
+- merge the tidy before branching the behavior change from refreshed `master`;
+- stop and reclassify the work as behavioral if diagnostics, APIs, ABI, GC behavior,
+  fixtures, snapshots, checksums, benchmark expectations, or user-visible semantics
+  must change.
+
+Do not mix tidy and behavior changes in one branch, commit, or PR. Do not use a tidy to
+bypass the feature guard, TDD, issue scope, changelog, or validation requirements.
+
 ## Documentation requirements
 
 - Every change intended for commit must update the appropriate section under
