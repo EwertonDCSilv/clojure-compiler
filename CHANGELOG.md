@@ -82,6 +82,9 @@ tags.
   and runs a native `cljn.pedestal.*` router connector through the in-memory
   `test-request` dispatch path with no JVM or network, while the upstream
   `e.pedestal.hello_world_api` fixture stays `pending` (ADR-0013 §11, Gate 5).
+- Add ADR-0016 defining the Clojure/JVM oracle classification policy (`equal` vs
+  `not-applicable` vs `expected-diff`) and a mechanical decision rule based on
+  whether the JVM can evaluate a case and whether it deliberately differs.
 - Add the separate `benchmarks/http/` suite (ADR-0013 Gate 6) that drives the native
   `cljn.pedestal.*` connector and the pinned upstream Pedestal http-kit connector
   (0.8.2-beta-10) through one shared load client, proves byte-identical responses by
@@ -102,6 +105,13 @@ tags.
 
 ### Changed
 
+- Classify the conformance cases the manual Clojure/JVM 1.12.5 oracle cannot treat
+  as equal (ADR-0016): 33 native-only or JVM-rejected cases become
+  `oracle = not-applicable` and 11 deliberate representation/ordering/`*out*`-routing
+  differences become `oracle = expected-diff`, and one stale `expected-diff` that the
+  JVM actually matches is demoted to `equal`. Every `status` and `expected.*` output
+  is unchanged, so `make compatibility` still enforces the same native behavior;
+  `make compatibility-oracle` now runs green with no failures or unexpected passes.
 - Stop tracking the local `.lsp/.cache/` editor cache and ignore future cache files.
 - Require every AI-assisted feature to start from an issue registered in the public
   project, use a `feature/<issue-number>-<semantic-description>` branch, and reach
