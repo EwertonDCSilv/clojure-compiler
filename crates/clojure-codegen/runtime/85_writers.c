@@ -23,6 +23,7 @@ static Value mk_std_writer(int kind) {
     w->len = 0;
     w->cap = 0;
     w->fp = NULL;
+    w->closed = 0;
     return (Value)w;
 }
 /* UTF-8 helpers for immediate characters and stream decoding. */
@@ -71,6 +72,8 @@ static Value mk_reader(int kind, Value src) {
     r->src = src;
     r->pos = 0;
     r->fp = NULL;
+    r->pushback = NIL;
+    r->closed = 0;
     return (Value)r;
 }
 /* Read a dynamic Var, lazily constructing standard stream wrappers. */
@@ -193,4 +196,129 @@ Value cljn_read_char(void) {
     int m;
     uint32_t cp = utf8_decode(buf, n, &m);
     return MK_CHAR(cp);
+}
+
+/* Return NIL for a non-stream, else TRUE/FALSE for a Reader/Writer's closed flag.
+   The compiled cljn.io wrappers use the NIL sentinel to raise `:invalid-input`. */
+Value cljn_stream_closed(Value x) {
+    int t = obj_type(x);
+    if (t == T_READER) return b2v(((Reader *)x)->closed != 0);
+    if (t == T_WRITER) return b2v(((Writer *)x)->closed != 0);
+    return NIL;
+}
+/* Predicate: value is a Reader. */
+Value cljn_reader_p(Value x) { return b2v(obj_type(x) == T_READER); }
+/* Predicate: value is a Writer. */
+Value cljn_writer_p(Value x) { return b2v(obj_type(x) == T_WRITER); }
+/* Predicate: value is a file/string stream that may be closed (not a standard
+   stream, which cljn.io/close! must reject). */
+Value cljn_closeable_p(Value x) {
+    int t = obj_type(x);
+    if (t == T_READER) { int64_t k = ((Reader *)x)->kind; return b2v(k == RD_STRING || k == RD_FILE || k == RD_BYTES); }
+    if (t == T_WRITER) { int64_t k = ((Writer *)x)->kind; return b2v(k == WR_STRING || k == WR_FILE || k == WR_BYTES); }
+    return b2v(0);
+}
+
+/* Decode one UTF-8 character from an explicit Reader, honoring one pushed-back
+   character; returns NIL at end of input. Aborts on a non-Reader (the wrapper
+   validates first). */
+Value cljn_read_char_from(Value rv) {
+    if (obj_type(rv) != T_READER) die("read-char: esperava reader");
+    Reader *r = (Reader *)rv;
+    if (r->pushback != NIL) {
+        Value c = r->pushback;
+        r->pushback = NIL;
+        return c;
+    }
+    if (r->kind == RD_STRING) {
+        Str *s = (Str *)r->src;
+        if (r->pos >= (int64_t)s->len) return NIL;
+        int n;
+        uint32_t cp = utf8_decode(s->data + r->pos, (int64_t)s->len - r->pos, &n);
+        r->pos += n;
+        return MK_CHAR(cp);
+    }
+    FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
+    if (!fp) return NIL;
+    int c0 = fgetc(fp);
+    if (c0 == EOF) return NIL;
+    int n = utf8_len((unsigned char)c0);
+    char buf[4];
+    buf[0] = (char)c0;
+    for (int i = 1; i < n; i++) {
+        int ci = fgetc(fp);
+        if (ci == EOF) { n = i; break; }
+        buf[i] = (char)ci;
+    }
+    int m;
+    uint32_t cp = utf8_decode(buf, n, &m);
+    return MK_CHAR(cp);
+}
+/* Read one line (without newline) from an explicit Reader; NIL at end of input.
+   A pushed-back character is prepended to the line. */
+Value cljn_read_line_from(Value rv) {
+    if (obj_type(rv) != T_READER) die("read-line: esperava reader");
+    Reader *r = (Reader *)rv;
+    char prefix[4];
+    int prefix_len = 0;
+    if (r->pushback != NIL) {
+        prefix_len = utf8_encode(CHAR_CP(r->pushback), prefix);
+        r->pushback = NIL;
+    }
+    if (r->kind == RD_STRING) {
+        Str *s = (Str *)r->src;
+        if (prefix_len == 0 && r->pos >= (int64_t)s->len) return NIL;
+        int64_t start = r->pos;
+        while (r->pos < (int64_t)s->len && s->data[r->pos] != '\n') r->pos++;
+        int64_t linelen = r->pos - start;
+        if (r->pos < (int64_t)s->len) r->pos++;
+        if (prefix_len == 0) return cljn_str_from(s->data + start, (long)linelen);
+        size_t total = (size_t)prefix_len + (size_t)linelen;
+        char *buf = (char *)xalloc(total);
+        memcpy(buf, prefix, (size_t)prefix_len);
+        memcpy(buf + prefix_len, s->data + start, (size_t)linelen);
+        Value v = cljn_str_from(buf, (long)total);
+        free(buf);
+        return v;
+    }
+    FILE *fp = (r->kind == RD_FILE) ? (FILE *)r->fp : stdin;
+    if (!fp) return prefix_len ? cljn_str_from(prefix, prefix_len) : NIL;
+    size_t cap = 128, len = (size_t)prefix_len;
+    char *buf = (char *)xalloc(cap);
+    if (prefix_len) memcpy(buf, prefix, (size_t)prefix_len);
+    int c;
+    while ((c = fgetc(fp)) != EOF && c != '\n') {
+        if (len + 1 > cap) { cap *= 2; buf = (char *)xrealloc(buf, cap); }
+        buf[len++] = (char)c;
+    }
+    if (c == EOF && len == 0) { free(buf); return NIL; }
+    Value v = cljn_str_from(buf, (long)len);
+    free(buf);
+    return v;
+}
+/* Push one immediate Char back into an explicit Reader so the next read returns
+   it, requiring that at least one character was already consumed. Returns TRUE
+   on success or FALSE when there is nothing to unread. */
+Value cljn_unread_char_to(Value rv, Value ch) {
+    if (obj_type(rv) != T_READER) die("unread-char: esperava reader");
+    if (!IS_CHAR(ch)) die("unread-char: esperava char");
+    Reader *r = (Reader *)rv;
+    if (r->kind == RD_STRING && r->pos == 0 && r->pushback == NIL) return b2v(0);
+    r->pushback = ch;
+    return b2v(1);
+}
+/* Append a runtime string's UTF-8 bytes to an explicit Writer. */
+Value cljn_write_to(Value wv, Value s) {
+    if (obj_type(wv) != T_WRITER) die("write!: esperava writer");
+    if (obj_type(s) != T_STR) die("write!: esperava string");
+    Str *ss = (Str *)s;
+    writer_write(wv, ss->data, ss->len);
+    return NIL;
+}
+/* Flush an explicit Writer's file descriptor; string writers are a no-op. */
+Value cljn_flush_writer(Value wv) {
+    if (obj_type(wv) != T_WRITER) die("flush!: esperava writer");
+    Writer *w = (Writer *)wv;
+    if (w->kind == WR_FILE && w->fp) fflush((FILE *)w->fp);
+    return NIL;
 }

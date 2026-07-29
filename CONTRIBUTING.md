@@ -101,6 +101,13 @@ make lint-clojure
 `make lint-files` also runs the gradual Rust module-size gate. New files must satisfy
 the ADR-0012 limit for their kind; files in `config/rust-file-size-baseline.json` are
 grandfathered only at their recorded line count and cannot grow silently.
+`make coverage` writes the machine-readable raw report and its crate/module summary to
+`target/coverage/`. Its versioned baseline is
+[`config/coverage-baseline.json`](config/coverage-baseline.json): lowering a recorded
+metric fails the ratchet. New or changed executable Rust lines must reach 90% coverage;
+non-executable lines are excluded from that calculation. Update a baseline only after
+reviewing the report and documenting the intentional coverage change in the same pull
+request.
 
 `clj-kondo` is installed automatically with a pinned checksum on Linux x86_64. On
 other platforms, set `CLJ_KONDO_BIN` or place it on `PATH`. Set `CC` to choose a
