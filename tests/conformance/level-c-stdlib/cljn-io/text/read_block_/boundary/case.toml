@@ -1,13 +1,13 @@
 id = "c.cljn_io.read_block_.boundary"
 level = "C"
 area = "stdlib/cljn-io/text"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = true
-reason = "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+reason = "Native cljn.io byte-stream API implemented over the compiled module and new runtime primitives; the Clojure/JVM oracle cannot resolve the native namespace (ADR-0016, issue #125)."
 tracking = "specs/IO_SPEC.md"
 namespace = "cljn.io"
 [run]

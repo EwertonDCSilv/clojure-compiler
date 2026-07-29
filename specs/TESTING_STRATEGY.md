@@ -161,6 +161,13 @@ Na comparação diferencial:
 
 ## Gates de cobertura
 
+Each `make coverage` run also writes `target/coverage/coverage.json` and a readable
+crate/module summary. `config/coverage-baseline.json` is a versioned ratchet for every
+crate and the high-risk modules identified in ADR-0011: a recorded line, function, or
+region percentage cannot decline. Changed executable Rust lines require 90% coverage;
+comments, whitespace, and lines without an LLVM coverage segment are outside the diff
+denominator.
+
 `make coverage` chama `scripts/coverage.sh`, que usa `cargo-llvm-cov` e aplica:
 
 - no mínimo 82% de regiões;

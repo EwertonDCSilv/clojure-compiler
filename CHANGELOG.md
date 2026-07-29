@@ -12,6 +12,8 @@ tags.
 
 - Add a pull-request template and explicit AI-agent rules requiring issue linkage,
   scoped changes, TDD evidence, and truthful validation records.
+- Add versioned crate and high-risk-module coverage baselines, a no-regression
+  ratchet, JSON reports, and a 90% executable-Rust diff-coverage gate to `make coverage`.
 - Add an AI-agent story-point guard that blocks feature implementation for
   unestimated Roadmap issues, epics, roll-ups, and issues above 8 points, with
   offline tests and fail-closed local commit/push hooks.
@@ -107,6 +109,15 @@ tags.
 - Auto-load compiler-owned `cljn.io` and `cljn.process` modules for qualified calls
   without `:require`, exposing the path/filesystem wrappers backed by existing
   ADR-0007 primitives and stable `:invalid-input` data errors (issue #103).
+- Add the `cljn.io` stream API (issue #121): file and in-memory `reader`/`writer`/
+  `input-stream`/`output-stream`/`string-reader`/`string-writer`, handle `read-char`/
+  `read-line`/`unread-char`/`write!`/`flush!`/`close!`/`closed?`/`writer-string`, and
+  the `doto` threading macro, backed by reader/writer closed-state and pushback plus
+  new stream runtime primitives, promoting 48 conformance fixtures to `active`.
+- Add the `cljn.io` byte-stream API (issue #125): `byte-input-stream`/`byte-output-stream`,
+  `read-bytes`, `write-bytes!`, `output-bytes`, and `read-block!`, backed by RD_BYTES/
+  WR_BYTES stream kinds and new runtime primitives, promoting 19 conformance fixtures
+  to `active`.
 - Add the `cljn.io` byte API (issue #119): `bytes` (from a 0..255 vector), `bytes?`,
   `bytes->string` (UTF-8-validated), `bytes->vector`, `string->bytes`, and
   `byte-count`, backed by new `bytes-of-vec`/`bytes->vec`/`valid-utf8?` runtime

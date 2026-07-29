@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "crates": {
+    "clojure-analyzer": {"lines": 83.44, "functions": 86.39, "regions": 83.7},
+    "clojure-codegen": {"lines": 89.64, "functions": 88.24, "regions": 90.17},
+    "clojure-diagnostics": {"lines": 100, "functions": 100, "regions": 100},
+    "clojure-interp": {"lines": 73.62, "functions": 78.09, "regions": 72.07},
+    "clojure-ir": {"lines": 70.49, "functions": 90.48, "regions": 72.32},
+    "clojure-native-cli": {"lines": 58.88, "functions": 61.76, "regions": 61.56},
+    "clojure-reader": {"lines": 93.34, "functions": 100, "regions": 91.85},
+    "clojure-span": {"lines": 100, "functions": 100, "regions": 100},
+    "clojure-syntax": {"lines": 92.9, "functions": 88.89, "regions": 89.03},
+    "clojure-test-support": {"lines": 81.39, "functions": 66.67, "regions": 82.08},
+    "clojure-value": {"lines": 93.65, "functions": 92.86, "regions": 91.24}
+  },
+  "modules": {
+    "crates/clojure-interp/src/lib.rs": {"lines": 64.7, "functions": 59.32, "regions": 67.64},
+    "crates/clojure-ir/src/passes.rs": {"lines": 66.23, "functions": 78.26, "regions": 64.08},
+    "crates/clojure-ir/src/print.rs": {"lines": 41.26, "functions": 75, "regions": 40},
+    "crates/clojure-ir/src/verify.rs": {"lines": 68.99, "functions": 93.75, "regions": 81.35},
+    "crates/clojure-native-cli/src/main.rs": {"lines": 58.88, "functions": 61.76, "regions": 61.56},
+    "crates/clojure-test-support/src/lib.rs": {"lines": 81.95, "functions": 66.13, "regions": 82.16}
+  },
+  "exclusions": []
+}
