@@ -14,7 +14,8 @@
 use clojure_analyzer::{Ast, Callee, Dispatch, FnMethod, Prim, Program};
 use clojure_diagnostics::{Diagnostic, Diagnostics};
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlags, Value as CValue};
+use cranelift_codegen::ir::MemFlagsData as M;
+use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, Value as CValue};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::{isa, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -1537,7 +1538,7 @@ impl<'a> FnGen<'a> {
             }
             _ => {
                 let (tagged, pushed) = self.operand(ast)?;
-                Ok((self.builder.ins().sshr_imm(tagged, 1), pushed as usize))
+                Ok((self.builder.ins().sshr_imm_s(tagged, 1), pushed as usize))
             }
         }
     }
@@ -1570,7 +1571,7 @@ impl<'a> FnGen<'a> {
     /// Computes the address of `gc_stack[idx]`.
     fn slot_addr(&mut self, idx: CValue) -> CValue {
         let stack = self.addr_gc_stack();
-        let off = self.builder.ins().imul_imm(idx, 8);
+        let off = self.builder.ins().imul_imm_s(idx, 8);
         self.builder.ins().iadd(stack, off)
     }
     /// Pushes one root with the direct store `gc_stack[gc_sp++] = v`.
@@ -1579,13 +1580,11 @@ impl<'a> FnGen<'a> {
         let sp = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), sp_addr, 0);
+            .load(types::I64, M::trusted(), sp_addr, 0);
         let elem = self.slot_addr(sp);
-        self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
-        let sp1 = self.builder.ins().iadd_imm(sp, 1);
-        self.builder
-            .ins()
-            .store(MemFlags::trusted(), sp1, sp_addr, 0);
+        self.builder.ins().store(M::trusted(), v, elem, 0);
+        let sp1 = self.builder.ins().iadd_imm_s(sp, 1);
+        self.builder.ins().store(M::trusted(), sp1, sp_addr, 0);
     }
     fn gc_popn(&mut self, n: usize) {
         if n > 0 {
@@ -1593,11 +1592,9 @@ impl<'a> FnGen<'a> {
             let sp = self
                 .builder
                 .ins()
-                .load(types::I64, MemFlags::trusted(), sp_addr, 0);
-            let sp2 = self.builder.ins().iadd_imm(sp, -(n as i64));
-            self.builder
-                .ins()
-                .store(MemFlags::trusted(), sp2, sp_addr, 0);
+                .load(types::I64, M::trusted(), sp_addr, 0);
+            let sp2 = self.builder.ins().iadd_imm_s(sp, -(n as i64));
+            self.builder.ins().store(M::trusted(), sp2, sp_addr, 0);
         }
     }
     /// Pops a root count computed at runtime.
@@ -1606,11 +1603,9 @@ impl<'a> FnGen<'a> {
         let sp = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), sp_addr, 0);
+            .load(types::I64, M::trusted(), sp_addr, 0);
         let sp2 = self.builder.ins().isub(sp, n);
-        self.builder
-            .ins()
-            .store(MemFlags::trusted(), sp2, sp_addr, 0);
+        self.builder.ins().store(M::trusted(), sp2, sp_addr, 0);
     }
     /// Writes a local root slot as `gc_stack[base + slot] = v`.
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
@@ -1620,9 +1615,9 @@ impl<'a> FnGen<'a> {
             .root_slots
             .get(&slot)
             .expect("slot heap-capable precisa de root planejado");
-        let idx = self.builder.ins().iadd_imm(base, root_slot as i64);
+        let idx = self.builder.ins().iadd_imm_s(base, root_slot as i64);
         let elem = self.slot_addr(idx);
-        self.builder.ins().store(MemFlags::trusted(), v, elem, 0);
+        self.builder.ins().store(M::trusted(), v, elem, 0);
         self.stats.borrow_mut().root_stores += 1;
     }
     /// Binds a heap-capable local and mirrors it into its root slot.
@@ -1706,14 +1701,14 @@ impl<'a> FnGen<'a> {
         match dispatch {
             Dispatch::Protocol(mid) => {
                 self.gen_dispatch(mid, argc_v, argv_v);
-                self.builder.finalize();
+                self.builder.finalize(self.module.target_config());
                 return Ok(());
             }
             Dispatch::Multi(mid) => {
                 let mid_v = self.builder.ins().iconst(types::I64, mid);
                 let r = self.call3(self.rt.multi_call, mid_v, argc_v, argv_v);
                 self.builder.ins().return_(&[r]);
-                self.builder.finalize();
+                self.builder.finalize(self.module.target_config());
                 return Ok(());
             }
             Dispatch::None => {}
@@ -1732,9 +1727,11 @@ impl<'a> FnGen<'a> {
             let cond = if m.rest.is_some() {
                 self.builder
                     .ins()
-                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, argc_v, k as i64)
+                    .icmp_imm_s(IntCC::SignedGreaterThanOrEqual, argc_v, k as i64)
             } else {
-                self.builder.ins().icmp_imm(IntCC::Equal, argc_v, k as i64)
+                self.builder
+                    .ins()
+                    .icmp_imm_s(IntCC::Equal, argc_v, k as i64)
             };
             let matched = self.builder.create_block();
             let next = self.builder.create_block();
@@ -1753,7 +1750,7 @@ impl<'a> FnGen<'a> {
         let z = self.konst(NIL);
         self.builder.ins().return_(&[z]);
 
-        self.builder.finalize();
+        self.builder.finalize(self.module.target_config());
         Ok(())
     }
 
@@ -1808,12 +1805,12 @@ impl<'a> FnGen<'a> {
         match flow? {
             Flow::Val(tagged) => {
                 self.leave_frame();
-                let raw = self.builder.ins().sshr_imm(tagged, 1);
+                let raw = self.builder.ins().sshr_imm_s(tagged, 1);
                 self.builder.ins().return_(&[raw]);
             }
             Flow::Diverged => {}
         }
-        self.builder.finalize();
+        self.builder.finalize(self.module.target_config());
         Ok(())
     }
 
@@ -1821,14 +1818,11 @@ impl<'a> FnGen<'a> {
     ///
     /// The lookup is `lookup(mid, type_key(argv[0]))`.
     fn gen_dispatch(&mut self, mid: i64, argc_v: CValue, argv_v: CValue) {
-        let arg0 = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlags::trusted(), argv_v, 0);
+        let arg0 = self.builder.ins().load(types::I64, M::trusted(), argv_v, 0);
         let key = self.call1(self.rt.type_key, arg0);
         let mid_v = self.builder.ins().iconst(types::I64, mid);
         let impl_v = self.call2(self.rt.lookup_method, mid_v, key);
-        let is_nil = self.builder.ins().icmp_imm(IntCC::Equal, impl_v, NIL);
+        let is_nil = self.builder.ins().icmp_imm_s(IntCC::Equal, impl_v, NIL);
         let err_b = self.builder.create_block();
         let ok_b = self.builder.create_block();
         self.builder.ins().brif(is_nil, err_b, &[], ok_b, &[]);
@@ -1867,10 +1861,10 @@ impl<'a> FnGen<'a> {
     ) -> Result<(), Diagnostic> {
         let mut param_slots = Vec::new();
         for slot in 0..m.params.len() {
-            let val =
-                self.builder
-                    .ins()
-                    .load(types::I64, MemFlags::trusted(), argv_v, (slot * 8) as i32);
+            let val = self
+                .builder
+                .ins()
+                .load(types::I64, M::trusted(), argv_v, (slot * 8) as i32);
             self.bind_local_kind(slot as u32, val, VKind::Heap);
             param_slots.push(slot as u32);
         }
@@ -1924,7 +1918,7 @@ impl<'a> FnGen<'a> {
         self.leave_frame();
         let zero = self.builder.ins().iconst(types::I32, 0);
         self.builder.ins().return_(&[zero]);
-        self.builder.finalize();
+        self.builder.finalize(self.module.target_config());
         Ok(())
     }
 
@@ -2208,15 +2202,12 @@ impl<'a> FnGen<'a> {
             .module
             .declare_data_in_func(self.rt.const_cache_data, self.builder.func);
         let base = self.builder.ins().symbol_value(self.ptr, gv);
-        let slot = self.builder.ins().iadd_imm(base, (id as i64) * 8);
-        let cached = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlags::trusted(), slot, 0);
+        let slot = self.builder.ins().iadd_imm_s(base, (id as i64) * 8);
+        let cached = self.builder.ins().load(types::I64, M::trusted(), slot, 0);
         let build_b = self.builder.create_block();
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, types::I64);
-        let nz = self.builder.ins().icmp_imm(IntCC::NotEqual, cached, 0);
+        let nz = self.builder.ins().icmp_imm_s(IntCC::NotEqual, cached, 0);
         self.builder
             .ins()
             .brif(nz, merge, &[cached.into()], build_b, &[]);
@@ -2338,34 +2329,31 @@ impl<'a> FnGen<'a> {
         self.builder.append_block_param(merge, types::I64); // resultado
 
         // Guard that coll is an aligned non-null pointer and index is a fixnum.
-        let low3 = self.builder.ins().band_imm(coll, 7);
-        let aligned = self.builder.ins().icmp_imm(IntCC::Equal, low3, 0);
-        let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, coll, 0);
+        let low3 = self.builder.ins().band_imm_s(coll, 7);
+        let aligned = self.builder.ins().icmp_imm_s(IntCC::Equal, low3, 0);
+        let nonzero = self.builder.ins().icmp_imm_s(IntCC::NotEqual, coll, 0);
         let ptr_ok = self.builder.ins().band(aligned, nonzero);
-        let idxlow = self.builder.ins().band_imm(idx, 1);
-        let idx_fix = self.builder.ins().icmp_imm(IntCC::NotEqual, idxlow, 0);
+        let idxlow = self.builder.ins().band_imm_s(idx, 1);
+        let idx_fix = self.builder.ins().icmp_imm_s(IntCC::NotEqual, idxlow, 0);
         let pre = self.builder.ins().band(ptr_ok, idx_fix);
         self.builder.ins().brif(pre, type_b, &[], slow_b, &[]);
 
         // Reading the type byte is safe only after the pointer guard.
         self.builder.switch_to_block(type_b);
         self.builder.seal_block(type_b);
-        let ty = self
-            .builder
-            .ins()
-            .load(types::I8, MemFlags::trusted(), coll, 0);
-        let is_vec = self.builder.ins().icmp_imm(IntCC::Equal, ty, T_VEC);
+        let ty = self.builder.ins().load(types::I8, M::trusted(), coll, 0);
+        let is_vec = self.builder.ins().icmp_imm_s(IntCC::Equal, ty, T_VEC);
         self.builder.ins().brif(is_vec, vec_b, &[], slow_b, &[]);
 
         // Unbox and bounds-check; the slow arity-2 path throws out of bounds.
         self.builder.switch_to_block(vec_b);
         self.builder.seal_block(vec_b);
-        let i = self.builder.ins().sshr_imm(idx, 1);
+        let i = self.builder.ins().sshr_imm_s(idx, 1);
         let count = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), coll, PV_COUNT);
-        let neg = self.builder.ins().icmp_imm(IntCC::SignedLessThan, i, 0);
+            .load(types::I64, M::trusted(), coll, PV_COUNT);
+        let neg = self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, i, 0);
         let ge = self
             .builder
             .ins()
@@ -2379,7 +2367,7 @@ impl<'a> FnGen<'a> {
         let tail_len = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), coll, PV_TAILLEN);
+            .load(types::I64, M::trusted(), coll, PV_TAILLEN);
         let tailoff = self.builder.ins().isub(count, tail_len);
         let in_tail = self
             .builder
@@ -2393,14 +2381,14 @@ impl<'a> FnGen<'a> {
         let tail = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), coll, PV_TAIL);
+            .load(types::I64, M::trusted(), coll, PV_TAIL);
         let ti = self.builder.ins().isub(i, tailoff);
-        let toff = self.builder.ins().imul_imm(ti, 8);
+        let toff = self.builder.ins().imul_imm_s(ti, 8);
         let taddr = self.builder.ins().iadd(tail, toff);
         let tres = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), taddr, VNODE_SLOTS);
+            .load(types::I64, M::trusted(), taddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[tres.into()]);
 
         // Trie path begins at root and shift.
@@ -2409,11 +2397,11 @@ impl<'a> FnGen<'a> {
         let root = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), coll, PV_ROOT);
+            .load(types::I64, M::trusted(), coll, PV_ROOT);
         let shift = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), coll, PV_SHIFT);
+            .load(types::I64, M::trusted(), coll, PV_SHIFT);
         self.builder
             .ins()
             .jump(loop_b, &[root.into(), shift.into()]);
@@ -2425,21 +2413,21 @@ impl<'a> FnGen<'a> {
         let more = self
             .builder
             .ins()
-            .icmp_imm(IntCC::SignedGreaterThan, level, 0);
+            .icmp_imm_s(IntCC::SignedGreaterThan, level, 0);
         self.builder.ins().brif(more, descend_b, &[], leaf_b, &[]);
 
         // Select five index bits per trie level.
         self.builder.switch_to_block(descend_b);
         self.builder.seal_block(descend_b);
         let sh = self.builder.ins().sshr(i, level);
-        let sub = self.builder.ins().band_imm(sh, 31);
-        let soff = self.builder.ins().imul_imm(sub, 8);
+        let sub = self.builder.ins().band_imm_s(sh, 31);
+        let soff = self.builder.ins().imul_imm_s(sub, 8);
         let saddr = self.builder.ins().iadd(node, soff);
         let child = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), saddr, VNODE_SLOTS);
-        let level2 = self.builder.ins().iadd_imm(level, -5);
+            .load(types::I64, M::trusted(), saddr, VNODE_SLOTS);
+        let level2 = self.builder.ins().iadd_imm_s(level, -5);
         self.builder
             .ins()
             .jump(loop_b, &[child.into(), level2.into()]);
@@ -2448,13 +2436,13 @@ impl<'a> FnGen<'a> {
         // Read the leaf slot.
         self.builder.switch_to_block(leaf_b);
         self.builder.seal_block(leaf_b);
-        let slot = self.builder.ins().band_imm(i, 31);
-        let loff = self.builder.ins().imul_imm(slot, 8);
+        let slot = self.builder.ins().band_imm_s(i, 31);
+        let loff = self.builder.ins().imul_imm_s(slot, 8);
         let laddr = self.builder.ins().iadd(node, loff);
         let lres = self
             .builder
             .ins()
-            .load(types::I64, MemFlags::trusted(), laddr, VNODE_SLOTS);
+            .load(types::I64, M::trusted(), laddr, VNODE_SLOTS);
         self.builder.ins().jump(merge, &[lres.into()]);
 
         // Slow path owns complete type/bounds semantics and diagnostics.
@@ -2622,14 +2610,17 @@ impl<'a> FnGen<'a> {
         let cond = if tpushed {
             let truth = self.call1(self.rt.truthy, test_val); // i32
             self.gc_popn(1); // consome o temp do teste
-            self.builder.ins().icmp_imm(IntCC::NotEqual, truth, 0)
+            self.builder.ins().icmp_imm_s(IntCC::NotEqual, truth, 0)
         } else {
             // Only FALSEV and NIL are falsey, so the test is an inline comparison.
             let nf = self
                 .builder
                 .ins()
-                .icmp_imm(IntCC::NotEqual, test_val, FALSEV);
-            let nn = self.builder.ins().icmp_imm(IntCC::NotEqual, test_val, NIL);
+                .icmp_imm_s(IntCC::NotEqual, test_val, FALSEV);
+            let nn = self
+                .builder
+                .ins()
+                .icmp_imm_s(IntCC::NotEqual, test_val, NIL);
             self.builder.ins().band(nf, nn)
         };
 
@@ -2808,27 +2799,27 @@ impl<'a> FnGen<'a> {
     /// Tests whether both operands are fixnums with `(a & b & 1) != 0`.
     fn fix_both_guard(&mut self, a: CValue, b: CValue) -> CValue {
         let ab = self.builder.ins().band(a, b);
-        let m = self.builder.ins().band_imm(ab, 1);
-        self.builder.ins().icmp_imm(IntCC::NotEqual, m, 0)
+        let m = self.builder.ins().band_imm_s(ab, 1);
+        self.builder.ins().icmp_imm_s(IntCC::NotEqual, m, 0)
     }
     fn fix_guard(&mut self, a: CValue) -> CValue {
-        let m = self.builder.ins().band_imm(a, 1);
-        self.builder.ins().icmp_imm(IntCC::NotEqual, m, 0)
+        let m = self.builder.ins().band_imm_s(a, 1);
+        self.builder.ins().icmp_imm_s(IntCC::NotEqual, m, 0)
     }
     fn fix_retag(&mut self, raw: CValue) -> CValue {
-        let sh = self.builder.ins().ishl_imm(raw, 1);
-        self.builder.ins().bor_imm(sh, 1)
+        let sh = self.builder.ins().ishl_imm_s(raw, 1);
+        self.builder.ins().bor_imm_s(sh, 1)
     }
     /// Tests whether `raw` is in the representable fixnum range.
     fn fix_in_range(&mut self, raw: CValue) -> CValue {
         let lo = self
             .builder
             .ins()
-            .icmp_imm(IntCC::SignedGreaterThanOrEqual, raw, FIX_MIN);
+            .icmp_imm_s(IntCC::SignedGreaterThanOrEqual, raw, FIX_MIN);
         let hi = self
             .builder
             .ins()
-            .icmp_imm(IntCC::SignedLessThanOrEqual, raw, FIX_MAX);
+            .icmp_imm_s(IntCC::SignedLessThanOrEqual, raw, FIX_MAX);
         self.builder.ins().band(lo, hi)
     }
 
@@ -2851,8 +2842,8 @@ impl<'a> FnGen<'a> {
             self.builder.switch_to_block(fast_b);
             self.builder.seal_block(fast_b);
         }
-        let ar = self.builder.ins().sshr_imm(a, 1);
-        let br = self.builder.ins().sshr_imm(b, 1);
+        let ar = self.builder.ins().sshr_imm_s(a, 1);
+        let br = self.builder.ins().sshr_imm_s(b, 1);
         let rr = if add {
             self.builder.ins().iadd(ar, br)
         } else {
@@ -2891,11 +2882,11 @@ impl<'a> FnGen<'a> {
             self.builder.switch_to_block(fast_b);
             self.builder.seal_block(fast_b);
         }
-        let ar = self.builder.ins().sshr_imm(a, 1);
-        let br = self.builder.ins().sshr_imm(b, 1);
+        let ar = self.builder.ins().sshr_imm_s(a, 1);
+        let br = self.builder.ins().sshr_imm_s(b, 1);
         let lo = self.builder.ins().imul(ar, br);
         let hi = self.builder.ins().smulhi(ar, br);
-        let exp = self.builder.ins().sshr_imm(lo, 63); // extensão de sinal de lo
+        let exp = self.builder.ins().sshr_imm_s(lo, 63); // extensão de sinal de lo
         let no_ovf = self.builder.ins().icmp(IntCC::Equal, hi, exp);
         let inr = self.fix_in_range(lo);
         let ok = self.builder.ins().band(no_ovf, inr);
@@ -2928,8 +2919,8 @@ impl<'a> FnGen<'a> {
             self.builder.switch_to_block(fast_b);
             self.builder.seal_block(fast_b);
         }
-        let ar = self.builder.ins().sshr_imm(a, 1);
-        let rr = self.builder.ins().iadd_imm(ar, delta);
+        let ar = self.builder.ins().sshr_imm_s(a, 1);
+        let rr = self.builder.ins().iadd_imm_s(ar, delta);
         let inr = self.fix_in_range(rr);
         let ok_b = self.builder.create_block();
         self.builder.ins().brif(inr, ok_b, &[], slow_b, &[]);
@@ -2971,9 +2962,9 @@ impl<'a> FnGen<'a> {
             self.builder.switch_to_block(fast_b);
             self.builder.seal_block(fast_b);
         }
-        let ar = self.builder.ins().sshr_imm(a, 1);
-        let br = self.builder.ins().sshr_imm(b, 1);
-        let bz = self.builder.ins().icmp_imm(IntCC::Equal, br, 0);
+        let ar = self.builder.ins().sshr_imm_s(a, 1);
+        let br = self.builder.ins().sshr_imm_s(b, 1);
+        let bz = self.builder.ins().icmp_imm_s(IntCC::Equal, br, 0);
         let cont_b = self.builder.create_block();
         self.builder.ins().brif(bz, slow_b, &[], cont_b, &[]); // Zero uses slow path.
         self.builder.switch_to_block(cont_b);
@@ -2990,9 +2981,9 @@ impl<'a> FnGen<'a> {
         } else {
             let r = self.builder.ins().srem(ar, br);
             // Floored adjustment: non-zero remainder with differing signs adds b.
-            let rnz = self.builder.ins().icmp_imm(IntCC::NotEqual, r, 0);
+            let rnz = self.builder.ins().icmp_imm_s(IntCC::NotEqual, r, 0);
             let xr = self.builder.ins().bxor(r, br);
-            let diff = self.builder.ins().icmp_imm(IntCC::SignedLessThan, xr, 0);
+            let diff = self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, xr, 0);
             let adj = self.builder.ins().band(rnz, diff);
             let radj = self.builder.ins().iadd(r, br);
             let res = self.builder.ins().select(adj, radj, r);
@@ -3020,8 +3011,8 @@ impl<'a> FnGen<'a> {
         guard_types: bool,
     ) -> CValue {
         if !guard_types {
-            let ar = self.builder.ins().sshr_imm(a, 1);
-            let br = self.builder.ins().sshr_imm(b, 1);
+            let ar = self.builder.ins().sshr_imm_s(a, 1);
+            let br = self.builder.ins().sshr_imm_s(b, 1);
             let comparison = self.builder.ins().icmp(cc, ar, br);
             let truth = self.builder.ins().iconst(types::I64, TRUEV);
             let falsehood = self.builder.ins().iconst(types::I64, FALSEV);
@@ -3036,8 +3027,8 @@ impl<'a> FnGen<'a> {
 
         self.builder.switch_to_block(fast_b);
         self.builder.seal_block(fast_b);
-        let ar = self.builder.ins().sshr_imm(a, 1);
-        let br = self.builder.ins().sshr_imm(b, 1);
+        let ar = self.builder.ins().sshr_imm_s(a, 1);
+        let br = self.builder.ins().sshr_imm_s(b, 1);
         let c = self.builder.ins().icmp(cc, ar, br);
         let t = self.builder.ins().iconst(types::I64, TRUEV);
         let f = self.builder.ins().iconst(types::I64, FALSEV);
@@ -3134,7 +3125,7 @@ impl<'a> FnGen<'a> {
         let tagged_left = self.fix_retag(left);
         let tagged_right = self.fix_retag(right);
         let tagged = self.call2(slow, tagged_left, tagged_right);
-        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        let raw = self.builder.ins().sshr_imm_s(tagged, 1);
         self.builder.ins().jump(merge, &[raw.into()]);
 
         self.builder.switch_to_block(merge);
@@ -3145,7 +3136,7 @@ impl<'a> FnGen<'a> {
     fn gen_raw_fix_mul(&mut self, left: CValue, right: CValue) -> CValue {
         let result = self.builder.ins().imul(left, right);
         let high = self.builder.ins().smulhi(left, right);
-        let expected_high = self.builder.ins().sshr_imm(result, 63);
+        let expected_high = self.builder.ins().sshr_imm_s(result, 63);
         let no_overflow = self.builder.ins().icmp(IntCC::Equal, high, expected_high);
         let in_range = self.fix_in_range(result);
         let valid = self.builder.ins().band(no_overflow, in_range);
@@ -3164,7 +3155,7 @@ impl<'a> FnGen<'a> {
         let tagged_left = self.fix_retag(left);
         let tagged_right = self.fix_retag(right);
         let tagged = self.call2(self.rt.mul, tagged_left, tagged_right);
-        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        let raw = self.builder.ins().sshr_imm_s(tagged, 1);
         self.builder.ins().jump(merge, &[raw.into()]);
 
         self.builder.switch_to_block(merge);
@@ -3173,7 +3164,7 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_raw_fix_unop(&mut self, value: CValue, delta: i64, slow: FuncId) -> CValue {
-        let result = self.builder.ins().iadd_imm(value, delta);
+        let result = self.builder.ins().iadd_imm_s(value, delta);
         let in_range = self.fix_in_range(result);
         let fast = self.builder.create_block();
         let slow_block = self.builder.create_block();
@@ -3191,7 +3182,7 @@ impl<'a> FnGen<'a> {
         self.builder.seal_block(slow_block);
         let tagged_value = self.fix_retag(value);
         let tagged = self.call1(slow, tagged_value);
-        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        let raw = self.builder.ins().sshr_imm_s(tagged, 1);
         self.builder.ins().jump(merge, &[raw.into()]);
 
         self.builder.switch_to_block(merge);
@@ -3206,7 +3197,7 @@ impl<'a> FnGen<'a> {
         quotient: bool,
         slow: FuncId,
     ) -> CValue {
-        let zero = self.builder.ins().icmp_imm(IntCC::Equal, right, 0);
+        let zero = self.builder.ins().icmp_imm_s(IntCC::Equal, right, 0);
         let slow_block = self.builder.create_block();
         let divide = self.builder.create_block();
         let merge = self.builder.create_block();
@@ -3227,10 +3218,10 @@ impl<'a> FnGen<'a> {
             self.builder.ins().jump(merge, &[result.into()]);
         } else {
             let remainder = self.builder.ins().srem(left, right);
-            let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, remainder, 0);
+            let nonzero = self.builder.ins().icmp_imm_s(IntCC::NotEqual, remainder, 0);
             let signs_differ = {
                 let xor = self.builder.ins().bxor(remainder, right);
-                self.builder.ins().icmp_imm(IntCC::SignedLessThan, xor, 0)
+                self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, xor, 0)
             };
             let adjust = self.builder.ins().band(nonzero, signs_differ);
             let adjusted = self.builder.ins().iadd(remainder, right);
@@ -3243,7 +3234,7 @@ impl<'a> FnGen<'a> {
         let tagged_left = self.fix_retag(left);
         let tagged_right = self.fix_retag(right);
         let tagged = self.call2(slow, tagged_left, tagged_right);
-        let raw = self.builder.ins().sshr_imm(tagged, 1);
+        let raw = self.builder.ins().sshr_imm_s(tagged, 1);
         self.builder.ins().jump(merge, &[raw.into()]);
 
         self.builder.switch_to_block(merge);

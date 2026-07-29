@@ -11,8 +11,6 @@ tags.
 ### Fixed
 
 - Release temporary GC roots when a function with no local root slots returns.
-- Pin `cranelift-module` to the 0.124 line so it matches `cranelift-codegen`/`object`;
-  the Dependabot bump to 0.134 (#131) broke `ObjectModule` and left `master` unbuildable.
 
 ### Added
 - Add the `cljn.io` symbolic-link and copy API (issue #140): `create-symlink!`,
@@ -146,6 +144,8 @@ tags.
 
 ### Changed
 
+- Update the Cranelift backend crates to 0.134.2, `sha2` to 0.11, and `toml` to
+  1.1, including the required code-generation API migration.
 - Refresh every ADR `Status` field to reflect the delivered state: ADR-0001–0008 are
   accepted and implemented, ADR-0011 and ADR-0016 are implemented, ADR-0012 is
   partially implemented (file-size gate landed, module extraction pending), and
