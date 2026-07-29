@@ -34,6 +34,9 @@ tags.
 ### Changed
 
 - Stop tracking the local `.lsp/.cache/` editor cache and ignore future cache files.
+- Require every AI-assisted feature to start from an issue registered in the public
+  project, use a `feature/<issue-number>-<semantic-description>` branch, and reach
+  `master` through a pull request; documentation checks now preserve this policy.
 - Keep ADR-0015 outside the admitted `safe` profile after its first full Cormen gate
   recorded candidate/control ratios of 1.0066 wall and 1.0054 CPU, failed the required
   3% gain, and exceeded the per-case point-estimate ceiling.

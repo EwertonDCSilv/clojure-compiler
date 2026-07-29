@@ -12,6 +12,10 @@ The mandatory policies are:
   green, and broader integration/conformance validation;
 - `CONTRIBUTING.md`: repository hooks, language linters, and required local gates.
 
+New features also require a pre-existing issue in the `clojure-compiler Roadmap`, a
+`feature/<issue-number>-<semantic-description>` branch, and a pull request targeting
+`master`, as defined by `AGENTS.md`.
+
 Do not weaken tests or change snapshots, fixture statuses, or checksums to hide a
 regression. Run the narrowest test during development, `make pre-commit` before commit,
 and `make pre-push` before handoff.

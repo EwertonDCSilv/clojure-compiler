@@ -47,6 +47,16 @@ for policy in specs/DOCUMENTATION_STYLE.md specs/TDD_WORKFLOW.md; do
   fi
 done
 
+for feature_policy in \
+  "feature/<issue-number>-<semantic-description>" \
+  "clojure-compiler Roadmap" \
+  "pull request from the feature branch to"; do
+  if ! grep -Fq "${feature_policy}" AGENTS.md; then
+    echo "AGENTS.md does not contain mandatory feature workflow: ${feature_policy}" >&2
+    exit 1
+  fi
+done
+
 echo "Checking Rust module documentation..."
 module_failures=0
 while IFS= read -r source; do

@@ -17,6 +17,32 @@ If implementation and a document disagree, verify the executable behavior. Corre
 stale documentation in the same change, but do not silently claim planned behavior as
 implemented.
 
+## Feature delivery workflow
+
+This workflow is mandatory for every new feature implemented by an AI assistant,
+regardless of the model, tool, or editor integration:
+
+1. Before implementation starts, the feature must have an open issue in
+   `EwertonDCSilv/clojure-compiler` and that issue must be an item in the public
+   [`clojure-compiler Roadmap`](https://github.com/users/EwertonDCSilv/projects/2).
+   If either record is missing, stop feature implementation and register it first.
+2. Create the implementation branch from an up-to-date `master` using exactly
+   `feature/<issue-number>-<semantic-description>`. Use a lowercase, hyphenated
+   description of the behavior, for example `feature/8-pedestal-syntax-support`.
+3. Keep the feature scope aligned with its issue. Update the issue and project item
+   before materially widening the implementation.
+4. Commit and push the implementation only on that feature branch. Never implement a
+   new feature directly on `master`.
+5. After the required gates pass, open a pull request from the feature branch to
+   `master`. The pull request must reference the issue and preserve its project
+   tracking.
+6. Merge feature work into `master` only through that pull request. Do not bypass
+   review history with a direct feature push to `master`.
+
+Bug fixes, documentation, maintenance, release, and investigation branches may use
+their established workflow. Work that adds user-visible or compiler/runtime capability
+is a feature and must follow the workflow above.
+
 ## Documentation requirements
 
 - Every change intended for commit must update the appropriate section under
