@@ -1,13 +1,13 @@
 id = "c.cljn_io.parent.error"
 level = "C"
 area = "stdlib/cljn-io/paths"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = false
-reason = "The I/O contract is specified and executable as a fixture, but its native API is not implemented yet."
+reason = "Native cljn.io path-algebra requires a path value from cljn.io/path; the Clojure/JVM oracle cannot resolve the native namespace (ADR-0016, issue #142)."
 tracking = "specs/IO_SPEC.md"
 namespace = "cljn.io"
 [run]
