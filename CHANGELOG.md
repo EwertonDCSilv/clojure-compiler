@@ -10,6 +10,12 @@ tags.
 
 ### Added
 
+- Add an AI-agent story-point guard that blocks feature implementation for
+  unestimated Roadmap issues, epics, roll-ups, and issues above 8 points, with
+  offline tests and fail-closed local commit/push hooks.
+- Add a frozen Clojure 1.12.5 reader capability catalog and an offline
+  `reader-syntax-coverage` gate that reports traceability, native executable support,
+  strict JVM parity, and the exact remaining scenario counts.
 - Add this release changelog and enforce `Unreleased` updates through repository
   instructions, contributor guidance, documentation checks, and the staged pre-commit
   hook.
@@ -79,6 +85,23 @@ tags.
 - Add ADR-0016 defining the Clojure/JVM oracle classification policy (`equal` vs
   `not-applicable` vs `expected-diff`) and a mechanical decision rule based on
   whether the JVM can evaluate a case and whether it deliberately differs.
+- Add the separate `benchmarks/http/` suite (ADR-0013 Gate 6) that drives the native
+  `cljn.pedestal.*` connector and the pinned upstream Pedestal http-kit connector
+  (0.8.2-beta-10) through one shared load client, proves byte-identical responses by
+  SHA-256 before comparing timing, and records medians over repetitions with
+  environment metadata. It is versioned apart from the language conformance and
+  Cracking/Cormen/Exercism catalogs and runs on demand outside CI.
+- Add the `tests/differential/pedestal/` interceptor-chain differential (ADR-0013
+  Gate 3) that runs a scenario corpus through the compiled `cljn.pedestal.chain` and
+  the pinned upstream `io.pedestal.interceptor.chain` under the same
+  terminate-on-`:response` rule and diffs the observable output, proving native
+  interceptor order, termination, unwind, and recovery match the manual oracle. It
+  resolves Pedestal from Clojars and runs on demand outside CI.
+- Add `specs/PEDESTAL_UPSTREAM_INVENTORY.md` (ADR-0013 Gate 7): the pinned upstream
+  Pedestal snapshot, its namespace inventory, the first compilation blocker per P2
+  candidate, and the decision that compiling upstream Pedestal (P2) is not useful
+  until general Java interop, an async model, and user macros exist — no P3 work is
+  proposed.
 
 ### Changed
 

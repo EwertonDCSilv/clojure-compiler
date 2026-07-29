@@ -2,7 +2,8 @@
 
 [Project README](../../README.md) ·
 [Documentation](../../docs/README.md) ·
-[Specification index](../README.md)
+[Specification index](../README.md) ·
+[Reader syntax coverage](READER_SYNTAX_COVERAGE.md)
 
 The executable fixtures live in [`tests/conformance/`](../../tests/conformance), while
 this document records their contract and maintenance policy. The suite classifies the
@@ -42,6 +43,9 @@ multimethods, and transients:
 # Offline native verification; no JVM and no downloads
 make compatibility
 
+# Frozen Clojure 1.12.5 reader denominator and remaining syntax gaps
+make reader-syntax-coverage
+
 # Inventory and filters
 make compatibility-list
 make compatibility-list CONFORMANCE_ARGS="--level A --status active"
@@ -53,6 +57,12 @@ make compatibility-list CONFORMANCE_ARGS="--namespace clojure.string"
 run concurrently. The machine-readable report is
 `target/conformance/report.json`; the human summary is
 `target/conformance/report-summary.txt`.
+
+`reader-syntax-coverage` validates the frozen reader catalog independently of the
+number of fixtures that currently exist. It reports traceability, native executable
+support, and strict JVM parity, then writes
+`target/conformance/reader-syntax-coverage.{json,txt}`. `make compatibility` runs this
+validation before executing the fixture suite.
 
 The [`Makefile`](../../Makefile) is the recommended public entry point. The underlying
 `scripts/conformance.sh` interface remains available for fixture maintenance and
@@ -173,9 +183,10 @@ differences are never overwritten from the JVM.
 
 ## Acceptance gate
 
-CI runs `make compatibility` without a JVM. The general gate requires all active cases
-to pass, every xfail to remain an expected failure, no unexpected pass, and an exact
-checksum inventory. Unit tests in `clojure-test-support` cover discovery, strict TOML
+CI runs `make compatibility` without a JVM. The general gate requires the reader
+coverage catalog to remain structurally complete, all active cases to pass, every
+xfail to remain an expected failure, no unexpected pass, and an exact checksum
+inventory. Unit tests in `clojure-test-support` cover discovery, strict TOML
 parsing, path/newline normalization, process timeouts, structural collection
 comparison, binary streams, stdin/argv/env/exit status, filesystem snapshots,
 declarative symlinks, error categories, checksums, filters, and state accounting.

@@ -7,12 +7,13 @@
 //! `clojure_test_support`.
 
 use clojure_test_support::{
-    human_summary, list_cases, parse_level, parse_status, run_oracle, verify, Filters, OracleMode,
-    OracleOptions, VerifyOptions, MAX_JOBS,
+    human_summary, list_cases, load_reader_coverage, parse_level, parse_status,
+    reader_coverage_summary, run_oracle, verify, Filters, OracleMode, OracleOptions, VerifyOptions,
+    MAX_JOBS,
 };
-use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::{env, fs};
 
 struct Common {
     root: PathBuf,
@@ -107,8 +108,74 @@ fn run(args: Vec<String>) -> Result<bool, String> {
             println!("{}", human_summary(&report));
             Ok(report.success)
         }
+        "reader-coverage" => {
+            let options = parse_reader_coverage(&args[1..])?;
+            let report = load_reader_coverage(&options.catalog, &options.root)?;
+            let summary = reader_coverage_summary(&report);
+            fs::create_dir_all(&options.report_directory).map_err(|error| {
+                format!(
+                    "cannot create {}: {error}",
+                    options.report_directory.display()
+                )
+            })?;
+            let json = serde_json::to_string_pretty(&report)
+                .map_err(|error| format!("cannot serialize reader coverage: {error}"))?;
+            fs::write(
+                options.report_directory.join("reader-syntax-coverage.json"),
+                format!("{json}\n"),
+            )
+            .map_err(|error| format!("cannot write reader coverage JSON: {error}"))?;
+            fs::write(
+                options.report_directory.join("reader-syntax-coverage.txt"),
+                format!("{summary}\n"),
+            )
+            .map_err(|error| format!("cannot write reader coverage summary: {error}"))?;
+            if options.json {
+                println!("{json}");
+            } else {
+                println!("{summary}");
+            }
+            Ok(true)
+        }
         other => Err(format!("unknown command `{other}`")),
     }
+}
+
+struct ReaderCoverageOptions {
+    root: PathBuf,
+    catalog: PathBuf,
+    report_directory: PathBuf,
+    json: bool,
+}
+
+fn parse_reader_coverage(args: &[String]) -> Result<ReaderCoverageOptions, String> {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut options = ReaderCoverageOptions {
+        root: repository.join("tests/conformance"),
+        catalog: repository.join("specs/conformance/clojure-1.12.5-reader.toml"),
+        report_directory: repository.join("target/conformance"),
+        json: false,
+    };
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--json" {
+            options.json = true;
+            index += 1;
+            continue;
+        }
+        let flag = &args[index];
+        let value = args
+            .get(index + 1)
+            .ok_or_else(|| format!("{flag} requires a value"))?;
+        match flag.as_str() {
+            "--root" => options.root = PathBuf::from(value),
+            "--catalog" => options.catalog = PathBuf::from(value),
+            "--report-directory" => options.report_directory = PathBuf::from(value),
+            _ => return Err(format!("unknown reader-coverage option `{flag}`")),
+        }
+        index += 2;
+    }
+    Ok(options)
 }
 
 fn parse_common(args: &[String]) -> Result<Common, String> {
@@ -182,6 +249,7 @@ fn print_usage() {
          Usage:\n\
            clojure-conformance verify [filters] [--jobs 1..4] [--ir-opt none|safe] [--ir-experiment none|adr15]\n\
            clojure-conformance list [filters]\n\
+           clojure-conformance reader-coverage [--json] [--catalog PATH]\n\
            clojure-conformance oracle --check [filters] [--classpath PATH]\n\
            clojure-conformance oracle --bless [filters] [--classpath PATH]\n\n\
          Filters:\n\
@@ -190,7 +258,8 @@ fn print_usage() {
            --status active|xfail|pending\n\
            --namespace TEXT\n\n\
          Paths:\n\
-           --root PATH --compiler PATH --report-directory PATH\n\n\
+           --root PATH --compiler PATH --report-directory PATH\n\
+           --catalog PATH (reader-coverage only)\n\n\
          The JVM oracle is manual and is pinned to Clojure 1.12.5."
     );
 }

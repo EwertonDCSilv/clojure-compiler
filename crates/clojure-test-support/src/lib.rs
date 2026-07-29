@@ -10,6 +10,13 @@
 //! [`run_oracle`] is a separate maintainer operation for checking or refreshing
 //! eligible expectations against the pinned Clojure/JVM implementation.
 
+mod reader_coverage;
+
+pub use reader_coverage::{
+    load_reader_coverage, reader_coverage_summary, CapabilityCoverage, ReaderCoverageReport,
+    ScenarioCoverage,
+};
+
 use clojure_span::SourceMap;
 use clojure_syntax::Form;
 use serde::{Deserialize, Serialize};

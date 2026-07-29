@@ -118,6 +118,8 @@ Documentos operacionais:
 - [../docs/README.md](../docs/README.md) — índice dos guias correntes.
 - [../docs/usage.md](../docs/usage.md) — CLI, Makefile, instalação e gates.
 - [conformance/README.md](conformance/README.md) — suíte executável A–E.
+- [conformance/READER_SYNTAX_COVERAGE.md](conformance/READER_SYNTAX_COVERAGE.md) —
+  denominador e métricas objetivas da sintaxe do Reader Clojure 1.12.5.
 - [../benchmarks/README.md](../benchmarks/README.md) — catálogo das suítes de desempenho.
 - [optime.md](optime.md) — plano de otimização.
 - [adr/0006-codegen-optimization.md](adr/0006-codegen-optimization.md) — decisão e

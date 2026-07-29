@@ -200,14 +200,22 @@ stay as expected failures. Verification runs
 offline without a JVM, checks fixture integrity, and writes reports to
 `target/conformance/`.
 
+Reader syntax progress uses a separate frozen Clojure 1.12.5 denominator, so missing
+syntax cannot disappear merely because no fixture exists. The initial catalog has 46
+capabilities and 129 applicable normal/boundary/error scenarios: 38.76% have active
+native evidence and 24.81% have strict equal-JVM evidence.
+
 ```bash
+make reader-syntax-coverage
 make compatibility-list CONFORMANCE_ARGS="--level A"
 make compatibility-list CONFORMANCE_ARGS="--namespace clojure.core"
 make compatibility
 ```
 
-See [`specs/conformance/README.md`](specs/conformance/README.md) for filters, checksums,
-reports, and the optional manual Clojure/JVM 1.12.5 oracle.
+See
+[`specs/conformance/READER_SYNTAX_COVERAGE.md`](specs/conformance/READER_SYNTAX_COVERAGE.md)
+for the formulas and [`specs/conformance/README.md`](specs/conformance/README.md) for
+filters, checksums, reports, and the optional manual Clojure/JVM 1.12.5 oracle.
 
 ## Benchmarks
 

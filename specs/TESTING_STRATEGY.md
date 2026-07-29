@@ -18,6 +18,7 @@ dependência da CI, do runner `verify` nem do binário produzido.
 | Runtime C | `make test-runtime` | harnesses C dedicados | invariantes, ABI, erros e GC stress |
 | Cobertura | `make coverage` | `cargo-llvm-cov` | gates globais e por arquivo |
 | Conformidade | `make compatibility` | runner A–E offline | ativos/xfail/checksums corretos |
+| Cobertura de sintaxe | `make reader-syntax-coverage` | catálogo congelado do Reader 1.12.5 | denominador, fixtures e issues rastreáveis |
 | GC | casos com `CLJN_GC_STRESS=1` | runtime e conformidade | coleta a cada alocação sem corrupção |
 | Benchmarks | `make benchmarks` | runners Cracking, Cormen e Exercism | checksum e métricas comparáveis |
 | Corpus externo | `make exercism-compatibility` | 101 práticas, 13 conceitos e 493 arquivos pinados | transições PASS/FAIL rastreáveis |
@@ -113,6 +114,13 @@ exit code, plataformas e symlinks. Cada execução usa um diretório temporário
 `work.before/` define o estado inicial e `work.after/` o snapshot exato esperado.
 Streams `.bin` são comparados byte a byte; mapas/sets são comparados estruturalmente;
 newlines e caminhos temporários de expectativas textuais são normalizados.
+
+A quantidade de sintaxe do Reader ainda ausente não é calculada dividindo casos
+`active` pelo inventário A existente. O denominador independente está em
+[`conformance/clojure-1.12.5-reader.toml`](conformance/clojure-1.12.5-reader.toml), e
+as fórmulas estão em
+[`conformance/READER_SYNTAX_COVERAGE.md`](conformance/READER_SYNTAX_COVERAGE.md).
+`make compatibility` valida esse catálogo antes de executar as fixtures.
 
 A matriz de I/O descrita em [IO_SPEC](IO_SPEC.md) acrescenta cenários normal, limite e
 erro para core/EDN e `cljn.*`. Há casos ativos para output, flush, redirecionamento,
