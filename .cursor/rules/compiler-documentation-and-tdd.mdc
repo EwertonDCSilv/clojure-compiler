@@ -14,5 +14,8 @@ behavior-changing implementation. Use Red–Green–Refactor, preserve unrelated
 run the validation commands required by the affected subsystem.
 
 Before implementing a new feature, require its issue in the `clojure-compiler Roadmap`,
-create `feature/<issue-number>-<semantic-description>` from `master`, and deliver it
-through a pull request to `master` as specified by @AGENTS.md.
+run `make agent-feature-guard ISSUE=<issue-number>`, create
+`feature/<issue-number>-<semantic-description>` from `master`, and deliver it through a
+pull request to `master` as specified by @AGENTS.md. Do not implement missing
+estimates, epics, roll-ups, or issues above 8 story points; refine them into independent
+tasks first.

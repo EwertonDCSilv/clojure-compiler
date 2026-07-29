@@ -26,17 +26,25 @@ regardless of the model, tool, or editor integration:
    `EwertonDCSilv/clojure-compiler` and that issue must be an item in the public
    [`clojure-compiler Roadmap`](https://github.com/users/EwertonDCSilv/projects/2).
    If either record is missing, stop feature implementation and register it first.
-2. Create the implementation branch from an up-to-date `master` using exactly
+2. Before creating an implementation branch or editing repository files, run
+   `make agent-feature-guard ISSUE=<issue-number>`. The Roadmap item must have a
+   numeric `Story points` estimate of at most 8. Missing estimates and values above 8
+   block implementation.
+3. Never implement an epic, roll-up, or issue above 8 story points directly. Stop and
+   refine its scope first, preferably by creating independent sub-issues with their own
+   acceptance criteria, Roadmap items, and estimates of at most 8 points. Implement
+   those task issues on their own branches.
+4. Create the implementation branch from an up-to-date `master` using exactly
    `feature/<issue-number>-<semantic-description>`. Use a lowercase, hyphenated
    description of the behavior, for example `feature/8-pedestal-syntax-support`.
-3. Keep the feature scope aligned with its issue. Update the issue and project item
+5. Keep the feature scope aligned with its issue. Update the issue and project item
    before materially widening the implementation.
-4. Commit and push the implementation only on that feature branch. Never implement a
+6. Commit and push the implementation only on that feature branch. Never implement a
    new feature directly on `master`.
-5. After the required gates pass, open a pull request from the feature branch to
+7. After the required gates pass, open a pull request from the feature branch to
    `master`. The pull request must reference the issue and preserve its project
    tracking.
-6. Merge feature work into `master` only through that pull request. Do not bypass
+8. Merge feature work into `master` only through that pull request. Do not bypass
    review history with a direct feature push to `master`.
 
 Bug fixes, documentation, maintenance, release, and investigation branches may use

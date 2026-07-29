@@ -10,6 +10,9 @@ tags.
 
 ### Added
 
+- Add an AI-agent story-point guard that blocks feature implementation for
+  unestimated Roadmap issues, epics, roll-ups, and issues above 8 points, with
+  offline tests and fail-closed local commit/push hooks.
 - Add a frozen Clojure 1.12.5 reader capability catalog and an offline
   `reader-syntax-coverage` gate that reports traceability, native executable support,
   strict JVM parity, and the exact remaining scenario counts.

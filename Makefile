@@ -26,16 +26,17 @@ CORMEN_COMPARE_ARGS ?=
 EXERCISM_COMPARE_ARGS ?=
 CONFORMANCE_ARGS ?=
 COVERAGE_ARGS ?=
+AGENT_GUARD_ARGS ?=
 BENCHMARK_OUTPUT_DIR ?= target/benchmarks
 CRACKING_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cracking-comparison.csv
 CORMEN_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/cormen-comparison.csv
 EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 
 .PHONY: \
-	help all ci quality docs-check pre-commit pre-push hooks-install \
+	help all ci quality docs-check pre-commit pre-push hooks-install agent-feature-guard \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-benchmark-charts test-ir-ab-analyzer coverage \
+	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-charts test-ir-ab-analyzer coverage \
 	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
@@ -60,6 +61,7 @@ help:
 		"  pre-commit               Executa higiene, formato e lints locais" \
 		"  pre-push                 Executa quality e sanitizers do runtime C" \
 		"  hooks-install            Ativa os hooks Git versionados neste checkout" \
+		"  agent-feature-guard      Bloqueia features sem estimativa ou acima de 8 pontos" \
 		"  coverage                 Executa os gates de cobertura" \
 		"  compatibility            Verifica a matriz de compatibilidade A–E" \
 		"  reader-syntax-coverage   Mede suporte do Reader Clojure 1.12.5" \
@@ -77,6 +79,7 @@ help:
 		"  lint                     Executa higiene e lints Rust, C e Clojure" \
 		"  test-runtime             Testa o runtime C" \
 		"  test-runtime-sanitize    Testa o runtime C com sanitizers" \
+		"  test-agent-guard         Testa o guard rail de story points sem rede" \
 		"  test-benchmark-charts    Testa o gerador Rust de gráficos" \
 		"  test-ir-ab-analyzer      Testa o analisador estatístico do gate de IR" \
 		"  compatibility-list       Lista casos da matriz de compatibilidade" \
@@ -94,6 +97,7 @@ help:
 		"  CORMEN_COMPARE_ARGS='--chapter 06 --scale 25'" \
 		"  EXERCISM_COMPARE_ARGS='--scale 5'" \
 		"  COVERAGE_ARGS='--html'" \
+		"  ISSUE=101 make agent-feature-guard" \
 		"  CRACKING_COMPARISON_CSV=/tmp/cracking.csv" \
 		"  CORMEN_COMPARISON_CSV=/tmp/cormen.csv" \
 		"  EXERCISM_COMPARISON_CSV=/tmp/exercism.csv" \
@@ -119,6 +123,9 @@ pre-push: quality test-runtime-sanitize
 
 hooks-install:
 	scripts/install-git-hooks.sh
+
+agent-feature-guard:
+	scripts/check-agent-story-points.sh $(if $(ISSUE),--issue $(ISSUE)) $(AGENT_GUARD_ARGS)
 
 build:
 	$(CARGO) build --workspace
@@ -153,8 +160,11 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-benchmark-charts test-ir-ab-analyzer
+test: test-agent-guard test-benchmark-charts test-ir-ab-analyzer
 	$(CARGO) test --workspace
+
+test-agent-guard:
+	tests/scripts/check-agent-story-points.sh
 
 test-runtime:
 	scripts/test-runtime-c.sh
