@@ -201,14 +201,22 @@ lacunas executáveis restantes continuam como falhas esperadas. A verificação 
 offline e sem JVM, confere a integridade das fixtures e grava relatórios em
 `target/conformance/`.
 
+O progresso da sintaxe do Reader usa um denominador separado e congelado do Clojure
+1.12.5, impedindo que uma sintaxe sem fixture desapareça do cálculo. O catálogo inicial
+possui 46 capacidades e 129 cenários aplicáveis de caso normal, limite e erro: 38,76%
+têm evidência nativa ativa e 24,81% têm igualdade estrita comprovada com a JVM.
+
 ```bash
+make reader-syntax-coverage
 make compatibility-list CONFORMANCE_ARGS="--level A"
 make compatibility-list CONFORMANCE_ARGS="--namespace clojure.core"
 make compatibility
 ```
 
-Consulte [`specs/conformance/README.md`](specs/conformance/README.md) para filtros,
-checksums, relatórios e o oracle manual opcional com Clojure/JVM 1.12.5.
+Consulte
+[`specs/conformance/READER_SYNTAX_COVERAGE.md`](specs/conformance/READER_SYNTAX_COVERAGE.md)
+para as fórmulas e [`specs/conformance/README.md`](specs/conformance/README.md) para
+filtros, checksums, relatórios e o oracle manual opcional com Clojure/JVM 1.12.5.
 
 ## Benchmarks
 

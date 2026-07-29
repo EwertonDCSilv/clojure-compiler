@@ -1,0 +1,628 @@
+schema_version = 1
+clojure_version = "1.12.5"
+reference = "https://clojure.org/reference/reader"
+
+# Each capability contributes normal, boundary, and error scenarios to the
+# denominator. Empty arrays are tracked gaps. A scenario is excluded only when
+# `not_applicable` records why the official grammar has no equivalent case.
+
+[[capability]]
+id = "literal.boolean-nil"
+category = "literals"
+syntax = "nil true false"
+source = "Clojure Reader reference: literals"
+behavior = "Reads nil and the two Boolean literals as dedicated values."
+issue = 9
+dependencies = []
+decision = "Other spellings are symbols, so an invalid-token error is not applicable."
+normal = ["a.literals.booleans_nil"]
+boundary = ["a.literals.booleans_nil"]
+error = []
+not_applicable = ["error"]
+
+[[capability]]
+id = "literal.integer-decimal"
+category = "literals"
+syntax = "[-+]?[0-9]+"
+source = "clojure.lang.LispReader intPat"
+behavior = "Reads signed decimal integers and preserves the official range behavior."
+issue = 9
+dependencies = []
+decision = "Exact JVM equality is required."
+normal = ["a.literals.integers"]
+boundary = ["a.literals.integer_limits"]
+error = ["a.diagnostics.invalid_number"]
+
+[[capability]]
+id = "literal.double"
+category = "literals"
+syntax = "1.0 1. 1e1 1.e1"
+source = "clojure.lang.LispReader floatPat"
+behavior = "Reads exactly the Double grammar accepted by Clojure 1.12.5."
+issue = 71
+dependencies = []
+decision = "Rust-only float spellings must not widen the accepted grammar."
+normal = ["a.literals.floats"]
+boundary = []
+error = ["a.diagnostics.invalid_number"]
+
+[[capability]]
+id = "literal.bigint"
+category = "literals"
+syntax = "9223372036854775808 1N"
+source = "clojure.lang.LispReader matchNumber"
+behavior = "Promotes integers outside the native fixed-width range and accepts the N suffix."
+issue = 14
+dependencies = []
+decision = "Approximation through a floating-point or truncated integer is forbidden."
+normal = ["a.literals.bigint"]
+boundary = ["a.literals.bigint"]
+error = []
+
+[[capability]]
+id = "literal.bigdecimal"
+category = "literals"
+syntax = "1.0M"
+source = "clojure.lang.LispReader floatPat"
+behavior = "Reads arbitrary-precision decimal values with the M suffix."
+issue = 15
+dependencies = []
+decision = "A dedicated exact representation is required."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "literal.ratio"
+category = "literals"
+syntax = "[-+]?[0-9]+/[0-9]+"
+source = "clojure.lang.LispReader ratioPat"
+behavior = "Reads normalized exact ratios and rejects a signed denominator."
+issue = 16
+dependencies = []
+decision = "The denominator grammar is unsigned."
+normal = ["a.literals.ratio"]
+boundary = ["a.literals.ratio"]
+error = []
+
+[[capability]]
+id = "literal.radix-integer"
+category = "literals"
+syntax = "0x2a 052 2r101010 36r16"
+source = "clojure.lang.LispReader intPat"
+behavior = "Reads hexadecimal, octal, and explicit radix 2 through 36 integers."
+issue = 17
+dependencies = []
+decision = "Prefix and digit validation must match intPat."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "literal.symbolic-value"
+category = "literals"
+syntax = "##Inf ##-Inf ##NaN"
+source = "clojure.lang.LispReader symbolicValueReader"
+behavior = "Reads the official symbolic floating-point values."
+issue = 18
+dependencies = []
+decision = "Only the documented symbolic names are accepted."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "literal.character"
+category = "literals"
+syntax = "\\a \\newline \\u0041 \\o101"
+source = "clojure.lang.LispReader CharacterReader"
+behavior = "Consumes one complete character token and applies named, Unicode, and octal rules."
+issue = 72
+dependencies = [19]
+decision = "The observable domain follows java.lang.Character for Clojure 1.12.5."
+normal = ["a.literals.characters"]
+boundary = ["a.literals.characters"]
+error = ["a.diagnostics.empty_character", "a.diagnostics.unknown_character"]
+
+[[capability]]
+id = "literal.string"
+category = "literals"
+syntax = "\"text\\n\\u0041\""
+source = "clojure.lang.LispReader StringReader"
+behavior = "Reads multiline strings and the complete official escape grammar."
+issue = 25
+dependencies = [73]
+decision = "Isolated UTF-16 surrogate units require an explicit representation decision."
+normal = ["a.literals.strings_escapes"]
+boundary = ["a.literals.strings_unicode"]
+error = [
+  "a.diagnostics.bad_string_escape",
+  "a.diagnostics.bad_unicode_escape",
+  "a.diagnostics.unterminated_string",
+]
+
+[[capability]]
+id = "literal.symbol"
+category = "literals"
+syntax = "name ns/name / clojure.core//"
+source = "clojure.lang.LispReader symbolPat"
+behavior = "Reads symbols with the same namespace, slash, dot, and macro-boundary grammar."
+issue = 26
+dependencies = [74]
+decision = "Token classification must not defer malformed symbol syntax to Rust parsing."
+normal = ["a.literals.symbols"]
+boundary = ["a.literals.symbols"]
+error = []
+
+[[capability]]
+id = "literal.keyword"
+category = "literals"
+syntax = ":name :ns/name"
+source = "clojure.lang.LispReader symbolPat keyword branch"
+behavior = "Reads simple and namespace-qualified keywords."
+issue = 26
+dependencies = [74]
+decision = "Keyword grammar follows symbol tokenization plus keyword-specific restrictions."
+normal = ["a.literals.keywords"]
+boundary = ["a.literals.keywords"]
+error = ["a.diagnostics.empty_keyword"]
+
+[[capability]]
+id = "literal.auto-resolved-keyword"
+category = "literals"
+syntax = "::name ::alias/name"
+source = "clojure.lang.LispReader keyword resolution"
+behavior = "Resolves auto-qualified keywords through the current namespace and aliases."
+issue = 10
+dependencies = [70]
+decision = "Resolution requires an explicit immutable reader context."
+normal = ["a.literals.auto_keyword"]
+boundary = ["a.literals.auto_keyword"]
+error = []
+
+[[capability]]
+id = "collection.list"
+category = "collections"
+syntax = "(a b c)"
+source = "clojure.lang.LispReader ListReader"
+behavior = "Reads lists, including empty and nested lists, with exact delimiter ownership."
+issue = 78
+dependencies = []
+decision = "Structural equality with the JVM is required."
+normal = ["a.collections.lists"]
+boundary = ["a.collections.nesting"]
+error = [
+  "a.diagnostics.mismatched_delimiter",
+  "a.diagnostics.unexpected_delimiter",
+]
+
+[[capability]]
+id = "collection.vector"
+category = "collections"
+syntax = "[a b c]"
+source = "clojure.lang.LispReader VectorReader"
+behavior = "Reads vectors, including empty and nested vectors."
+issue = 78
+dependencies = []
+decision = "Structural equality with the JVM is required."
+normal = ["a.collections.vectors"]
+boundary = ["a.collections.nesting"]
+error = [
+  "a.diagnostics.mismatched_delimiter",
+  "a.diagnostics.unclosed_vector",
+]
+
+[[capability]]
+id = "collection.map"
+category = "collections"
+syntax = "{:a 1, :b 2}"
+source = "clojure.lang.LispReader MapReader"
+behavior = "Reads even key/value forms and rejects odd maps."
+issue = 78
+dependencies = [27]
+decision = "Duplicate-key rejection is tracked separately from basic map structure."
+normal = ["a.collections.maps"]
+boundary = ["a.collections.map_commas", "a.collections.nesting"]
+error = ["a.diagnostics.odd_map", "a.diagnostics.mismatched_delimiter"]
+
+[[capability]]
+id = "collection.set"
+category = "collections"
+syntax = "#{a b c}"
+source = "clojure.lang.LispReader SetReader"
+behavior = "Reads set dispatch forms and preserves delimiter boundaries."
+issue = 78
+dependencies = [27]
+decision = "Duplicate-element rejection is tracked separately from basic set structure."
+normal = ["a.collections.sets"]
+boundary = ["a.collections.nesting"]
+error = ["a.diagnostics.mismatched_delimiter"]
+
+[[capability]]
+id = "collection.duplicate-rejection"
+category = "collections"
+syntax = "{:a 1 :a 2} #{1 1}"
+source = "clojure.lang.LispReader MapReader and SetReader"
+behavior = "Rejects duplicate map keys and set elements during reading."
+issue = 27
+dependencies = []
+decision = "Equality is the reader value equality used by Clojure 1.12.5."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.quote"
+category = "reader-macros"
+syntax = "'form"
+source = "clojure.lang.LispReader WrappingReader quote"
+behavior = "Wraps one following form in quote without consuming the next form."
+issue = 77
+dependencies = [85, 86]
+decision = "The synthetic form and source span follow the cataloged reader contract."
+normal = ["a.reader_macros.quote"]
+boundary = ["a.collections.nesting"]
+error = []
+
+[[capability]]
+id = "reader-macro.deref"
+category = "reader-macros"
+syntax = "@form"
+source = "clojure.lang.LispReader WrappingReader deref"
+behavior = "Wraps one following form in clojure.core/deref."
+issue = 77
+dependencies = [85, 86]
+decision = "Exact structural expansion is required."
+normal = ["a.reader_macros.deref"]
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.var-quote"
+category = "reader-macros"
+syntax = "#'symbol"
+source = "clojure.lang.LispReader VarReader"
+behavior = "Wraps one following symbol in var."
+issue = 77
+dependencies = [85, 86]
+decision = "Exact structural expansion is required."
+normal = ["a.reader_macros.var_quote"]
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.syntax-quote"
+category = "reader-macros"
+syntax = "`form ~form ~@form symbol#"
+source = "clojure.lang.LispReader SyntaxQuoteReader"
+behavior = "Expands syntax-quote, unquote, splicing, resolution, and gensym rules."
+issue = 11
+dependencies = [70, 74, 85, 86]
+decision = "Unquote outside syntax-quote is read structurally; later phases may reject it."
+normal = ["a.reader_macros.syntax_quote"]
+boundary = ["a.reader_macros.syntax_quote"]
+error = ["a.diagnostics.unquote_outside_syntax_quote"]
+
+[[capability]]
+id = "reader-macro.metadata"
+category = "metadata"
+syntax = "^:private ^String ^{:a 1} form"
+source = "clojure.lang.LispReader MetaReader"
+behavior = "Normalizes metadata shorthands, merges metadata, and validates targets."
+issue = 24
+dependencies = [70, 80, 85]
+decision = "Location metadata and JVM-only class identity are reported separately."
+normal = ["a.metadata.keyword", "a.metadata.map", "a.metadata.symbol"]
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.legacy-metadata"
+category = "metadata"
+syntax = "#^meta form"
+source = "clojure.lang.LispReader dispatch macro table"
+behavior = "Reads the deprecated #^ form with semantics equivalent to ^."
+issue = 79
+dependencies = [24]
+decision = "Supported for Clojure 1.12.5 compatibility and documented as deprecated."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.regex"
+category = "reader-macros"
+syntax = "#\"pattern\""
+source = "clojure.lang.LispReader RegexReader"
+behavior = "Reads regex literals with the same lexical escape and termination rules."
+issue = 13
+dependencies = []
+decision = "Native representation may differ, but reader structure must remain explicit."
+normal = ["a.reader_macros.regex"]
+boundary = ["a.reader_macros.regex"]
+error = []
+
+[[capability]]
+id = "reader-macro.anonymous-function"
+category = "reader-macros"
+syntax = "#(+ %1 %2 %&)"
+source = "clojure.lang.LispReader FnReader"
+behavior = "Expands anonymous function literals and validates placeholder tokens."
+issue = 28
+dependencies = [85, 86]
+decision = "Generated symbols must be deterministic within the form and collision-free."
+normal = ["a.reader_macros.anonymous_function"]
+boundary = ["a.reader_macros.anonymous_function"]
+error = []
+
+[[capability]]
+id = "reader-macro.discard"
+category = "reader-macros"
+syntax = "#_form"
+source = "clojure.lang.LispReader DiscardReader"
+behavior = "Consumes and discards exactly one structurally valid form."
+issue = 76
+dependencies = [86]
+decision = "Discard does not bypass structural validation or leak placeholder context."
+normal = ["a.reader_macros.discard"]
+boundary = ["a.trivia.nested_discard"]
+error = []
+
+[[capability]]
+id = "reader-macro.conditional"
+category = "reader-macros"
+syntax = "#?(:clj form :default form) #?@(...)"
+source = "clojure.lang.LispReader ConditionalReader"
+behavior = "Selects, preserves, or suppresses conditional branches according to reader mode."
+issue = 12
+dependencies = [84, 85, 86]
+decision = "Unselected branches are consumed under suppression."
+normal = ["a.reader_macros.reader_conditional"]
+boundary = ["a.reader_macros.reader_conditional"]
+error = []
+
+[[capability]]
+id = "reader-macro.namespaced-map"
+category = "reader-macros"
+syntax = "#:ns{:a 1} #::{:a 1} #::alias{:a 1}"
+source = "clojure.lang.LispReader NamespaceMapReader"
+behavior = "Applies explicit or resolved namespaces to eligible map keys."
+issue = 20
+dependencies = [10, 70]
+decision = "Alias resolution comes from the explicit reader context."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.tagged-custom"
+category = "reader-macros"
+syntax = "#app/id value"
+source = "clojure.lang.LispReader TaggedReader"
+behavior = "Dispatches custom symbolic tags through readers and default handlers."
+issue = 22
+dependencies = [70, 84]
+decision = "Registry precedence and preserve mode must be explicit and deterministic."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.tagged-inst"
+category = "reader-macros"
+syntax = "#inst \"2026-01-01T00:00:00Z\""
+source = "clojure.core/default-data-readers inst"
+behavior = "Reads the native instant tagged literal grammar."
+issue = 90
+dependencies = [21, 22]
+decision = "Native representation replaces java.util.Date but preserves reader semantics."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.tagged-uuid"
+category = "reader-macros"
+syntax = "#uuid \"550e8400-e29b-41d4-a716-446655440000\""
+source = "clojure.core/default-data-readers uuid"
+behavior = "Reads the native UUID tagged literal grammar."
+issue = 91
+dependencies = [21, 22]
+decision = "Native compact representation replaces java.util.UUID."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.record-constructor"
+category = "reader-macros"
+syntax = "#my.Type[...] #my.Type{...}"
+source = "clojure.lang.LispReader CtorReader"
+behavior = "Reads symbolic type and record constructor forms with vector or map bodies."
+issue = 23
+dependencies = [70, 83, 84]
+decision = "Dynamic classpath loading remains outside reader structure."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader-macro.unknown-dispatch"
+category = "reader-macros"
+syntax = "#x"
+source = "clojure.lang.LispReader dispatch macro table"
+behavior = "Distinguishes unknown dispatch, unknown tag, missing form, and record constructor."
+issue = 84
+dependencies = [21, 22, 23]
+decision = "Diagnostics must consume the complete dispatch token."
+normal = []
+boundary = []
+error = ["a.diagnostics.unknown_dispatch"]
+
+[[capability]]
+id = "reader-macro.unreadable"
+category = "reader-macros"
+syntax = "#<"
+source = "clojure.lang.LispReader UnreadableReader"
+behavior = "Rejects unreadable printed-object forms with a dedicated diagnostic."
+issue = 82
+dependencies = [84]
+decision = "Unreadable forms are never interpreted as data."
+normal = []
+boundary = []
+error = []
+not_applicable = ["normal"]
+
+[[capability]]
+id = "reader-macro.reader-eval"
+category = "reader-macros"
+syntax = "#=form"
+source = "clojure.lang.LispReader EvalReader"
+behavior = "Recognizes and safely rejects reader-eval before evaluation or resolution."
+issue = 83
+dependencies = [84]
+decision = "Security policy permanently rejects #= in every mode."
+normal = []
+boundary = []
+error = []
+not_applicable = ["normal"]
+
+[[capability]]
+id = "literal.array-class-symbol"
+category = "literals"
+syntax = "String/1 java.lang.String/1 long/2"
+source = "clojure.lang.LispReader arraySymbolPat"
+behavior = "Reads Clojure 1.12 array class symbols and validates their dimensions."
+issue = 81
+dependencies = [70, 26]
+decision = "Reader structure is implemented independently of Java interop."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "metadata.location"
+category = "metadata"
+syntax = "(form)"
+source = "clojure.lang.LispReader ListReader line/column metadata"
+behavior = "Attaches observable line and column metadata to lists without conflating it with spans."
+issue = 80
+dependencies = [24, 85]
+decision = "An expected difference must be explicit until exact parity is implemented."
+normal = []
+boundary = []
+error = []
+not_applicable = ["error"]
+
+[[capability]]
+id = "lexical.macro-boundaries"
+category = "lexical"
+syntax = "foo'bar foo#bar %foo"
+source = "clojure.lang.LispReader macro terminating rules"
+behavior = "Uses grammar-specific terminating rules for symbols, keywords, and numbers."
+issue = 74
+dependencies = [26]
+decision = "A single generic delimiter predicate is insufficient."
+normal = ["a.literals.symbols"]
+boundary = []
+error = []
+
+[[capability]]
+id = "trivia.whitespace-comma"
+category = "trivia"
+syntax = "space tab newline comma Unicode whitespace"
+source = "clojure.lang.LispReader isWhitespace"
+behavior = "Treats official whitespace and commas as separators without creating forms."
+issue = 75
+dependencies = []
+decision = "The Unicode domain follows Character.isWhitespace; malformed trivia has no error scenario."
+normal = ["a.trivia.commas_whitespace"]
+boundary = ["a.collections.map_commas"]
+error = []
+not_applicable = ["error"]
+
+[[capability]]
+id = "trivia.line-comment"
+category = "trivia"
+syntax = "; comment"
+source = "clojure.lang.LispReader CommentReader"
+behavior = "Consumes comments through CR, LF, CRLF, or EOF in every collection context."
+issue = 75
+dependencies = []
+decision = "A comment ending at EOF is valid, so an error scenario is not applicable."
+normal = ["a.trivia.comments"]
+boundary = ["a.trivia.comments"]
+error = []
+not_applicable = ["error"]
+
+[[capability]]
+id = "trivia.shebang"
+category = "trivia"
+syntax = "#! interpreter line"
+source = "clojure.lang.LispReader dispatch comment extension"
+behavior = "Consumes a shebang comment at the supported source boundary."
+issue = 75
+dependencies = []
+decision = "The JVM oracle does not expose an equivalent portable invocation contract."
+normal = ["a.trivia.shebang"]
+boundary = ["a.trivia.shebang"]
+error = []
+not_applicable = ["error"]
+
+[[capability]]
+id = "diagnostic.incomplete-prefix"
+category = "diagnostics"
+syntax = "EOF after ', @, ^, #, #_, #?, #:, ##, tag, char, string, or regex"
+source = "clojure.lang.LispReader macro readers"
+behavior = "Produces stable, prefix-specific EOF diagnostics without panic or over-read."
+issue = 86
+dependencies = [85]
+decision = "There is no normal scenario for an incomplete prefix."
+normal = []
+boundary = ["a.diagnostics.unclosed_vector", "a.diagnostics.unterminated_string"]
+error = []
+not_applicable = ["normal"]
+
+[[capability]]
+id = "diagnostic.delimiter"
+category = "diagnostics"
+syntax = "unexpected, mismatched, or missing closing delimiters"
+source = "clojure.lang.LispReader collection readers"
+behavior = "Reports delimiter ownership and EOF failures with stable spans."
+issue = 78
+dependencies = [85, 86]
+decision = "Valid collection scenarios are cataloged by collection capabilities."
+normal = []
+boundary = []
+error = [
+  "a.diagnostics.mismatched_delimiter",
+  "a.diagnostics.unclosed_vector",
+  "a.diagnostics.unexpected_delimiter",
+]
+not_applicable = ["normal"]
+
+[[capability]]
+id = "reader.context-resolver"
+category = "architecture"
+syntax = "current namespace, alias, Var, class, and structural modes"
+source = "clojure.lang.LispReader.Resolver"
+behavior = "Supplies deterministic immutable resolution context to context-sensitive reader forms."
+issue = 70
+dependencies = []
+decision = "No singleton or JVM classloader state is permitted."
+normal = []
+boundary = []
+error = []
+
+[[capability]]
+id = "reader.synthetic-spans"
+category = "source-mapping"
+syntax = "forms synthesized by reader macros"
+source = "Project source-span contract"
+behavior = "Assigns deterministic in-bounds spans to synthetic operators, children, and total forms."
+issue = 85
+dependencies = []
+decision = "Span parity is a project contract distinct from JVM metadata."
+normal = []
+boundary = []
+error = []

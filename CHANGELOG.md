@@ -10,6 +10,9 @@ tags.
 
 ### Added
 
+- Add a frozen Clojure 1.12.5 reader capability catalog and an offline
+  `reader-syntax-coverage` gate that reports traceability, native executable support,
+  strict JVM parity, and the exact remaining scenario counts.
 - Add this release changelog and enforce `Unreleased` updates through repository
   instructions, contributor guidance, documentation checks, and the staged pre-commit
   hook.

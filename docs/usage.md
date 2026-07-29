@@ -69,6 +69,7 @@ make install BINDIR=/opt/clojure-native/bin
 | `make quality` | formato, lints Rust/Clojure e testes do workspace |
 | `make coverage` | gates globais e por arquivo |
 | `make compatibility` | matriz de conformidade A–E |
+| `make reader-syntax-coverage` | percentual objetivo da sintaxe do Reader 1.12.5 |
 | `make benchmarks` | 60 casos Cracking, 30 Cormen e 8 Exercism |
 | `make benchmarks-compare` | comparação nativo × Clojure/JVM AOT |
 | `make all` | qualidade, cobertura, compatibilidade e benchmarks completos |
@@ -85,6 +86,7 @@ Alvos auxiliares:
 | `make test` | testes Rust do workspace |
 | `make test-runtime` | harnesses dedicados do runtime C |
 | `make test-runtime-sanitize` | runtime C com ASan e UBSan |
+| `make reader-syntax-coverage` | catálogo normal/limite/erro e lacunas restantes |
 | `make compatibility-list` | inventário filtrável sem executar a matriz |
 | `make compatibility-oracle` | comparação manual com Clojure/JVM |
 | `make benchmarks-list` | lista os casos das três suítes |
