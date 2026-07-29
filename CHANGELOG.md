@@ -88,6 +88,11 @@ tags.
   terminate-on-`:response` rule and diffs the observable output, proving native
   interceptor order, termination, unwind, and recovery match the manual oracle. It
   resolves Pedestal from Clojars and runs on demand outside CI.
+- Add `specs/PEDESTAL_UPSTREAM_INVENTORY.md` (ADR-0013 Gate 7): the pinned upstream
+  Pedestal snapshot, its namespace inventory, the first compilation blocker per P2
+  candidate, and the decision that compiling upstream Pedestal (P2) is not useful
+  until general Java interop, an async model, and user macros exist — no P3 work is
+  proposed.
 
 ### Changed
 

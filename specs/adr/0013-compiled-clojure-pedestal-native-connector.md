@@ -472,6 +472,12 @@ specification is satisfied for P1.
 - Inventory every selected namespace and first blocker.
 - Decide whether P2 is useful before proposing P3.
 
+The snapshot, namespace inventory, per-namespace first blocker, and the P2
+usefulness decision are recorded in
+[`specs/PEDESTAL_UPSTREAM_INVENTORY.md`](../PEDESTAL_UPSTREAM_INVENTORY.md): P2 is
+not useful until general Java interop, an async model, and user macros exist, and
+no P3 protocol-compatibility work is proposed.
+
 No P2/P3 fixture is promoted merely because P1 is active.
 
 ## Alternatives considered
