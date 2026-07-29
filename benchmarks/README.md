@@ -95,6 +95,19 @@ Os artefatos JVM fixados são baixados na primeira execução para
 `target/benchmark-clojure/`, que não é versionado. Os CSVs são gravados por padrão em
 `target/benchmarks/`; altere esse destino com `BENCHMARK_OUTPUT_DIR`.
 
+The direct comparison target produces one diagnostic sample. To refresh the published
+CSV files and Pages assets, use:
+
+```bash
+make benchmark-page-refresh
+```
+
+This workflow runs every Native × JVM suite ten times and publishes the per-case
+median of each measurement. It accepts a sample set only when all ten rounds have the
+same cases, scales, runtime version, checksums, and `OK` statuses. The raw CSV files
+remain under the reported `target/benchmark-page-refresh.*` directory so that an
+unexpected change can be audited before commit.
+
 ### 4. Aumente a carga ou investigue o runtime
 
 ```bash
@@ -425,9 +438,12 @@ README da respectiva pasta `results/`.
 - As entradas são fixas e reprodutíveis.
 - A execução JVM inclui a inicialização da JVM; a nativa inclui a inicialização do
   processo nativo.
-- Uma única rodada é adequada para triagem de regressões, não para conclusões
-  estatísticas. Para análise formal, faça várias repetições com a máquina ociosa e uma
-  ferramenta como `hyperfine`.
+- `make benchmarks-compare` remains a single-round diagnostic. The published
+  `make benchmark-page-refresh` workflow requires ten complete rounds and records the
+  per-case median while retaining every raw sample.
+- Ten unpaired rounds reduce outlier sensitivity but do not prove causality. Compiler
+  changes still require a same-environment paired A/B experiment such as the Cormen IR
+  gate before attributing a performance difference to the implementation.
 - O subconjunto nativo ainda possui limites documentados em
   [`specs/LANGUAGE_SCOPE.md`](../specs/LANGUAGE_SCOPE.md). Esses limites influenciam a
   forma de alguns casos.
