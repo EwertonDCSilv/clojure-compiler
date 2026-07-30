@@ -13,6 +13,12 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add `clojure.core` `read` (issue #158): reads one form from a string reader,
+  honoring an `{:eof v}` options map at end-of-input, backed by new `read-from`/
+  `reader-eof?` runtime primitives. Runtime reader parse errors (including the
+  `#=` eval macro and incomplete forms) now raise a catchable `:invalid-input`
+  instead of aborting, so `read`/`read-string` recover with try/catch; promotes 4
+  fixtures.
 - Add 67 pending level-A reader fixtures (issue #156) covering every previously
   untraced Clojure 1.12.5 reader-syntax scenario (bigint/bigdecimal/ratio/radix/
   symbolic-value/array-class literals, regex/anonymous-function/discard/conditional/
