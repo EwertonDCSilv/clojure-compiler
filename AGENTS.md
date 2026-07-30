@@ -26,25 +26,29 @@ regardless of the model, tool, or editor integration:
    `EwertonDCSilv/clojure-compiler` and that issue must be an item in the public
    [`clojure-compiler Roadmap`](https://github.com/users/EwertonDCSilv/projects/2).
    If either record is missing, stop feature implementation and register it first.
-2. Before creating an implementation branch or editing repository files, run
+2. The issue must be a sub-issue of an epic. Attach it to an existing epic (an issue
+   labeled `epic`) whose scope fits. If no existing epic fits, stop and request human
+   approval before creating a new epic — an AI agent must never create an epic
+   unilaterally. Do not begin implementation while the issue has no epic parent.
+3. Before creating an implementation branch or editing repository files, run
    `make agent-feature-guard ISSUE=<issue-number>`. The Roadmap item must have a
    numeric `Story points` estimate of at most 8. Missing estimates and values above 8
    block implementation.
-3. Never implement an epic, roll-up, or issue above 8 story points directly. Stop and
+4. Never implement an epic, roll-up, or issue above 8 story points directly. Stop and
    refine its scope first, preferably by creating independent sub-issues with their own
    acceptance criteria, Roadmap items, and estimates of at most 8 points. Implement
    those task issues on their own branches.
-4. Create the implementation branch from an up-to-date `master` using exactly
+5. Create the implementation branch from an up-to-date `master` using exactly
    `feature/<issue-number>-<semantic-description>`. Use a lowercase, hyphenated
    description of the behavior, for example `feature/8-pedestal-syntax-support`.
-5. Keep the feature scope aligned with its issue. Update the issue and project item
+6. Keep the feature scope aligned with its issue. Update the issue and project item
    before materially widening the implementation.
-6. Commit and push the implementation only on that feature branch. Never implement a
+7. Commit and push the implementation only on that feature branch. Never implement a
    new feature directly on `master`.
-7. After the required gates pass, open a pull request from the feature branch to
+8. After the required gates pass, open a pull request from the feature branch to
    `master`. The pull request must reference the issue and preserve its project
    tracking.
-8. Merge feature work into `master` only through that pull request. Do not bypass
+9. Merge feature work into `master` only through that pull request. Do not bypass
    review history with a direct feature push to `master`.
 
 ## AI pull requests
@@ -134,6 +138,15 @@ Do not weaken assertions, delete regression tests, bless snapshots, change fixtu
 checksums, or convert `active` cases to `xfail` merely to obtain a green run. An
 unexpected conformance pass must be investigated and promoted when it represents
 implemented behavior.
+
+Every component must have unit, integration, and end-to-end tests; one level never
+substitutes for another. Each level lives in its own designated location per
+`specs/TESTING_STRATEGY.md`: unit tests under
+`src/compiler/<crate>/tests/unit/<module>/mod.rs`, mirroring the production module
+tree; integration and native-harness contracts directly under
+`src/compiler/<crate>/tests/`; and end-to-end/conformance fixtures under
+`tests/conformance/`. A change that only adds one level, when the component lacks the
+others, is incomplete.
 
 Documentation-only, test-infrastructure, and behavior-preserving refactors do not need
 an artificial failing test. They do require the closest structural check,
