@@ -397,6 +397,8 @@ struct Runtime {
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
+    read_from: FuncId,               // (reader) -> parsed form
+    reader_eof: FuncId,              // (reader) -> bool
     set_args: FuncId,                // (raw argc, raw argv) -> void
     writer_open: FuncId,             // (path) -> file writer.
     reader_open: FuncId,             // (path) -> file reader.
@@ -985,6 +987,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
+        read_from: una(m, "cljn_read_from"),
+        reader_eof: una(m, "cljn_reader_eof"),
         set_args: bin_void(m, "cljn_set_args"),
         writer_open: una(m, "cljn_writer"),
         reader_open: una(m, "cljn_reader"),
@@ -1128,6 +1132,7 @@ fn prim_imm_result(p: Prim) -> bool {
             | Prim::CreateSymlink
             | Prim::NativeSymlinkP
             | Prim::PathAbsolute
+            | Prim::ReaderEof
             | Prim::SpitBytes
             | Prim::Close
             | Prim::Flush
@@ -3623,6 +3628,8 @@ impl<'a> FnGen<'a> {
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
+            Prim::ReadFrom => self.una(self.rt.read_from, args),
+            Prim::ReaderEof => self.una(self.rt.reader_eof, args),
             Prim::WriterOpen => self.una(self.rt.writer_open, args),
             Prim::ReaderOpen => self.una(self.rt.reader_open, args),
             Prim::Close => self.una(self.rt.close, args),
