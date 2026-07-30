@@ -12,6 +12,10 @@ tags.
 
 - Release temporary GC roots when a function with no local root slots returns.
 
+### Changed
+- Refresh the documentation site conformance banner to the current matrix totals
+  (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
+
 ### Added
 - Add 67 pending level-A reader fixtures (issue #156) covering every previously
   untraced Clojure 1.12.5 reader-syntax scenario (bigint/bigdecimal/ratio/radix/
