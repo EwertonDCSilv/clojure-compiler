@@ -21,6 +21,36 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Add 19 characterization tests for the bootstrap interpreter's `var` and
+  `apply` special forms, user-function arity errors (fixed and variadic),
+  malformed `let`/`loop` binding vectors, unbound-symbol resolution, `def`
+  redefinition, and `recur` outside a loop/fn (issue #116). No new special
+  form or semantics; `cargo-llvm-cov` is unavailable in this sandbox, so exact
+  coverage deltas are left to CI's existing ratchet.
+- Extract namespace-dependency loading (`parse_requires`,
+  `implicit_builtin_requires`, `load_deps`, the built-in module table) from
+  `clojure-native-cli`'s `main.rs` into a `project` module (issue #115), leaving
+  `main.rs` a 397-line composition root of command dispatch. The 63 E2E tests and
+  2 unit tests are unaffected; CLI commands, exit codes, and diagnostics are
+  byte-identical.
+- Split `generate_suite.rs`'s single 2660-line `fixtures()` literal into
+  `level_a_b_c_core_cases`, `level_b_stdout_baseline_cases`,
+  `level_b_io_prerequisites_cases`, `level_b_io_followups_cases`,
+  `level_d_cases`, and `level_e_cases` (issue #111), each independently
+  reviewable. `fixtures()` now concatenates them in the original order.
+  Regenerating the suite is verified byte-identical (same 1525 files, same
+  checksum manifest digest).
+- Split `clojure-test-support`'s 1977-line `lib.rs` into `manifest`, `execution`,
+  `workspace`, `comparison`, `checksum`, `report`, and `oracle` modules (issue
+  #110), leaving `lib.rs` a 76-line facade re-exporting the unchanged public API.
+  Behavior-preserving; the conformance CLI, `generate_suite` example, and 26
+  unit tests are unaffected.
+- Add a positive/negative test matrix for every `clojure-ir` safe pass
+  (simplify-cfg, checked-constant-folding, copy-propagation, local-cse,
+  branch-simplification, effect-aware-dce), 11 additional verifier diagnostic
+  cases (structural, dominance, ABI, and GC-root invariants), and printer
+  snapshots covering every `InstructionKind`/`Terminator`, block-parameter
+  joins, and loops (issue #117). No pass, output, or generated assembly changes.
 
 - Move Rust unit-test bodies out of production modules into mirrored
   `src/compiler/<crate>/tests/unit/<module>/mod.rs` paths without changing

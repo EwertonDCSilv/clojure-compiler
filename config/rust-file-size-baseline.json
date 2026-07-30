@@ -27,11 +27,6 @@
       "owner": "#165",
       "reason": "external unit-test module declaration pending interpreter extraction"
     },
-    "src/compiler/clojure-native-cli/src/main.rs": {
-      "lines": 583,
-      "owner": "#109",
-      "reason": "unit tests moved to tests/unit (#165); CLI extraction still planned"
-    },
     "src/compiler/clojure-native-cli/tests/e2e.rs": {
       "lines": 1986,
       "owner": "#109",
@@ -43,14 +38,9 @@
       "reason": "reader remains cohesive"
     },
     "src/compiler/clojure-test-support/examples/generate_suite.rs": {
-      "lines": 2660,
+      "lines": 2687,
       "owner": "#109",
-      "reason": "planned fixture inventory split"
-    },
-    "src/compiler/clojure-test-support/src/lib.rs": {
-      "lines": 1977,
-      "owner": "#109",
-      "reason": "unit tests moved to tests/unit (#165); runner extraction still planned"
+      "reason": "split into level_a_b_c_core/level_b_.../level_d/level_e functions (#111); regeneration verified byte-identical"
     },
     "src/compiler/clojure-value/src/lib.rs": {
       "lines": 614,
