@@ -21,6 +21,12 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Add 19 characterization tests for the bootstrap interpreter's `var` and
+  `apply` special forms, user-function arity errors (fixed and variadic),
+  malformed `let`/`loop` binding vectors, unbound-symbol resolution, `def`
+  redefinition, and `recur` outside a loop/fn (issue #116). No new special
+  form or semantics; `cargo-llvm-cov` is unavailable in this sandbox, so exact
+  coverage deltas are left to CI's existing ratchet.
 - Extract namespace-dependency loading (`parse_requires`,
   `implicit_builtin_requires`, `load_deps`, the built-in module table) from
   `clojure-native-cli`'s `main.rs` into a `project` module (issue #115), leaving
