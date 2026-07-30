@@ -8,6 +8,8 @@ tags.
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-07-30
+
 ### Fixed
 
 - Synchronize the native I/O end-to-end expectation with the `:open-reader`
