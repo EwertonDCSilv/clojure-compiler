@@ -20,6 +20,12 @@ tags.
   layout (previously `crates/`), which the size gate now scans after the
   standard-library reorganization.
 
+### Changed
+
+- Move Rust unit-test bodies out of production modules into mirrored
+  `src/compiler/<crate>/tests/unit/<module>/mod.rs` paths without changing
+  assertions (issue #165).
+
 ## [0.0.3] - 2026-07-30
 
 ### Fixed

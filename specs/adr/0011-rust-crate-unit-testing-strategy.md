@@ -94,9 +94,13 @@ benchmark complementa, mas não substitui, os testes negativos.
 
 ### Localização dos testes
 
-- Funções privadas são testadas em `#[cfg(test)] mod tests` no mesmo módulo, podendo
-  ficar em `tests.rs` quando o conjunto crescer.
-- Contratos públicos entre crates ficam em `crates/<crate>/tests/*.rs`.
+- Os corpos dos testes unitários ficam fora da implementação, em
+  `src/compiler/<crate>/tests/unit/<módulo>/mod.rs`, espelhando o caminho de `src/<módulo>.rs`.
+  O arquivo de produção mantém apenas uma declaração `#[cfg(test)]` com `#[path]`,
+  para que o teste continue sendo um módulo filho e preserve acesso a invariantes
+  privados sem ampliar a API.
+- Contratos públicos entre crates ficam em `src/compiler/<crate>/tests/*.rs`; suítes de
+  integração existentes não devem ser misturadas com `tests/unit/`.
 - Testes que compilam e executam um programa pertencem à integração do codegen/CLI, não
   ao módulo de parsing que fornece a entrada.
 - Doctests servem para exemplos curtos de API pública; não carregam matrizes extensas.

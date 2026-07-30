@@ -113,6 +113,7 @@ for path in "${files[@]}"; do
     Makefile | \
       scripts/pre-commit.sh | \
       scripts/check-file-hygiene.sh | \
+      tests/scripts/check-unit-test-layout.sh | \
       scripts/lint-c.sh | \
       scripts/lint-clojure.sh)
       check_rust=1
@@ -164,6 +165,7 @@ if ((check_shell != 0)); then
 fi
 
 if ((check_rust != 0)); then
+  run_step "Rust unit-test layout" "${repository}/tests/scripts/check-unit-test-layout.sh"
   run_step "Rust file sizes" "${repository}/scripts/check-rust-file-size.sh"
   run_step "Rust formatting" make fmt-check
   run_step "Rust Clippy" make lint-rust

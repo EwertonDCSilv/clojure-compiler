@@ -8,6 +8,12 @@ A estratégia combina testes Rust, execução nativa end-to-end, conformidade ve
 GC stress, cobertura e benchmarks. Clojure/JVM é apenas um oracle manual: não é
 dependência da CI, do runner `verify` nem do binário produzido.
 
+Testes unitários Rust ficam em `src/compiler/<crate>/tests/unit/<módulo>/mod.rs`, espelhando
+os módulos de produção. A implementação mantém somente a declaração `#[cfg(test)]`
+com `#[path]`; isso conserva a privacidade do módulo sem misturar assertions ao código
+de produção. Arquivos diretamente sob `src/compiler/<crate>/tests/` continuam reservados a
+contratos de integração, E2E e harnesses públicos.
+
 ## Camadas
 
 | Camada | Entrada recomendada | Implementação | Contrato |

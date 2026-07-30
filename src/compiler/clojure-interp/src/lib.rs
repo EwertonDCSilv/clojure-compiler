@@ -886,4 +886,5 @@ pub fn seq_items(v: &Value) -> Option<Vec<Value>> {
 }
 
 #[cfg(test)]
+#[path = "../tests/unit/tests/mod.rs"]
 mod tests;
