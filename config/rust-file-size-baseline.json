@@ -27,11 +27,6 @@
       "owner": "#165",
       "reason": "external unit-test module declaration pending interpreter extraction"
     },
-    "src/compiler/clojure-native-cli/src/main.rs": {
-      "lines": 583,
-      "owner": "#109",
-      "reason": "unit tests moved to tests/unit (#165); CLI extraction still planned"
-    },
     "src/compiler/clojure-native-cli/tests/e2e.rs": {
       "lines": 1986,
       "owner": "#109",
