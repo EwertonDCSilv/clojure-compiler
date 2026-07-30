@@ -28,7 +28,7 @@
       "reason": "planned interpreter extraction"
     },
     "crates/clojure-native-cli/src/main.rs": {
-      "lines": 606,
+      "lines": 610,
       "owner": "#109",
       "reason": "planned CLI extraction"
     },
