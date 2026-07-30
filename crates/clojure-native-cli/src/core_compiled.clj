@@ -185,9 +185,25 @@
   [pred coll]
   (reduce (fn [acc x] (if (pred x) (inc acc) acc)) 0 coll))
 
+(defn ex-info
+  "Creates a throwable value carrying a message and an ex-data map. Native
+  exceptions are plain values, so this is a tagged map that ex-data/ex-message
+  distinguish from directly-thrown data maps."
+  [msg data]
+  {:cljn-ex-info true :cljn-ex-message msg :cljn-ex-data data})
+
 (defn ex-data
   "Returns the payload map carried by a thrown value, or nil for non-map values.
 
-  The native runtime throws data maps directly (there is no JVM `ExceptionInfo`),
-  so this is map identity. Native I/O handlers read `:kind` from it."
-  [e] (if (map? e) e nil))
+  For an `ex-info` value this is its data map; other maps are returned as-is,
+  since the native runtime throws data maps directly (there is no JVM
+  `ExceptionInfo`). Native I/O handlers read `:kind` from such maps."
+  [e]
+  (if (map? e)
+    (if (:cljn-ex-info e) (:cljn-ex-data e) e)
+    nil))
+
+(defn ex-message
+  "Returns the message string of an `ex-info` value, or nil for other values."
+  [e]
+  (if (map? e) (if (:cljn-ex-info e) (:cljn-ex-message e) nil) nil))

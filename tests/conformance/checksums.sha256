@@ -320,13 +320,13 @@ fce61d8da2521150a0ee8054bda2c51155c4463eb336735c1cb0817735b2d93e  level-b-semant
 822684d04b526c3228ede1a88e6ecb0ea5c001d8bd104e1dd36eff4fcdacbb2f  level-b-semantics/io/dynamic-bindings/stderr-redirection/expected.stderr
 dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22  level-b-semantics/io/dynamic-bindings/stderr-redirection/expected.stdout
 4f289531c86d1e980466d7498a430555f7157d288b9a1f7c9384234f0c044e45  level-b-semantics/io/dynamic-bindings/stderr-redirection/input.clj
-2455154f67e42e1ca4da4a54c60cb4df935f54fceb90b3e64ab8a6a8ade042ef  level-b-semantics/io/exceptions/binding-restored-on-unwind/case.toml
+91bfb7ed93e991ed7cfae1ce1f2b5d80229c86e0467441a0c6f6b02f2df7b41a  level-b-semantics/io/exceptions/binding-restored-on-unwind/case.toml
 09204dbfbdb8fc121fb2a47988fe1a42a1981ac4e16ea4afc915e2d87b40d324  level-b-semantics/io/exceptions/binding-restored-on-unwind/expected.stdout
 52d55a3c02694512a823c6f9845ecb6c0f7dae7bd7f47a25a9f6603b5d2ca990  level-b-semantics/io/exceptions/binding-restored-on-unwind/input.clj
-5bb2df7a5f58d43ee686960933177f237f98d3106611bba055dc33e45bd4d727  level-b-semantics/io/exceptions/catch-io-exception-data/case.toml
+29702db1a599fd3be685491581555342c6ceb25676add1a473c7ab2d912214d7  level-b-semantics/io/exceptions/catch-io-exception-data/case.toml
 29b2bd3ce6934780e90228a6f54f20b9122a12c6d039a3626d3f089951c2804e  level-b-semantics/io/exceptions/catch-io-exception-data/expected.stdout
 944e34262c657310dd23812125c020a1ce7f758b4573129eaa503d495da93b39  level-b-semantics/io/exceptions/catch-io-exception-data/input.clj
-d92735fe024eb44058b8b2e6d9df53f0bd4314c2bf341f1c9a81dc40708197b1  level-b-semantics/io/exceptions/finally-runs/case.toml
+27ddcc1fab3588a440b00a6a5f7478014eaefefc9a2e28d02cafa2a8c6f93639  level-b-semantics/io/exceptions/finally-runs/case.toml
 f8be8259b65032cb82b0b612db409451389dcb42869756172449451619a3b4c9  level-b-semantics/io/exceptions/finally-runs/expected.stdout
 e393e14beefdbb00c937b80a2d8b30840675793602a8d89fb371553f8ad1d60c  level-b-semantics/io/exceptions/finally-runs/input.clj
 c7145f0b06ffbd49cb1ddbf83c204e691ce34791e87ef7943d9dad331f2d7dea  level-b-semantics/io/files/large-file-streaming/case.toml
@@ -347,7 +347,7 @@ b8986d9bdd731eb206e5444d0907935d19af410c9ea601bcec485e9212e1f315  level-b-semant
 43116199ca15fe6af14ec9c66a63c58f1326c8593fa536c150b788f89588736d  level-b-semantics/io/lifecycle/use-after-close/case.toml
 b41f99dab40b6373f40c143f988249c06c1446f95685688dbe14e87346096766  level-b-semantics/io/lifecycle/use-after-close/expected.stdout
 3a7f6fe4ef1f10803773791ddcd23a97c7c15b9b4ea69f17a7875be35b704a9b  level-b-semantics/io/lifecycle/use-after-close/input.clj
-79ba396d9dadf523beb2adf4f507738f4d0df46b683f7fe665d31521a9a4938e  level-b-semantics/io/lifecycle/with-open-exception/case.toml
+2c64a243d5b63c8d8f540a8341dfb0d616547f459beeaa6052f34461ae395efd  level-b-semantics/io/lifecycle/with-open-exception/case.toml
 a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-b-semantics/io/lifecycle/with-open-exception/expected.stdout
 c4388b4d6d3b5456da0f9589caf3b5fa73224ed5fd411805e5bc88b1af9dc3d2  level-b-semantics/io/lifecycle/with-open-exception/input.clj
 a06b7a532f3060cf1d443780b2d248ef604cb724d1168e930a22437416e5817f  level-b-semantics/io/output/print-empty/case.toml
@@ -1217,8 +1217,8 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  level-c-stdlib
 e49c81e2d2f84e259d40e2fb8192f3bcd198b355184845d76d8f58807d0d78ee  level-c-stdlib/clojure-core/io/slurp/boundary/work.before/input.txt
 87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7  level-c-stdlib/clojure-core/io/slurp/boundary/work.before/tree/a.txt
 0263829989b6fd954f72baaf2fc64bc2e2f01d692d4de72986ea808f6e99813f  level-c-stdlib/clojure-core/io/slurp/boundary/work.before/tree/nested/b.txt
-a47fa3382672e748090e22fe05539891f8fba3251d4ecdc21b068ee5b3fcf607  level-c-stdlib/clojure-core/io/slurp/error/case.toml
-2fc64bc390d2c5323cd75b0aa22fbc8727cc8e891b1bff0282dd30f6db4ccbdf  level-c-stdlib/clojure-core/io/slurp/error/expected.stdout
+388800bb4999a565f260e464a7460e2e7113846dd3c1b075f7a02115334732d4  level-c-stdlib/clojure-core/io/slurp/error/case.toml
+25a8285c554ef0d148661a9a7335628e95f5e80239e5b5e32457ce54102bb80c  level-c-stdlib/clojure-core/io/slurp/error/expected.stdout
 a758aa4f038b298f19551c8bd34326c8d482e1af533ab6b875fb4e3d94ffc03b  level-c-stdlib/clojure-core/io/slurp/error/input.clj
 baa4f976d814008c0cee9f60858c5f280ede7817a62cfa6d886dd3abd77855c1  level-c-stdlib/clojure-core/io/slurp/normal/case.toml
 a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-c-stdlib/clojure-core/io/slurp/normal/expected.stdout

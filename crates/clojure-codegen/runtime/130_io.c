@@ -54,7 +54,7 @@ Value cljn_slurp(Value path) {
     char *cp = io_cstr(path);
     FILE *f = fopen(cp, "rb");
     free(cp);
-    if (!f) io_throw(io_kind(errno), "slurp", path, errno);
+    if (!f) io_throw(io_kind(errno), "open-reader", path, errno);
     size_t cap = 4096, len = 0;
     char *buf = (char *)xalloc(cap);
     for (;;) {
