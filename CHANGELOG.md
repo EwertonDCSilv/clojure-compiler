@@ -21,6 +21,12 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Extract namespace-dependency loading (`parse_requires`,
+  `implicit_builtin_requires`, `load_deps`, the built-in module table) from
+  `clojure-native-cli`'s `main.rs` into a `project` module (issue #115), leaving
+  `main.rs` a 397-line composition root of command dispatch. The 63 E2E tests and
+  2 unit tests are unaffected; CLI commands, exit codes, and diagnostics are
+  byte-identical.
 - Split `generate_suite.rs`'s single 2660-line `fixtures()` literal into
   `level_a_b_c_core_cases`, `level_b_stdout_baseline_cases`,
   `level_b_io_prerequisites_cases`, `level_b_io_followups_cases`,
