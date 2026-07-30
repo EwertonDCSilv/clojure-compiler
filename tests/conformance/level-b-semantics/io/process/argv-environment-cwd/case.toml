@@ -1,13 +1,13 @@
 id = "b.io_process.argv_environment_cwd"
 level = "B"
 area = "semantics/io/process"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = false
-reason = "The feature has a defined Clojure result but no current native execution path."
+reason = "Native *command-line-args* vector representation with cljn.process/cljn.io access; the Clojure/JVM oracle cannot resolve the native namespaces (ADR-0016, issue #152)."
 tracking = "specs/IO_SPEC.md#standard-streams-and-process-context"
 [run]
 args = ["first", "ação"]

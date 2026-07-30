@@ -294,6 +294,8 @@ struct Runtime {
     print: FuncId,       // (i64)->void
     print_space: FuncId, // ()->void
     print_newline: FuncId,
+    out_check: FuncId,   // ()->void, throws on closed *out*
+    out_newline: FuncId, // ()->void, checked newline
     // GC shadow-stack frame operations.
     gc_enter: FuncId, // (slot_count) -> base.
     gc_leave: FuncId, // (base) -> void.
@@ -390,6 +392,8 @@ struct Runtime {
     path_absolute: FuncId,           // (path)->bool
     path_normalize: FuncId,          // (path)->string
     real_path: FuncId,               // (path)->string
+    process_cwd: FuncId,             // ()->string
+    process_environment: FuncId,     // ()->map
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -832,6 +836,8 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         print: voidfn(m, "cljn_print", true),
         print_space: voidfn(m, "cljn_print_space", false),
         print_newline: voidfn(m, "cljn_print_newline", false),
+        out_check: voidfn(m, "cljn_out_check", false),
+        out_newline: voidfn(m, "cljn_out_newline", false),
         gc_enter: una(m, "cljn_gc_enter"),
         gc_leave: voidfn(m, "cljn_gc_leave", true),
         gc_stack_data: m
@@ -964,6 +970,18 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         path_absolute: una(m, "cljn_path_absolute"),
         path_normalize: una(m, "cljn_path_normalize"),
         real_path: una(m, "cljn_real_path"),
+        process_cwd: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_process_cwd", Linkage::Import, &s)
+                .unwrap()
+        },
+        process_environment: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_process_environment", Linkage::Import, &s)
+                .unwrap()
+        },
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -3446,7 +3464,11 @@ impl<'a> FnGen<'a> {
 
     fn gen_prim(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
         match prim {
-            Prim::Println | Prim::Print => self.gen_print(prim, args),
+            Prim::Println | Prim::Print | Prim::Pr | Prim::Prn => self.gen_print(prim, args),
+            Prim::Newline => {
+                self.call_void(self.rt.out_newline, &[]);
+                Ok(self.konst(NIL))
+            }
             Prim::Str => self.gen_str(args),
             Prim::List => self.gen_list(args),
             // Arithmetic with fixnum fast paths (ADR-0006).
@@ -3596,6 +3618,8 @@ impl<'a> FnGen<'a> {
             Prim::PathAbsolute => self.una(self.rt.path_absolute, args),
             Prim::PathNormalize => self.una(self.rt.path_normalize, args),
             Prim::RealPath => self.una(self.rt.real_path, args),
+            Prim::ProcessCwd => Ok(self.call0(self.rt.process_cwd)),
+            Prim::ProcessEnvironment => Ok(self.call0(self.rt.process_environment)),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),
@@ -3665,6 +3689,12 @@ impl<'a> FnGen<'a> {
     }
 
     fn gen_print(&mut self, prim: Prim, args: &[Ast]) -> Result<CValue, Diagnostic> {
+        // pr/prn honor the cljn.io stream contract: writing to a closed *out*
+        // raises :invalid-input before any bytes are emitted.
+        let readable = matches!(prim, Prim::Pr | Prim::Prn);
+        if readable {
+            self.call_void(self.rt.out_check, &[]);
+        }
         for (i, a) in args.iter().enumerate() {
             if i > 0 {
                 self.call_void(self.rt.print_space, &[]);
@@ -3675,6 +3705,8 @@ impl<'a> FnGen<'a> {
         self.gc_popn(args.len());
         if matches!(prim, Prim::Println) {
             self.call_void(self.rt.print_newline, &[]);
+        } else if matches!(prim, Prim::Prn) {
+            self.call_void(self.rt.out_newline, &[]);
         }
         Ok(self.konst(NIL))
     }

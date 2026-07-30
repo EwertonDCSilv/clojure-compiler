@@ -200,6 +200,12 @@ pub enum Prim {
     Println,
     /// Print values without a newline.
     Print,
+    /// Print values in read syntax without a newline.
+    Pr,
+    /// Print values in read syntax followed by a newline.
+    Prn,
+    /// Write a single newline to the current output writer.
+    Newline,
     /// Perform associative lookup.
     Get,
     /// Perform indexed lookup.
@@ -346,6 +352,10 @@ pub enum Prim {
     PathNormalize,
     /// Resolve a path to its canonical form (realpath).
     RealPath,
+    /// Process working directory as a string.
+    ProcessCwd,
+    /// Snapshot of the process environment as a map.
+    ProcessEnvironment,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2399,6 +2409,9 @@ fn prim_of(name: &str) -> Option<Prim> {
         "str" => Prim::Str,
         "println" => Prim::Println,
         "print" => Prim::Print,
+        "pr" => Prim::Pr,
+        "prn" => Prim::Prn,
+        "newline" => Prim::Newline,
         "get" => Prim::Get,
         "nth" => Prim::Nth,
         "assoc" => Prim::Assoc,
@@ -2469,6 +2482,8 @@ fn prim_of(name: &str) -> Option<Prim> {
         "path-absolute" => Prim::PathAbsolute,
         "path-normalize" => Prim::PathNormalize,
         "real-path" => Prim::RealPath,
+        "process-cwd" => Prim::ProcessCwd,
+        "process-environment" => Prim::ProcessEnvironment,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2588,6 +2603,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::RealPath
         | Prim::Vals => 1,
         Prim::ByteOutputStream => 0,
+        Prim::ProcessCwd | Prim::ProcessEnvironment => 0,
+        Prim::Newline => 0,
         Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock | Prim::SeekFile | Prim::TruncateFile | Prim::CreateSymlink => 2,
         Prim::StringWriter => 0,
         Prim::UnreadCharTo | Prim::WriteTo => 2,
@@ -2635,6 +2652,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::ReadChar // idem
         | Prim::Flush // 0-ária
         | Prim::StringReader // sintetizada (with-in-str)
+        | Prim::Pr
+        | Prim::Prn
         | Prim::Print => return None,
     })
 }
@@ -2702,6 +2721,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PositionFile | Prim::FileReaderP | Prim::FileWriterP => n == 1,
         Prim::ReadLink | Prim::NativeSymlinkP => n == 1,
         Prim::PathAbsolute | Prim::PathNormalize | Prim::RealPath => n == 1,
+        Prim::ProcessCwd | Prim::ProcessEnvironment => n == 0,
         Prim::CreateSymlink => n == 2,
         Prim::SeekFile | Prim::TruncateFile => n == 2,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
@@ -2727,10 +2747,13 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::Rename | Prim::Div => n == 2,
         Prim::Eq | Prim::Lt | Prim::Le | Prim::Gt | Prim::Ge | Prim::Compare => n == 2,
         Prim::HashMap | Prim::SortedMap => n & 1 == 0,
+        Prim::Newline => n == 0,
         Prim::List
         | Prim::Str
         | Prim::Println
         | Prim::Print
+        | Prim::Pr
+        | Prim::Prn
         | Prim::Vector
         | Prim::HashSet
         | Prim::SortedSet => true,
