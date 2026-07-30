@@ -8,6 +8,6 @@ Cargo.lock.orig
 *.obj
 /examples/*.out
 /hello
-crates/clojure-codegen/fuzz-corpus/
+src/compiler/clojure-codegen/fuzz-corpus/
 # Clojure CLI classpath cache generated when resolving the HTTP benchmark deps.
 .cpcache/

@@ -15,6 +15,11 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
+- Move the compiler crates to `src/compiler/` and the standard library to
+  `src/stdlib/`, updating workspace members, size/coverage baselines, lint and
+  coverage scripts, conformance `tracking` pointers, and documentation to the new
+  layout. Behavior-preserving; `include_str!` module paths are unchanged because
+  both trees moved one level deeper together.
 - Refresh the documentation site conformance banner to the current matrix totals
   (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
 

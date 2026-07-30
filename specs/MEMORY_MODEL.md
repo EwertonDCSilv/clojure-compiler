@@ -97,8 +97,8 @@ Testes de stress/ciclos/retenção e uso de **Miri** nos blocos `unsafe` do GC �
 
 ## Estado da implementação (2026-07-26)
 
-`[FATO]` O runtime **compilado** (`crates/clojure-codegen/runtime/`, amalgamado por
-`crates/clojure-codegen/runtime.c`) já implementa o
+`[FATO]` O runtime **compilado** (`src/compiler/clojure-codegen/runtime/`, amalgamado por
+`src/compiler/clojure-codegen/runtime.c`) já implementa o
 **coletor mark-sweep preciso, não-móvel, single-thread com shadow-stack de roots**
 descrito acima:
 

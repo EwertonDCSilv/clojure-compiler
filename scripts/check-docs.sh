@@ -82,7 +82,7 @@ while IFS= read -r source; do
     echo "missing //! module documentation: $source" >&2
     module_failures=1
   fi
-done < <(rg --files crates -g '*.rs' | sort)
+done < <(rg --files src/compiler -g '*.rs' | sort)
 if ((module_failures != 0)); then
   exit 1
 fi
@@ -101,8 +101,8 @@ while IFS= read -r source; do
   fi
 done < <(
   {
-    printf '%s\n' crates/clojure-codegen/runtime.c
-    rg --files crates/clojure-codegen/runtime -g '*.c'
+    printf '%s\n' src/compiler/clojure-codegen/runtime.c
+    rg --files src/compiler/clojure-codegen/runtime -g '*.c'
   } | sort
 )
 if ((c_header_failures != 0)); then
@@ -126,7 +126,7 @@ perl -0777 -e '
     }
   }
   exit $failed;
-' crates/clojure-codegen/runtime/*.c
+' src/compiler/clojure-codegen/runtime/*.c
 
 echo "Checking compiled core docstrings..."
 perl -0777 -e '
@@ -144,7 +144,7 @@ perl -0777 -e '
     }
   }
   exit $failed;
-' crates/clojure-native-cli/src/core_compiled.clj
+' src/compiler/clojure-native-cli/src/core_compiled.clj
 
 echo "Building rustdoc with documentation warnings denied..."
 RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D missing-docs -D rustdoc::broken_intra_doc_links" \

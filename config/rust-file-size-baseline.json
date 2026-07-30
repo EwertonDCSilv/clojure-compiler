@@ -7,52 +7,52 @@
     "generator": 1200
   },
   "allowlist": {
-    "crates/clojure-analyzer/src/lib.rs": {
+    "src/compiler/clojure-analyzer/src/lib.rs": {
       "lines": 2861,
       "owner": "#109",
       "reason": "planned cohesive extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
     },
-    "crates/clojure-codegen/src/ir_adapter.rs": {
+    "src/compiler/clojure-codegen/src/ir_adapter.rs": {
       "lines": 1366,
       "owner": "#109",
       "reason": "planned pass extraction"
     },
-    "crates/clojure-codegen/src/lib.rs": {
+    "src/compiler/clojure-codegen/src/lib.rs": {
       "lines": 4137,
       "owner": "#109",
       "reason": "planned codegen extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
     },
-    "crates/clojure-interp/src/lib.rs": {
+    "src/compiler/clojure-interp/src/lib.rs": {
       "lines": 889,
       "owner": "#109",
       "reason": "planned interpreter extraction"
     },
-    "crates/clojure-native-cli/src/main.rs": {
+    "src/compiler/clojure-native-cli/src/main.rs": {
       "lines": 610,
       "owner": "#109",
       "reason": "planned CLI extraction"
     },
-    "crates/clojure-native-cli/tests/e2e.rs": {
+    "src/compiler/clojure-native-cli/tests/e2e.rs": {
       "lines": 1986,
       "owner": "#109",
       "reason": "planned domain test split"
     },
-    "crates/clojure-reader/src/lib.rs": {
+    "src/compiler/clojure-reader/src/lib.rs": {
       "lines": 836,
       "owner": "#109",
       "reason": "reader remains cohesive"
     },
-    "crates/clojure-test-support/examples/generate_suite.rs": {
+    "src/compiler/clojure-test-support/examples/generate_suite.rs": {
       "lines": 2660,
       "owner": "#109",
       "reason": "planned fixture inventory split"
     },
-    "crates/clojure-test-support/src/lib.rs": {
+    "src/compiler/clojure-test-support/src/lib.rs": {
       "lines": 2726,
       "owner": "#109",
       "reason": "planned runner extraction"
     },
-    "crates/clojure-value/src/lib.rs": {
+    "src/compiler/clojure-value/src/lib.rs": {
       "lines": 614,
       "owner": "#109",
       "reason": "value facade debt"

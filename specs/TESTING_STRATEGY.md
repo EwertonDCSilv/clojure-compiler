@@ -42,7 +42,7 @@ Property testing, fuzzing, Miri, sanitizers e uma matriz multiplataforma mais am
 continuam recomendados para as fases que introduzirem novas superfícies de `unsafe`,
 concorrência e FFI.
 
-O runtime C possui harnesses próprios em `crates/clojure-codegen/tests/c/`. O harness
+O runtime C possui harnesses próprios em `src/compiler/clojure-codegen/tests/c/`. O harness
 unitário inclui `runtime.c` na mesma unidade de tradução para observar invariantes
 internos sem ampliar a ABI de produção. O harness de integração é compilado e linkado
 separadamente, consumindo somente os símbolos públicos; os contratos fatais são

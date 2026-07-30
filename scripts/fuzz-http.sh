@@ -3,7 +3,7 @@
 #
 # Usage: scripts/fuzz-http.sh [max_total_time_seconds]
 # Requires clang with libFuzzer. A short run smoke-tests the target; CI runs it
-# continuously against the persisted corpus under crates/clojure-codegen/fuzz-corpus/.
+# continuously against the persisted corpus under src/compiler/clojure-codegen/fuzz-corpus/.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,8 +16,8 @@ if ! "$cc" --version >/dev/null 2>&1; then
 fi
 
 max_time="${1:-30}"
-src="crates/clojure-codegen/tests/fuzz/http_parse_fuzz.c"
-corpus="crates/clojure-codegen/fuzz-corpus/http"
+src="src/compiler/clojure-codegen/tests/fuzz/http_parse_fuzz.c"
+corpus="src/compiler/clojure-codegen/fuzz-corpus/http"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$corpus"
@@ -29,7 +29,7 @@ if [ -z "$(ls -A "$corpus" 2>/dev/null)" ]; then
 fi
 
 "$cc" -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-  -I "crates/clojure-codegen" "$src" -o "$work/http_fuzz"
+  -I "src/compiler/clojure-codegen" "$src" -o "$work/http_fuzz"
 
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" \
   "$work/http_fuzz" -max_total_time="$max_time" -print_final_stats=1 "$corpus"

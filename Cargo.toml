@@ -2,17 +2,17 @@
 resolver = "2"
 exclude = ["prototypes"]
 members = [
-    "crates/clojure-span",
-    "crates/clojure-diagnostics",
-    "crates/clojure-syntax",
-    "crates/clojure-reader",
-    "crates/clojure-value",
-    "crates/clojure-interp",
-    "crates/clojure-analyzer",
-    "crates/clojure-ir",
-    "crates/clojure-codegen",
-    "crates/clojure-native-cli",
-    "crates/clojure-test-support",
+    "src/compiler/clojure-span",
+    "src/compiler/clojure-diagnostics",
+    "src/compiler/clojure-syntax",
+    "src/compiler/clojure-reader",
+    "src/compiler/clojure-value",
+    "src/compiler/clojure-interp",
+    "src/compiler/clojure-analyzer",
+    "src/compiler/clojure-ir",
+    "src/compiler/clojure-codegen",
+    "src/compiler/clojure-native-cli",
+    "src/compiler/clojure-test-support",
 ]
 
 [workspace.package]
@@ -22,16 +22,16 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.74"
 
 [workspace.dependencies]
-clojure-span = { path = "crates/clojure-span" }
-clojure-diagnostics = { path = "crates/clojure-diagnostics" }
-clojure-syntax = { path = "crates/clojure-syntax" }
-clojure-reader = { path = "crates/clojure-reader" }
-clojure-value = { path = "crates/clojure-value" }
-clojure-interp = { path = "crates/clojure-interp" }
-clojure-analyzer = { path = "crates/clojure-analyzer" }
-clojure-ir = { path = "crates/clojure-ir" }
-clojure-codegen = { path = "crates/clojure-codegen" }
-clojure-test-support = { path = "crates/clojure-test-support" }
+clojure-span = { path = "src/compiler/clojure-span" }
+clojure-diagnostics = { path = "src/compiler/clojure-diagnostics" }
+clojure-syntax = { path = "src/compiler/clojure-syntax" }
+clojure-reader = { path = "src/compiler/clojure-reader" }
+clojure-value = { path = "src/compiler/clojure-value" }
+clojure-interp = { path = "src/compiler/clojure-interp" }
+clojure-analyzer = { path = "src/compiler/clojure-analyzer" }
+clojure-ir = { path = "src/compiler/clojure-ir" }
+clojure-codegen = { path = "src/compiler/clojure-codegen" }
+clojure-test-support = { path = "src/compiler/clojure-test-support" }
 
 [profile.release]
 opt-level = 2

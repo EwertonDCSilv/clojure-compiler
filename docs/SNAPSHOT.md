@@ -29,7 +29,7 @@ para o HEAD que foi efetivamente auditado.
 | [`2714a7a`](https://github.com/EwertonDCSilv/clojure-compiler/commit/2714a7a)–[`424ba20`](https://github.com/EwertonDCSilv/clojure-compiler/commit/424ba20e88fd91a641675e4d9d9bf111c63fc164) | IR de otimização opcional, gate Cormen pareado e experimento isolado da ADR-0015 para valores internos, roots e ABI |
 
 O runtime C já está fisicamente separado por subsistema em
-[`crates/clojure-codegen/runtime/`](../crates/clojure-codegen/runtime/), mas continua
+[`src/compiler/clojure-codegen/runtime/`](../src/compiler/clojure-codegen/runtime/), mas continua
 compilado como uma única unidade de tradução. A modularização dos grandes arquivos Rust
 e a expansão sistemática de seus testes são propostas separadas nas ADRs
 [0012](../specs/adr/0012-rust-crate-modularization.md) e

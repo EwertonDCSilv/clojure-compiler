@@ -29,7 +29,7 @@ executável autônomo, sem JVM e sem .class
 ```
 
 O interpretador de bootstrap é um caminho paralelo usado pelos comandos `eval` e `run`.
-O core compilável em `crates/clojure-native-cli/src/core_compiled.clj` é analisado junto
+O core compilável em `src/compiler/clojure-native-cli/src/core_compiled.clj` é analisado junto
 com o programa do usuário em todo `build`.
 
 No snapshot documentado em

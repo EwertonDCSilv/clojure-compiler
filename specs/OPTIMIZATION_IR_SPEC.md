@@ -178,7 +178,7 @@ IR dumping must not change optimization decisions or generated code.
 **Partially implemented:** the workspace contains a `clojure-ir` crate.
 
 ```text
-crates/clojure-ir/
+src/compiler/clojure-ir/
 ├── src/
 │   ├── lib.rs
 │   ├── model.rs

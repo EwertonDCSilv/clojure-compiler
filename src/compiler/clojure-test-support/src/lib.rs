@@ -2197,7 +2197,7 @@ mod tests {
 
     #[test]
     fn tracked_levels_d_and_e_are_not_pending_only() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/conformance");
         let cases = discover_cases(&root).expect("discover tracked conformance suite");
         for (level, minimum_active, minimum_xfail) in
             [(Level::D, 8_usize, 5_usize), (Level::E, 5_usize, 6_usize)]
@@ -2231,7 +2231,7 @@ mod tests {
 
     #[test]
     fn tracked_pedestal_target_has_an_http_project_contract() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/conformance");
         let cases = discover_cases(&root).expect("discover tracked conformance suite");
         let case = cases
             .iter()
@@ -2259,7 +2259,7 @@ mod tests {
 
     #[test]
     fn tracked_io_gate_has_three_scenarios_per_native_api() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/conformance");
         let cases = discover_cases(&root).expect("discover tracked conformance suite");
         let mut scenarios = BTreeMap::<String, HashSet<String>>::new();
         for case in cases.iter().filter(|case| {

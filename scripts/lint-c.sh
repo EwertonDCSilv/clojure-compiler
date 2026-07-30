@@ -30,10 +30,10 @@ flags=(
 )
 
 sources=(
-  crates/clojure-codegen/runtime.c
-  crates/clojure-codegen/tests/c/runtime_unit.c
-  crates/clojure-codegen/tests/c/runtime_abi.c
-  crates/clojure-codegen/tests/c/runtime_errors.c
+  src/compiler/clojure-codegen/runtime.c
+  src/compiler/clojure-codegen/tests/c/runtime_unit.c
+  src/compiler/clojure-codegen/tests/c/runtime_abi.c
+  src/compiler/clojure-codegen/tests/c/runtime_errors.c
 )
 
 cd "${repository}"
