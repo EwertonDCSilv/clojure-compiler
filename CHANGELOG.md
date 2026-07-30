@@ -15,6 +15,10 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
+- Remove the `prototypes/` folder (the `p01-cranelift-exe` disposable spike that
+  validated ADR-0001's Cranelift-to-native-executable backend question) and the
+  now-unused workspace `exclude` entry for it; `specs/IMPLEMENTATION_PLAN.md` keeps
+  documenting the Fase 0.3 methodology as a historical record.
 - Untrack four compiled build artifacts accidentally committed to the repository
   root during early native-codegen development (`factorial-native-bigger`,
   `loop-benchmark-native`, `sieve-native` ELF executables, and

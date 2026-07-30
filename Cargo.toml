@@ -1,6 +1,5 @@
 [workspace]
 resolver = "2"
-exclude = ["prototypes"]
 members = [
     "src/compiler/clojure-span",
     "src/compiler/clojure-diagnostics",
