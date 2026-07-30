@@ -15,6 +15,8 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
+- Remove `kw.clj`, a leftover ad-hoc debugging scratch file with no references
+  elsewhere in the repository.
 - Move the `native_http_server.clj` runnable example from the repository root to
   `examples/`, alongside the other example programs.
 - Move the compiler crates to `src/compiler/` and the standard library to
