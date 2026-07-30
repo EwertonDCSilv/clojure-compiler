@@ -1,0 +1,11 @@
+id = "a.source_mapping.synthetic_spans_error"
+level = "A"
+area = "syntax/source-mapping"
+status = "pending"
+class = "unsupported"
+target = "build-error"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Pending: reader support for capability reader.synthetic-spans (error scenario) is not yet implemented; fixture provides executable traceability."
+tracking = "specs/conformance/clojure-1.12.5-reader.toml"
