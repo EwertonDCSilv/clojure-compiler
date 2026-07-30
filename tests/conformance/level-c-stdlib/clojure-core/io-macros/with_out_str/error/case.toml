@@ -1,7 +1,7 @@
 id = "c.clojure_core.with_out_str.error"
 level = "C"
 area = "stdlib/clojure-core/io-macros"
-status = "xfail"
+status = "active"
 class = "official"
 target = "build-run"
 oracle = "not-applicable"

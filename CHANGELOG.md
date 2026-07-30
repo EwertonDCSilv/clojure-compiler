@@ -13,6 +13,10 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add a closed-`*out*` check to `clojure.core` `flush` (issue #163), which now
+  raises `:invalid-input` like `pr`/`prn`/`newline`, and record the native error
+  contracts for `spit` on a directory and `with-out-str`/`with-open` bodies that
+  throw; promotes 4 fixtures.
 - Add 67 pending level-A reader fixtures (issue #156) covering every previously
   untraced Clojure 1.12.5 reader-syntax scenario (bigint/bigdecimal/ratio/radix/
   symbolic-value/array-class literals, regex/anonymous-function/discard/conditional/

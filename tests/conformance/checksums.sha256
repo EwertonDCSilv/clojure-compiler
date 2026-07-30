@@ -1284,8 +1284,8 @@ a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-c-stdlib
 1ea7dfda714b835c2dad4b1a3f2a22d7ac8fa0286fc7a8a23cb08363ce829152  level-c-stdlib/clojure-core/io-macros/with_open/boundary/case.toml
 5fec154aef7e8bf7d1e4dd739a96dc97e74c007eacc80c0339440e1ca2f84132  level-c-stdlib/clojure-core/io-macros/with_open/boundary/expected.stdout
 4e8422fd6333255a245331ec0334f9227d7c2f36483c5be17b1f617b8929a82c  level-c-stdlib/clojure-core/io-macros/with_open/boundary/input.clj
-01ac74def2b3516a51f38d8a3cb07f16e13048b4f5e7aa198b9a7437a1d82850  level-c-stdlib/clojure-core/io-macros/with_open/error/case.toml
-2fc64bc390d2c5323cd75b0aa22fbc8727cc8e891b1bff0282dd30f6db4ccbdf  level-c-stdlib/clojure-core/io-macros/with_open/error/expected.stdout
+508d2c7264558e88adaa33ee0f6f3088e655a2ed0262c0ee914512bc9613ece1  level-c-stdlib/clojure-core/io-macros/with_open/error/case.toml
+aaf215657c1641b3e65abc4a8aa222131edbb86b8e67d208ba6c8aa9041735c3  level-c-stdlib/clojure-core/io-macros/with_open/error/expected.stdout
 1dbf39cababdb122d4636941f3ed6a86b4528b9561e515beaa8e3d3bc28c8cb1  level-c-stdlib/clojure-core/io-macros/with_open/error/input.clj
 b583d3942536de8a55cae05da6dcee84230c0606d5474c1f256288ae18ea8abf  level-c-stdlib/clojure-core/io-macros/with_open/normal/case.toml
 5fec154aef7e8bf7d1e4dd739a96dc97e74c007eacc80c0339440e1ca2f84132  level-c-stdlib/clojure-core/io-macros/with_open/normal/expected.stdout
@@ -1293,8 +1293,8 @@ b583d3942536de8a55cae05da6dcee84230c0606d5474c1f256288ae18ea8abf  level-c-stdlib
 2679f6b24a036282522ccf0af173970e30b84011149bb5860af78fab1d7916b7  level-c-stdlib/clojure-core/io-macros/with_out_str/boundary/case.toml
 a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-c-stdlib/clojure-core/io-macros/with_out_str/boundary/expected.stdout
 5fab7450fcb07ac4502610bc8021cb2395f23db683df64647fa6710361812a9a  level-c-stdlib/clojure-core/io-macros/with_out_str/boundary/input.clj
-9deec7d02be1a022d00d16ee568a27dcb5f1655f5a139afb9958f07cb5e75306  level-c-stdlib/clojure-core/io-macros/with_out_str/error/case.toml
-2fc64bc390d2c5323cd75b0aa22fbc8727cc8e891b1bff0282dd30f6db4ccbdf  level-c-stdlib/clojure-core/io-macros/with_out_str/error/expected.stdout
+e5e35287386da89bfa6bfbf8f3118ad9235379ab9175f7cfe24c4435bc4c2f6e  level-c-stdlib/clojure-core/io-macros/with_out_str/error/case.toml
+aaf215657c1641b3e65abc4a8aa222131edbb86b8e67d208ba6c8aa9041735c3  level-c-stdlib/clojure-core/io-macros/with_out_str/error/expected.stdout
 52441fb29661a98376f1f3b3f0d4008c5ece652c70ae54786a9f0a3d1ed8b938  level-c-stdlib/clojure-core/io-macros/with_out_str/error/input.clj
 ce9af51b8029352f726ec867332fe5e4f82af29ae883eb325d12e7553e890872  level-c-stdlib/clojure-core/io-macros/with_out_str/normal/case.toml
 a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-c-stdlib/clojure-core/io-macros/with_out_str/normal/expected.stdout
@@ -1302,7 +1302,7 @@ a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  level-c-stdlib
 c8c6fdc0157ddad6d9d57df8218f0f6f36d8657d4d4c84b8b3495936527b0a40  level-c-stdlib/clojure-core/io/flush/boundary/case.toml
 5fec154aef7e8bf7d1e4dd739a96dc97e74c007eacc80c0339440e1ca2f84132  level-c-stdlib/clojure-core/io/flush/boundary/expected.stdout
 c44c3d555afe468f115a2be918b4e02ca604c11d9136884a80b4358a103dda53  level-c-stdlib/clojure-core/io/flush/boundary/input.clj
-866062ca6ae3a88b3f1c27d6a0c9a6a476ea0f7c61396d31bf8f3b0e10981112  level-c-stdlib/clojure-core/io/flush/error/case.toml
+0762a4b7a3292645e9dde33727eab9ba3ee338df72117fb48b4f2934ce7c964f  level-c-stdlib/clojure-core/io/flush/error/case.toml
 2fc64bc390d2c5323cd75b0aa22fbc8727cc8e891b1bff0282dd30f6db4ccbdf  level-c-stdlib/clojure-core/io/flush/error/expected.stdout
 0eb21c18097bea6f89d5a7ff8a29c19f51267063cfba8a42f70c1d7423a09a0b  level-c-stdlib/clojure-core/io/flush/error/input.clj
 27b1b6e6641494b1ecc1e52d13ef44a80ab0753362f565b2b727e477527125c2  level-c-stdlib/clojure-core/io/flush/normal/case.toml
@@ -1364,8 +1364,8 @@ e49c81e2d2f84e259d40e2fb8192f3bcd198b355184845d76d8f58807d0d78ee  level-c-stdlib
 c3d3ffbfd9dc820f6d204e3f9ef8ca0d19b05273d84a6246df05b93d1af74376  level-c-stdlib/clojure-core/io/spit/boundary/case.toml
 5fec154aef7e8bf7d1e4dd739a96dc97e74c007eacc80c0339440e1ca2f84132  level-c-stdlib/clojure-core/io/spit/boundary/expected.stdout
 8c4fa94229713db1d67d9ddc50f6e178dedb03b4c104058f2260814723832a20  level-c-stdlib/clojure-core/io/spit/boundary/input.clj
-c5ce53b0254e3675c592748cffca80ad4a9ec1e70856d6402146a0f13e49a8a9  level-c-stdlib/clojure-core/io/spit/error/case.toml
-2fc64bc390d2c5323cd75b0aa22fbc8727cc8e891b1bff0282dd30f6db4ccbdf  level-c-stdlib/clojure-core/io/spit/error/expected.stdout
+5cfec7e4e77d5127db9bf2ea47e36c51420e7627cbaab8320efdf85bcb3689cc  level-c-stdlib/clojure-core/io/spit/error/case.toml
+24c41040f43b970c0470d6dfc4241cc87987f900bb09193b15d6803b52113fca  level-c-stdlib/clojure-core/io/spit/error/expected.stdout
 0d7fcaa220943317bbde93bcc03f42f3707dd8f08ece65f8bb7f15203cb9d41f  level-c-stdlib/clojure-core/io/spit/error/input.clj
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  level-c-stdlib/clojure-core/io/spit/error/work.before/empty.txt
 e49c81e2d2f84e259d40e2fb8192f3bcd198b355184845d76d8f58807d0d78ee  level-c-stdlib/clojure-core/io/spit/error/work.before/input.txt
