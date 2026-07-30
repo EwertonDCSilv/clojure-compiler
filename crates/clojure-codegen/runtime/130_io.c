@@ -142,6 +142,25 @@ Value cljn_process_environment(void) {
     return out;
 }
 
+/* Throw {:kind :invalid-input} when the current *out* is a closed writer, so
+ * pr/prn/newline observe the same error contract as the cljn.io stream API. */
+void cljn_out_check(void) {
+    Writer *w = (Writer *)dynvar_get(VAR_OUT);
+    if (w->closed) {
+        gc_disabled++;
+        Value m = cljn_map_alloc(1);
+        cljn_map_set(m, 0, cljn_kw("kind", 4), cljn_kw("invalid-input", 13));
+        gc_disabled--;
+        cljn_throw(m);
+    }
+}
+
+/* Write one newline to the current *out* after verifying it is open. */
+void cljn_out_newline(void) {
+    cljn_out_check();
+    writer_write(dynvar_get(VAR_OUT), "\n", 1);
+}
+
 /* Create one directory, throwing structured I/O ex-data on failure. */
 Value cljn_mkdir(Value path) {
     if (obj_type(path) != T_STR) die("mkdir: path deve ser string");

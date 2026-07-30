@@ -1,12 +1,12 @@
 id = "c.clojure_core.newline.normal"
 level = "C"
 area = "stdlib/clojure-core/io"
-status = "xfail"
+status = "active"
 class = "expected-diff"
 target = "build-run"
 oracle = "expected-diff"
 timeout_ms = 10000
 gc_stress = false
-reason = "Deliberate native/JVM difference: native *out* routing of newline; the JVM oracle records the expected divergence (ADR-0016)."
+reason = "Native pr/prn/newline route to *out* and do not quote strings, a deliberate divergence from the Clojure/JVM reader syntax recorded by the oracle (ADR-0016, issue #152)."
 tracking = "specs/IO_SPEC.md"
 namespace = "clojure.core"

@@ -13,6 +13,11 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add the `clojure.core` printing functions `pr`, `prn`, and `newline` (issue #152):
+  variadic `pr`/`prn` write their arguments to the current `*out*` (native output
+  does not quote strings, a deliberate reader-syntax divergence from the JVM), and
+  all three raise `:invalid-input` when `*out*` is a closed writer, promoting 9
+  printing fixtures plus the `argv`/environment/cwd integration case to `active`.
 - Add the `cljn.process` working-directory and environment API (issue #147): `cwd`
   (returns a `cljn.io` path value composing with the path-algebra functions) and
   `environment` (an immutable map of all environment variables), backed by
