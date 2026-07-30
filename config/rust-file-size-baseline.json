@@ -43,9 +43,9 @@
       "reason": "reader remains cohesive"
     },
     "src/compiler/clojure-test-support/examples/generate_suite.rs": {
-      "lines": 2660,
+      "lines": 2687,
       "owner": "#109",
-      "reason": "planned fixture inventory split"
+      "reason": "split into level_a_b_c_core/level_b_.../level_d/level_e functions (#111); regeneration verified byte-identical"
     },
     "src/compiler/clojure-value/src/lib.rs": {
       "lines": 614,

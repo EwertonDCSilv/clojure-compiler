@@ -1443,8 +1443,8 @@ fn leak(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
 
-fn fixtures() -> Vec<Fixture> {
-    let mut cases = vec![
+fn level_a_b_c_core_cases() -> Vec<Fixture> {
+    vec![
         // Level A — literals.
         reader("literals", "integers", "0 -1 1 42\n", "0\n-1\n1\n42\n"),
         reader(
@@ -1826,11 +1826,13 @@ fn fixtures() -> Vec<Fixture> {
         core("concat", "(ns c.concat)\n(defn -main [] (println (concat (list 1 2) (list 3 4)) (concat (list) (list 1)) (concat (list :a) (list))))\n(-main)\n", "(1 2 3 4) (1) (:a)\n"),
         core("mapcat", "(ns c.mapcat)\n(defn pair [x] (list x x))\n(defn -main [] (println (mapcat pair (list 1 2)) (mapcat pair (list)) (mapcat (fn [x] (list (inc x))) (list 0 1))))\n(-main)\n", "(1 1 2 2) () (1 2)\n"),
         core("count-if", "(ns c.count-if)\n(defn -main [] (println (count-if even? (range 6)) (count-if even? (list)) (count-if neg? (list -2 -1 0 1))))\n(-main)\n", "3 0 2\n"),
-    ];
+    ]
+}
 
+fn level_b_stdout_baseline_cases() -> Vec<Fixture> {
     // Level B — the currently executable stdout baseline. These cases keep
     // `print`/`println` separate from the future stream-redirection contract.
-    cases.extend([
+    vec![
         build(
             "io/output",
             "print-normal",
@@ -1867,11 +1869,13 @@ fn fixtures() -> Vec<Fixture> {
             "(ns b.io.println-unicode)\n(defn -main [] (println \"ação λ 東京 😀\"))\n(-main)\n",
             "ação λ 東京 😀\n",
         ),
-    ]);
+    ]
+}
 
+fn level_b_io_prerequisites_cases() -> Vec<Fixture> {
     // Level B — language/runtime prerequisites that make the higher-level I/O
     // APIs safe under redirection, exceptions, GC, and abnormal exit.
-    cases.extend([
+    let mut cases = vec![
         build_xfail(
             "io/dynamic-bindings",
             "out-restored",
@@ -1949,7 +1953,7 @@ fn fixtures() -> Vec<Fixture> {
             "(ns b.io.large-file)\n(defn -main []\n  (with-open [in (cljn.io/input-stream \"large.bin\")\n              out (cljn.io/output-stream \"copy.bin\")]\n    (loop [total 0]\n      (if-let [chunk (cljn.io/read-bytes in 65536)]\n        (do (cljn.io/write-bytes! out chunk)\n            (recur (+ total (cljn.io/byte-count chunk))))\n        (println total)))))\n(-main)\n",
             "1048576\n",
         ),
-    ]);
+    ];
     cases
         .iter_mut()
         .find(|case| case.id == "b.io_files.large_file_streaming")
@@ -1961,12 +1965,11 @@ fn fixtures() -> Vec<Fixture> {
         )]
         .into_boxed_slice(),
     );
+    cases
+}
 
-    // Levels B/C — complete executable inventory for the proposed native I/O
-    // surface. All missing operations are xfail rather than undocumented
-    // aspirations, and every function has normal, boundary, and error cases.
-    cases.extend(io_api_cases());
-
+fn level_b_io_followups_cases() -> Vec<Fixture> {
+    let mut cases = Vec::new();
     let stdin_case = with_run(
         with_binary_files(
             build_xfail(
@@ -2213,6 +2216,11 @@ fn fixtures() -> Vec<Fixture> {
         cases.push(pending_stdlib(directory, namespace, function, input));
     }
 
+    cases
+}
+
+fn level_d_cases() -> Vec<Fixture> {
+    let mut cases = Vec::new();
     // Level D — executable pure-library slices.
     cases.extend([
         higher_level_build(
@@ -2474,7 +2482,11 @@ fn fixtures() -> Vec<Fixture> {
             "(ns fixture.tree)\n(defn node [v l r] {:value v :left l :right r})\n",
         ),
     ]);
+    cases
+}
 
+fn level_e_cases() -> Vec<Fixture> {
+    let mut cases = Vec::new();
     // Level E — self-contained native application baseline.
     cases.extend([
         higher_level_build(
@@ -2655,6 +2667,21 @@ fn fixtures() -> Vec<Fixture> {
         pending_project('E', "integrated-application", "ecosystem/application", "An integrated application needs modules, resources, dependencies, and stable packaging.", "(ns fixture.application)\n(defn -main [] (println \"app\"))\n"),
         pedestal_hello_world_project(),
     ]);
+    cases
+}
 
+fn fixtures() -> Vec<Fixture> {
+    let mut cases = level_a_b_c_core_cases();
+    cases.extend(level_b_stdout_baseline_cases());
+    cases.extend(level_b_io_prerequisites_cases());
+
+    // Levels B/C -- complete executable inventory for the proposed native I/O
+    // surface. All missing operations are xfail rather than undocumented
+    // aspirations, and every function has normal, boundary, and error cases.
+    cases.extend(io_api_cases());
+
+    cases.extend(level_b_io_followups_cases());
+    cases.extend(level_d_cases());
+    cases.extend(level_e_cases());
     cases
 }
