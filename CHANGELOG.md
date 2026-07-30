@@ -13,6 +13,11 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add the always-available `clojure.edn` namespace (issue #160) with native `read`
+  and `read-string` over the runtime EDN reader (sets, catchable `:invalid-input`
+  on `#=`/incomplete input); a leading options map is accepted, with `:eof`
+  honored by `read`. Promotes 5 fixtures; the custom `:default` tag-reader boundary
+  stays pending.
 - Add `clojure.core` `read` (issue #158): reads one form from a string reader,
   honoring an `{:eof v}` options map at end-of-input, backed by new `read-from`/
   `reader-eof?` runtime primitives. Runtime reader parse errors (including the

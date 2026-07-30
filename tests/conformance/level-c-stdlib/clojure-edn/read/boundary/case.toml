@@ -1,7 +1,7 @@
 id = "c.clojure_edn.read.boundary"
 level = "C"
 area = "stdlib/clojure-edn"
-status = "xfail"
+status = "active"
 class = "official"
 target = "build-run"
 oracle = "not-applicable"
