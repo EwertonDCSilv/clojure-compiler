@@ -26,8 +26,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 use target_lexicon::Triple;
 
+mod gc_frame;
 mod ir_adapter;
-
 macro_rules! embed_runtime_modules {
     ($(($name:literal, $path:literal)),+ $(,)?) => {
         /// Amalgamated C runtime source compiled during the native link step.
@@ -1661,17 +1661,15 @@ impl<'a> FnGen<'a> {
         self.stats.borrow_mut().raw_fixnum_bindings += 1;
     }
 
-    /// Enters a compact GC frame, including a zero-slot rootless frame.
-    fn enter_planned_frame(&mut self) {
-        {
-            let mut stats = self.stats.borrow_mut();
-            stats.root_slots += self.root_slots.len() as u64;
-            stats.root_frame_entries += 1;
+    /// GC: enters a frame unless zero fixed slots and a balanced result prove it redundant.
+    fn enter_planned_frame(&mut self, result_rooted: bool) {
+        if !gc_frame::needs_gc_frame(self.root_slots.len(), result_rooted) {
+            return;
         }
-        let k = self
-            .builder
-            .ins()
-            .iconst(types::I64, self.root_slots.len() as i64);
+        self.stats.borrow_mut().root_slots += self.root_slots.len() as u64;
+        self.stats.borrow_mut().root_frame_entries += 1;
+        let slots = self.root_slots.len() as i64;
+        let k = self.builder.ins().iconst(types::I64, slots);
         let base = self.call1(self.rt.gc_enter, k);
         let base_var = self.builder.declare_var(types::I64);
         self.builder.def_var(base_var, base);
@@ -1684,7 +1682,6 @@ impl<'a> FnGen<'a> {
         let base = self.builder.use_var(base_var);
         self.call_void(self.rt.gc_leave, &[base]);
     }
-
     fn build_entry(
         mut self,
         methods: &[FnMethod],
@@ -1726,7 +1723,9 @@ impl<'a> FnGen<'a> {
         } else {
             self.root_slots = (0.._local_count).map(|slot| (slot, slot)).collect();
         }
-        self.enter_planned_frame();
+        let no_kinds = HashMap::new();
+        let rooted = methods.iter().any(|m| self.expr_pushes(&m.body, &no_kinds));
+        self.enter_planned_frame(rooted);
 
         // Arity dispatch is a chain of argc checks.
         for m in methods {
@@ -1789,7 +1788,8 @@ impl<'a> FnGen<'a> {
             .enumerate()
             .map(|(root_slot, source_slot)| (source_slot, root_slot as u32))
             .collect();
-        self.enter_planned_frame();
+        let rooted = self.expr_pushes(&method.body, &environment);
+        self.enter_planned_frame(rooted);
 
         let parameters = self.builder.block_params(entry).to_vec();
         let mut parameter_slots = Vec::with_capacity(parameters.len());
@@ -1915,7 +1915,7 @@ impl<'a> FnGen<'a> {
         let argc64 = self.builder.ins().uextend(types::I64, argc);
         self.call_void(self.rt.set_args, &[argc64, argv]);
         self.root_slots = (0..local_count).map(|slot| (slot, slot)).collect();
-        self.enter_planned_frame();
+        self.enter_planned_frame(true);
         for a in body {
             let (_, pushed) = self.operand(a)?;
             if pushed {

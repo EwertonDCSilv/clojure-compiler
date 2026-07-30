@@ -172,6 +172,11 @@ para reproduzir uma medição histórica.
 - [0015](adr/0015-internal-value-root-and-abi-specialization.md) — internal unboxed
   representations, virtual roots, specialized direct calls, and classified runtime
   boundaries (accepted; experimental bundle not admitted to `safe`).
+- [0016](adr/0016-conformance-oracle-classification.md) — classify native/JVM oracle
+  cases as equal, not applicable, or an expected difference (accepted and implemented).
+- [0017](adr/0017-selective-zero-slot-gc-frames.md) — omit zero-slot shadow-stack
+  frames only when temporary-root accounting proves the function returns balanced
+  (accepted and implemented).
 
 ADRs aceitas não são reescritas para representar o estado posterior. Uma mudança
 fundamental deve criar uma nova ADR que substitua explicitamente a anterior.
