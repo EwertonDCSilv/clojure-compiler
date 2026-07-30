@@ -21,6 +21,12 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Add a positive/negative test matrix for every `clojure-ir` safe pass
+  (simplify-cfg, checked-constant-folding, copy-propagation, local-cse,
+  branch-simplification, effect-aware-dce), 11 additional verifier diagnostic
+  cases (structural, dominance, ABI, and GC-root invariants), and printer
+  snapshots covering every `InstructionKind`/`Terminator`, block-parameter
+  joins, and loops (issue #117). No pass, output, or generated assembly changes.
 
 - Move Rust unit-test bodies out of production modules into mirrored
   `src/compiler/<crate>/tests/unit/<module>/mod.rs` paths without changing

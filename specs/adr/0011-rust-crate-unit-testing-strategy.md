@@ -152,6 +152,11 @@ não é uma forma permanente de aceitar regressão.
   dispatch de primitivas, macroexpansão e bootstrap.
 - `clojure-analyzer`: reconhecimento de formas, slots/capturas, aridades, lowering de
   primitivas e testes positivo/negativo para cada otimização.
+- `clojure-ir`: par positivo/negativo para cada pass do pipeline seguro
+  (simplify-cfg, checked-constant-folding, copy-propagation, local-cse,
+  branch-simplification, effect-aware-dce), matriz de diagnósticos do verifier
+  (estrutura, dominância, ABI e plano de roots) e snapshots do printer cobrindo
+  toda `InstructionKind`/`Terminator`, joins de bloco e laços.
 - `clojure-codegen`: opções, declaração da ABI, classificação de valores e lowering
   inspecionável em unidade; execução do objeto gerado e runtime C em integração.
 - `clojure-native-cli`: parsing de argumentos e seleção de comandos em unidade; build,
