@@ -107,6 +107,41 @@ Value cljn_getenv(Value name) {
     return v ? cljn_str_from(v, (long)strlen(v)) : NIL;
 }
 
+extern char *getcwd(char *buf, unsigned long size);
+extern char **environ;
+
+/* Return the process working directory as a runtime string; throws structured
+ * I/O ex-data when getcwd fails (for example an unreadable path). */
+Value cljn_process_cwd(void) {
+    char buf[4096];
+    char *r = getcwd(buf, sizeof(buf));
+    int e = errno;
+    if (r == 0) io_throw(io_kind(e), "cwd", NIL, e);
+    return cljn_str_from(buf, (long)strlen(buf));
+}
+
+/* Snapshot the process environment as an immutable map of name->value strings.
+ * GC: the accumulating map is rooted across each insertion. */
+Value cljn_process_environment(void) {
+    Value m = cljn_map_alloc(0);
+    cljn_gc_push(m);
+    for (char **ep = environ; *ep != NULL; ep++) {
+        const char *entry = *ep;
+        const char *eq = strchr(entry, '=');
+        if (eq == NULL) continue; /* skip malformed entries without '=' */
+        Value k = cljn_str_from(entry, (long)(eq - entry));
+        cljn_gc_push(k);
+        Value v = cljn_str_from(eq + 1, (long)strlen(eq + 1));
+        cljn_gc_push(v);
+        Value nm = cljn_map_assoc(gc_stack[gc_sp - 3], k, v);
+        gc_stack[gc_sp - 3] = nm;
+        cljn_gc_popn(2);
+    }
+    Value out = gc_stack[gc_sp - 1];
+    cljn_gc_popn(1);
+    return out;
+}
+
 /* Create one directory, throwing structured I/O ex-data on failure. */
 Value cljn_mkdir(Value path) {
     if (obj_type(path) != T_STR) die("mkdir: path deve ser string");
