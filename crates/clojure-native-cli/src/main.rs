@@ -22,6 +22,10 @@ const BUILTIN_MODULES: &[(&str, &str)] = &[
         include_str!("../../../stdlib/cljn/process.clj"),
     ),
     (
+        "clojure.edn",
+        include_str!("../../../stdlib/clojure/edn.clj"),
+    ),
+    (
         "cljn.http.request",
         include_str!("../../../stdlib/cljn/http/request.clj"),
     ),

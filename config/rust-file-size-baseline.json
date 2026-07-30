@@ -8,7 +8,7 @@
   },
   "allowlist": {
     "crates/clojure-analyzer/src/lib.rs": {
-      "lines": 2852,
+      "lines": 2861,
       "owner": "#109",
       "reason": "planned cohesive extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
     },
@@ -18,7 +18,7 @@
       "reason": "planned pass extraction"
     },
     "crates/clojure-codegen/src/lib.rs": {
-      "lines": 4130,
+      "lines": 4137,
       "owner": "#109",
       "reason": "planned codegen extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
     },
@@ -28,7 +28,7 @@
       "reason": "planned interpreter extraction"
     },
     "crates/clojure-native-cli/src/main.rs": {
-      "lines": 606,
+      "lines": 610,
       "owner": "#109",
       "reason": "planned CLI extraction"
     },

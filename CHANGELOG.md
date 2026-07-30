@@ -10,13 +10,30 @@ tags.
 
 ### Fixed
 
+- Synchronize the native I/O end-to-end expectation with the `:open-reader`
+  operation reported by the current reader contract.
 - Release temporary GC roots when a function with no local root slots returns.
+
+### Changed
+- Refresh the documentation site conformance banner to the current matrix totals
+  (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
 
 ### Added
 - Add a closed-`*out*` check to `clojure.core` `flush` (issue #163), which now
   raises `:invalid-input` like `pr`/`prn`/`newline`, and record the native error
   contracts for `spit` on a directory and `with-out-str`/`with-open` bodies that
   throw; promotes 4 fixtures.
+- Add the always-available `clojure.edn` namespace (issue #160) with native `read`
+  and `read-string` over the runtime EDN reader (sets, catchable `:invalid-input`
+  on `#=`/incomplete input); a leading options map is accepted, with `:eof`
+  honored by `read`. Promotes 5 fixtures; the custom `:default` tag-reader boundary
+  stays pending.
+- Add `clojure.core` `read` (issue #158): reads one form from a string reader,
+  honoring an `{:eof v}` options map at end-of-input, backed by new `read-from`/
+  `reader-eof?` runtime primitives. Runtime reader parse errors (including the
+  `#=` eval macro and incomplete forms) now raise a catchable `:invalid-input`
+  instead of aborting, so `read`/`read-string` recover with try/catch; promotes 4
+  fixtures.
 - Add 67 pending level-A reader fixtures (issue #156) covering every previously
   untraced Clojure 1.12.5 reader-syntax scenario (bigint/bigdecimal/ratio/radix/
   symbolic-value/array-class literals, regex/anonymous-function/discard/conditional/

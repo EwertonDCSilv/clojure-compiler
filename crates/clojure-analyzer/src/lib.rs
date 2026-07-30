@@ -362,6 +362,10 @@ pub enum Prim {
     SpitBytes,
     /// Parse one string at native runtime.
     ReadString,
+    /// Read one form from a string reader, advancing its position.
+    ReadFrom,
+    /// Predicate: a string reader has only whitespace left.
+    ReaderEof,
     /// Open a file-backed writer.
     WriterOpen,
     /// Open a file-backed reader.
@@ -2487,6 +2491,8 @@ fn prim_of(name: &str) -> Option<Prim> {
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
+        "read-from" => Prim::ReadFrom,
+        "reader-eof?" => Prim::ReaderEof,
         "writer" => Prim::WriterOpen,
         "reader" => Prim::ReaderOpen,
         "close" => Prim::Close,
@@ -2555,6 +2561,8 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::ValidUtf8
         | Prim::SlurpBytes
         | Prim::ReadString
+        | Prim::ReadFrom
+        | Prim::ReaderEof
         | Prim::ParseHttpRequest
         | Prim::SerializeHttpResponse
         | Prim::HttpServerOpen
@@ -2714,6 +2722,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PathJoin => n == 2,
         Prim::FileName | Prim::Parent => n == 1,
         Prim::Bytes | Prim::BytesToString | Prim::SlurpBytes | Prim::ReadString => n == 1,
+        Prim::ReadFrom | Prim::ReaderEof => n == 1,
         Prim::BytesOfVec | Prim::BytesToVec | Prim::ValidUtf8 => n == 1,
         Prim::ByteOutputStream => n == 0,
         Prim::ByteInputStream | Prim::OutputBytes | Prim::ByteInputP | Prim::ByteOutputP => n == 1,

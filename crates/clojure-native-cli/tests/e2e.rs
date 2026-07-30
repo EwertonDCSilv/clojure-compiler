@@ -1241,7 +1241,7 @@ fn native_io_slurp_spit_getenv() {
                 (catch E e (str (get e :kind) " " (get e :operation) " " (get e :os-code)))))
   (println (getenv "CLJN_E2E_VAR") (getenv "CLJN_E2E_MISSING")))
 (-main)"#;
-    let expected = "true false\n8\n:not-found :slurp 2\nxyz nil\n";
+    let expected = "true false\n8\n:not-found :open-reader 2\nxyz nil\n";
     assert_eq!(
         build_and_run_env("cljn_e2e_io", src, &[("CLJN_E2E_VAR", "xyz")]),
         expected

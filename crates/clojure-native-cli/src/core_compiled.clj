@@ -207,3 +207,15 @@
   "Returns the message string of an `ex-info` value, or nil for other values."
   [e]
   (if (map? e) (if (:cljn-ex-info e) (:cljn-ex-message e) nil) nil))
+
+;; `read-from`/`reader-eof?` are native compiler primitives and the invalid-input
+;; payload is a plain data map, both resolved by the native compiler, not clj-kondo.
+#_{:clj-kondo/ignore [:unresolved-symbol :type-mismatch]}
+(defn read
+  "Reads one object from a string reader. With an options map, an exhausted
+  reader yields the map's `:eof` value; without one it raises `:invalid-input`.
+  Incomplete or unsupported syntax raises `:invalid-input`."
+  ([reader]
+   (if (reader-eof? reader) (throw {:kind :invalid-input}) (read-from reader)))
+  ([options reader]
+   (if (reader-eof? reader) (:eof options) (read-from reader))))
