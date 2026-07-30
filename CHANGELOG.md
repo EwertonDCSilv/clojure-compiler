@@ -13,6 +13,10 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add the `cljn.process` working-directory and environment API (issue #147): `cwd`
+  (returns a `cljn.io` path value composing with the path-algebra functions) and
+  `environment` (an immutable map of all environment variables), backed by
+  getcwd/environ runtime primitives, promoting 6 conformance fixtures to `active`.
 - Add the `cljn.io` recursive and attribute API (issue #144): `attributes`,
   `copy-tree!` (preserving symbolic links), and `delete-tree!` (with an
   ignore-missing option), both refusing the filesystem root without touching disk,

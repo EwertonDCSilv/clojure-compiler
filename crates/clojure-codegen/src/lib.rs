@@ -390,6 +390,8 @@ struct Runtime {
     path_absolute: FuncId,           // (path)->bool
     path_normalize: FuncId,          // (path)->string
     real_path: FuncId,               // (path)->string
+    process_cwd: FuncId,             // ()->string
+    process_environment: FuncId,     // ()->map
     slurp_bytes: FuncId,             // (path)->bytes
     spit_bytes: FuncId,              // (path,bytes)->nil
     read_string: FuncId,             // (string) -> parsed EDN value
@@ -964,6 +966,18 @@ fn declare_runtime(m: &mut ObjectModule, ptr: types::Type) -> Runtime {
         path_absolute: una(m, "cljn_path_absolute"),
         path_normalize: una(m, "cljn_path_normalize"),
         real_path: una(m, "cljn_real_path"),
+        process_cwd: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_process_cwd", Linkage::Import, &s)
+                .unwrap()
+        },
+        process_environment: {
+            let mut s = m.make_signature();
+            s.returns.push(AbiParam::new(types::I64));
+            m.declare_function("cljn_process_environment", Linkage::Import, &s)
+                .unwrap()
+        },
         slurp_bytes: una(m, "cljn_slurp_bytes"),
         spit_bytes: bin(m, "cljn_spit_bytes"),
         read_string: una(m, "cljn_read_string"),
@@ -3596,6 +3610,8 @@ impl<'a> FnGen<'a> {
             Prim::PathAbsolute => self.una(self.rt.path_absolute, args),
             Prim::PathNormalize => self.una(self.rt.path_normalize, args),
             Prim::RealPath => self.una(self.rt.real_path, args),
+            Prim::ProcessCwd => Ok(self.call0(self.rt.process_cwd)),
+            Prim::ProcessEnvironment => Ok(self.call0(self.rt.process_environment)),
             Prim::SlurpBytes => self.una(self.rt.slurp_bytes, args),
             Prim::SpitBytes => self.bin(self.rt.spit_bytes, args),
             Prim::ReadString => self.una(self.rt.read_string, args),

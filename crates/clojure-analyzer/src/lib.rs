@@ -346,6 +346,10 @@ pub enum Prim {
     PathNormalize,
     /// Resolve a path to its canonical form (realpath).
     RealPath,
+    /// Process working directory as a string.
+    ProcessCwd,
+    /// Snapshot of the process environment as a map.
+    ProcessEnvironment,
     /// Read a file as bytes.
     SlurpBytes,
     /// Write bytes to a file.
@@ -2469,6 +2473,8 @@ fn prim_of(name: &str) -> Option<Prim> {
         "path-absolute" => Prim::PathAbsolute,
         "path-normalize" => Prim::PathNormalize,
         "real-path" => Prim::RealPath,
+        "process-cwd" => Prim::ProcessCwd,
+        "process-environment" => Prim::ProcessEnvironment,
         "slurp-bytes" => Prim::SlurpBytes,
         "spit-bytes" => Prim::SpitBytes,
         "read-string" => Prim::ReadString,
@@ -2588,6 +2594,7 @@ fn prim_value_arity(prim: Prim) -> Option<usize> {
         | Prim::RealPath
         | Prim::Vals => 1,
         Prim::ByteOutputStream => 0,
+        Prim::ProcessCwd | Prim::ProcessEnvironment => 0,
         Prim::ReadBytes | Prim::WriteBytes | Prim::ReadBlock | Prim::SeekFile | Prim::TruncateFile | Prim::CreateSymlink => 2,
         Prim::StringWriter => 0,
         Prim::UnreadCharTo | Prim::WriteTo => 2,
@@ -2702,6 +2709,7 @@ fn check_prim_arity(prim: Prim, n: usize, span: Span) -> Result<(), Diagnostic> 
         Prim::PositionFile | Prim::FileReaderP | Prim::FileWriterP => n == 1,
         Prim::ReadLink | Prim::NativeSymlinkP => n == 1,
         Prim::PathAbsolute | Prim::PathNormalize | Prim::RealPath => n == 1,
+        Prim::ProcessCwd | Prim::ProcessEnvironment => n == 0,
         Prim::CreateSymlink => n == 2,
         Prim::SeekFile | Prim::TruncateFile => n == 2,
         Prim::ParseHttpRequest | Prim::SerializeHttpResponse => n == 1,
