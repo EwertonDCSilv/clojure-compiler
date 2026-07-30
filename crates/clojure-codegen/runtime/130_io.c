@@ -593,8 +593,10 @@ Value cljn_close(Value x) {
     }
     return NIL;
 }
-/* Flush current *out* when it wraps stdout, stderr, or FILE*. */
+/* Flush current *out* when it wraps stdout, stderr, or FILE*. A closed writer
+ * raises :invalid-input, matching the pr/prn/newline stream contract. */
 Value cljn_flush(void) {
+    cljn_out_check();
     Writer *w = (Writer *)dynvar_get(VAR_OUT);
     if (w->kind == WR_STDOUT) fflush(stdout);
     else if (w->kind == WR_STDERR) fflush(stderr);

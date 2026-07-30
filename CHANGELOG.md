@@ -10,6 +10,8 @@ tags.
 
 ### Fixed
 
+- Synchronize the native I/O end-to-end expectation with the `:open-reader`
+  operation reported by the current reader contract.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
@@ -17,6 +19,10 @@ tags.
   (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
 
 ### Added
+- Add a closed-`*out*` check to `clojure.core` `flush` (issue #163), which now
+  raises `:invalid-input` like `pr`/`prn`/`newline`, and record the native error
+  contracts for `spit` on a directory and `with-out-str`/`with-open` bodies that
+  throw; promotes 4 fixtures.
 - Add the always-available `clojure.edn` namespace (issue #160) with native `read`
   and `read-string` over the runtime EDN reader (sets, catchable `:invalid-input`
   on `#=`/incomplete input); a leading options map is accepted, with `:eof`
