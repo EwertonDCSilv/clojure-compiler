@@ -47,11 +47,6 @@
       "owner": "#109",
       "reason": "planned fixture inventory split"
     },
-    "src/compiler/clojure-test-support/src/lib.rs": {
-      "lines": 1977,
-      "owner": "#109",
-      "reason": "unit tests moved to tests/unit (#165); runner extraction still planned"
-    },
     "src/compiler/clojure-value/src/lib.rs": {
       "lines": 614,
       "owner": "#109",

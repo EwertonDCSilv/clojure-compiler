@@ -21,6 +21,11 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Split `clojure-test-support`'s 1977-line `lib.rs` into `manifest`, `execution`,
+  `workspace`, `comparison`, `checksum`, `report`, and `oracle` modules (issue
+  #110), leaving `lib.rs` a 76-line facade re-exporting the unchanged public API.
+  Behavior-preserving; the conformance CLI, `generate_suite` example, and 26
+  unit tests are unaffected.
 - Add a positive/negative test matrix for every `clojure-ir` safe pass
   (simplify-cfg, checked-constant-folding, copy-propagation, local-cse,
   branch-simplification, effect-aware-dce), 11 additional verifier diagnostic
