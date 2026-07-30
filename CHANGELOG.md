@@ -8,6 +8,18 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Force the C locale (`LC_ALL=C`) in `scripts/aggregate-benchmark-runs.sh` and its
+  test. Under a locale with a comma decimal separator (e.g. `pt_BR.UTF-8`), awk's
+  `sprintf` embedded extra commas in formatted metrics, corrupting the
+  comma-separated output, and the test's own `$column + 0` numeric coercion
+  silently truncated fractional values at the locale-specific decimal point,
+  masking the corruption.
+- Update the `tests/scripts/check-rust-file-size.sh` fixture to the `src/compiler/`
+  layout (previously `crates/`), which the size gate now scans after the
+  standard-library reorganization.
+
 ## [0.0.3] - 2026-07-30
 
 ### Fixed

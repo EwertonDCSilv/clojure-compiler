@@ -17,7 +17,10 @@ trap 'rm -f "$temporary"' EXIT
 
 expected_header='benchmark,scale,native_compile_wall_ms,native_wall_time_s,native_cpu_user_s,native_cpu_system_s,native_cpu_total_s,native_cpu_percent,native_max_rss_kb,clojure_version,clojure_compile_wall_ms,clojure_wall_time_s,clojure_cpu_user_s,clojure_cpu_system_s,clojure_cpu_total_s,clojure_cpu_percent,clojure_max_rss_kb,native_checksum,clojure_checksum,wall_speedup_vs_clojure,cpu_speedup_vs_clojure,rss_ratio_clojure_over_native,status'
 
-awk -F, -v OFS=, -v expected_header="$expected_header" '
+# Force the C locale so awk's sprintf/printf always emit a dot decimal separator.
+# Under a locale with a comma decimal separator (e.g. pt_BR.UTF-8), the formatted
+# metrics would embed extra commas and corrupt this comma-separated output.
+LC_ALL=C awk -F, -v OFS=, -v expected_header="$expected_header" '
   function reject(message) {
     printf "%s\n", message > "/dev/stderr"
     failed = 1
