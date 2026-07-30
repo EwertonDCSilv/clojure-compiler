@@ -13,6 +13,12 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add 67 pending level-A reader fixtures (issue #156) covering every previously
+  untraced Clojure 1.12.5 reader-syntax scenario (bigint/bigdecimal/ratio/radix/
+  symbolic-value/array-class literals, regex/anonymous-function/discard/conditional/
+  namespaced-map/tagged/record-constructor reader macros, metadata, lexical,
+  diagnostics, and source-mapping), wiring each into the reader catalog and raising
+  `reader-syntax-coverage` traceability from 48.06% to 100.00% (0 missing scenarios).
 - Add `clojure.core` `ex-info` and `ex-message` (issue #154): `ex-info` builds a
   tagged exception value whose data and message are read back by `ex-data`/
   `ex-message`, while directly-thrown data maps keep map-identity `ex-data` (the

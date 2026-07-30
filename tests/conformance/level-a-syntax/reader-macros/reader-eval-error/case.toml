@@ -1,0 +1,11 @@
+id = "a.reader_macros.reader_eval_error"
+level = "A"
+area = "syntax/reader-macros"
+status = "pending"
+class = "unsupported"
+target = "build-error"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Pending: reader support for capability reader-macro.reader-eval (error scenario) is not yet implemented; fixture provides executable traceability."
+tracking = "specs/conformance/clojure-1.12.5-reader.toml"

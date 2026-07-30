@@ -43,7 +43,7 @@ issue = 71
 dependencies = []
 decision = "Rust-only float spellings must not widen the accepted grammar."
 normal = ["a.literals.floats"]
-boundary = []
+boundary = ["a.literals.double_boundary"]
 error = ["a.diagnostics.invalid_number"]
 
 [[capability]]
@@ -57,7 +57,7 @@ dependencies = []
 decision = "Approximation through a floating-point or truncated integer is forbidden."
 normal = ["a.literals.bigint"]
 boundary = ["a.literals.bigint"]
-error = []
+error = ["a.literals.bigint_error"]
 
 [[capability]]
 id = "literal.bigdecimal"
@@ -68,9 +68,9 @@ behavior = "Reads arbitrary-precision decimal values with the M suffix."
 issue = 15
 dependencies = []
 decision = "A dedicated exact representation is required."
-normal = []
-boundary = []
-error = []
+normal = ["a.literals.bigdecimal_normal"]
+boundary = ["a.literals.bigdecimal_boundary"]
+error = ["a.literals.bigdecimal_error"]
 
 [[capability]]
 id = "literal.ratio"
@@ -83,7 +83,7 @@ dependencies = []
 decision = "The denominator grammar is unsigned."
 normal = ["a.literals.ratio"]
 boundary = ["a.literals.ratio"]
-error = []
+error = ["a.literals.ratio_error"]
 
 [[capability]]
 id = "literal.radix-integer"
@@ -94,9 +94,9 @@ behavior = "Reads hexadecimal, octal, and explicit radix 2 through 36 integers."
 issue = 17
 dependencies = []
 decision = "Prefix and digit validation must match intPat."
-normal = []
-boundary = []
-error = []
+normal = ["a.literals.radix_integer_normal"]
+boundary = ["a.literals.radix_integer_boundary"]
+error = ["a.literals.radix_integer_error"]
 
 [[capability]]
 id = "literal.symbolic-value"
@@ -107,9 +107,9 @@ behavior = "Reads the official symbolic floating-point values."
 issue = 18
 dependencies = []
 decision = "Only the documented symbolic names are accepted."
-normal = []
-boundary = []
-error = []
+normal = ["a.literals.symbolic_value_normal"]
+boundary = ["a.literals.symbolic_value_boundary"]
+error = ["a.literals.symbolic_value_error"]
 
 [[capability]]
 id = "literal.character"
@@ -152,7 +152,7 @@ dependencies = [74]
 decision = "Token classification must not defer malformed symbol syntax to Rust parsing."
 normal = ["a.literals.symbols"]
 boundary = ["a.literals.symbols"]
-error = []
+error = ["a.literals.symbol_error"]
 
 [[capability]]
 id = "literal.keyword"
@@ -178,7 +178,7 @@ dependencies = [70]
 decision = "Resolution requires an explicit immutable reader context."
 normal = ["a.literals.auto_keyword"]
 boundary = ["a.literals.auto_keyword"]
-error = []
+error = ["a.literals.auto_resolved_keyword_error"]
 
 [[capability]]
 id = "collection.list"
@@ -247,9 +247,9 @@ behavior = "Rejects duplicate map keys and set elements during reading."
 issue = 27
 dependencies = []
 decision = "Equality is the reader value equality used by Clojure 1.12.5."
-normal = []
-boundary = []
-error = []
+normal = ["a.collections.duplicate_rejection_normal"]
+boundary = ["a.collections.duplicate_rejection_boundary"]
+error = ["a.collections.duplicate_rejection_error"]
 
 [[capability]]
 id = "reader-macro.quote"
@@ -262,7 +262,7 @@ dependencies = [85, 86]
 decision = "The synthetic form and source span follow the cataloged reader contract."
 normal = ["a.reader_macros.quote"]
 boundary = ["a.collections.nesting"]
-error = []
+error = ["a.reader_macros.quote_error"]
 
 [[capability]]
 id = "reader-macro.deref"
@@ -274,8 +274,8 @@ issue = 77
 dependencies = [85, 86]
 decision = "Exact structural expansion is required."
 normal = ["a.reader_macros.deref"]
-boundary = []
-error = []
+boundary = ["a.reader_macros.deref_boundary"]
+error = ["a.reader_macros.deref_error"]
 
 [[capability]]
 id = "reader-macro.var-quote"
@@ -287,8 +287,8 @@ issue = 77
 dependencies = [85, 86]
 decision = "Exact structural expansion is required."
 normal = ["a.reader_macros.var_quote"]
-boundary = []
-error = []
+boundary = ["a.reader_macros.var_quote_boundary"]
+error = ["a.reader_macros.var_quote_error"]
 
 [[capability]]
 id = "reader-macro.syntax-quote"
@@ -313,8 +313,8 @@ issue = 24
 dependencies = [70, 80, 85]
 decision = "Location metadata and JVM-only class identity are reported separately."
 normal = ["a.metadata.keyword", "a.metadata.map", "a.metadata.symbol"]
-boundary = []
-error = []
+boundary = ["a.metadata.metadata_boundary"]
+error = ["a.metadata.metadata_error"]
 
 [[capability]]
 id = "reader-macro.legacy-metadata"
@@ -325,9 +325,9 @@ behavior = "Reads the deprecated #^ form with semantics equivalent to ^."
 issue = 79
 dependencies = [24]
 decision = "Supported for Clojure 1.12.5 compatibility and documented as deprecated."
-normal = []
-boundary = []
-error = []
+normal = ["a.metadata.legacy_metadata_normal"]
+boundary = ["a.metadata.legacy_metadata_boundary"]
+error = ["a.metadata.legacy_metadata_error"]
 
 [[capability]]
 id = "reader-macro.regex"
@@ -340,7 +340,7 @@ dependencies = []
 decision = "Native representation may differ, but reader structure must remain explicit."
 normal = ["a.reader_macros.regex"]
 boundary = ["a.reader_macros.regex"]
-error = []
+error = ["a.reader_macros.regex_error"]
 
 [[capability]]
 id = "reader-macro.anonymous-function"
@@ -353,7 +353,7 @@ dependencies = [85, 86]
 decision = "Generated symbols must be deterministic within the form and collision-free."
 normal = ["a.reader_macros.anonymous_function"]
 boundary = ["a.reader_macros.anonymous_function"]
-error = []
+error = ["a.reader_macros.anonymous_function_error"]
 
 [[capability]]
 id = "reader-macro.discard"
@@ -366,7 +366,7 @@ dependencies = [86]
 decision = "Discard does not bypass structural validation or leak placeholder context."
 normal = ["a.reader_macros.discard"]
 boundary = ["a.trivia.nested_discard"]
-error = []
+error = ["a.reader_macros.discard_error"]
 
 [[capability]]
 id = "reader-macro.conditional"
@@ -379,7 +379,7 @@ dependencies = [84, 85, 86]
 decision = "Unselected branches are consumed under suppression."
 normal = ["a.reader_macros.reader_conditional"]
 boundary = ["a.reader_macros.reader_conditional"]
-error = []
+error = ["a.reader_macros.conditional_error"]
 
 [[capability]]
 id = "reader-macro.namespaced-map"
@@ -390,9 +390,9 @@ behavior = "Applies explicit or resolved namespaces to eligible map keys."
 issue = 20
 dependencies = [10, 70]
 decision = "Alias resolution comes from the explicit reader context."
-normal = []
-boundary = []
-error = []
+normal = ["a.reader_macros.namespaced_map_normal"]
+boundary = ["a.reader_macros.namespaced_map_boundary"]
+error = ["a.reader_macros.namespaced_map_error"]
 
 [[capability]]
 id = "reader-macro.tagged-custom"
@@ -403,9 +403,9 @@ behavior = "Dispatches custom symbolic tags through readers and default handlers
 issue = 22
 dependencies = [70, 84]
 decision = "Registry precedence and preserve mode must be explicit and deterministic."
-normal = []
-boundary = []
-error = []
+normal = ["a.reader_macros.tagged_custom_normal"]
+boundary = ["a.reader_macros.tagged_custom_boundary"]
+error = ["a.reader_macros.tagged_custom_error"]
 
 [[capability]]
 id = "reader-macro.tagged-inst"
@@ -416,9 +416,9 @@ behavior = "Reads the native instant tagged literal grammar."
 issue = 90
 dependencies = [21, 22]
 decision = "Native representation replaces java.util.Date but preserves reader semantics."
-normal = []
-boundary = []
-error = []
+normal = ["a.reader_macros.tagged_inst_normal"]
+boundary = ["a.reader_macros.tagged_inst_boundary"]
+error = ["a.reader_macros.tagged_inst_error"]
 
 [[capability]]
 id = "reader-macro.tagged-uuid"
@@ -429,9 +429,9 @@ behavior = "Reads the native UUID tagged literal grammar."
 issue = 91
 dependencies = [21, 22]
 decision = "Native compact representation replaces java.util.UUID."
-normal = []
-boundary = []
-error = []
+normal = ["a.reader_macros.tagged_uuid_normal"]
+boundary = ["a.reader_macros.tagged_uuid_boundary"]
+error = ["a.reader_macros.tagged_uuid_error"]
 
 [[capability]]
 id = "reader-macro.record-constructor"
@@ -442,9 +442,9 @@ behavior = "Reads symbolic type and record constructor forms with vector or map 
 issue = 23
 dependencies = [70, 83, 84]
 decision = "Dynamic classpath loading remains outside reader structure."
-normal = []
-boundary = []
-error = []
+normal = ["a.reader_macros.record_constructor_normal"]
+boundary = ["a.reader_macros.record_constructor_boundary"]
+error = ["a.reader_macros.record_constructor_error"]
 
 [[capability]]
 id = "reader-macro.unknown-dispatch"
@@ -455,8 +455,8 @@ behavior = "Distinguishes unknown dispatch, unknown tag, missing form, and recor
 issue = 84
 dependencies = [21, 22, 23]
 decision = "Diagnostics must consume the complete dispatch token."
-normal = []
-boundary = []
+normal = ["a.reader_macros.unknown_dispatch_normal"]
+boundary = ["a.reader_macros.unknown_dispatch_boundary"]
 error = ["a.diagnostics.unknown_dispatch"]
 
 [[capability]]
@@ -469,8 +469,8 @@ issue = 82
 dependencies = [84]
 decision = "Unreadable forms are never interpreted as data."
 normal = []
-boundary = []
-error = []
+boundary = ["a.reader_macros.unreadable_boundary"]
+error = ["a.reader_macros.unreadable_error"]
 not_applicable = ["normal"]
 
 [[capability]]
@@ -483,8 +483,8 @@ issue = 83
 dependencies = [84]
 decision = "Security policy permanently rejects #= in every mode."
 normal = []
-boundary = []
-error = []
+boundary = ["a.reader_macros.reader_eval_boundary"]
+error = ["a.reader_macros.reader_eval_error"]
 not_applicable = ["normal"]
 
 [[capability]]
@@ -496,9 +496,9 @@ behavior = "Reads Clojure 1.12 array class symbols and validates their dimension
 issue = 81
 dependencies = [70, 26]
 decision = "Reader structure is implemented independently of Java interop."
-normal = []
-boundary = []
-error = []
+normal = ["a.literals.array_class_symbol_normal"]
+boundary = ["a.literals.array_class_symbol_boundary"]
+error = ["a.literals.array_class_symbol_error"]
 
 [[capability]]
 id = "metadata.location"
@@ -509,8 +509,8 @@ behavior = "Attaches observable line and column metadata to lists without confla
 issue = 80
 dependencies = [24, 85]
 decision = "An expected difference must be explicit until exact parity is implemented."
-normal = []
-boundary = []
+normal = ["a.metadata.location_normal"]
+boundary = ["a.metadata.location_boundary"]
 error = []
 not_applicable = ["error"]
 
@@ -524,8 +524,8 @@ issue = 74
 dependencies = [26]
 decision = "A single generic delimiter predicate is insufficient."
 normal = ["a.literals.symbols"]
-boundary = []
-error = []
+boundary = ["a.lexical.macro_boundaries_boundary"]
+error = ["a.lexical.macro_boundaries_error"]
 
 [[capability]]
 id = "trivia.whitespace-comma"
@@ -580,7 +580,7 @@ dependencies = [85]
 decision = "There is no normal scenario for an incomplete prefix."
 normal = []
 boundary = ["a.diagnostics.unclosed_vector", "a.diagnostics.unterminated_string"]
-error = []
+error = ["a.diagnostics.incomplete_prefix_error"]
 not_applicable = ["normal"]
 
 [[capability]]
@@ -593,7 +593,7 @@ issue = 78
 dependencies = [85, 86]
 decision = "Valid collection scenarios are cataloged by collection capabilities."
 normal = []
-boundary = []
+boundary = ["a.diagnostics.delimiter_boundary"]
 error = [
   "a.diagnostics.mismatched_delimiter",
   "a.diagnostics.unclosed_vector",
@@ -610,9 +610,9 @@ behavior = "Supplies deterministic immutable resolution context to context-sensi
 issue = 70
 dependencies = []
 decision = "No singleton or JVM classloader state is permitted."
-normal = []
-boundary = []
-error = []
+normal = ["a.architecture.context_resolver_normal"]
+boundary = ["a.architecture.context_resolver_boundary"]
+error = ["a.architecture.context_resolver_error"]
 
 [[capability]]
 id = "reader.synthetic-spans"
@@ -623,6 +623,6 @@ behavior = "Assigns deterministic in-bounds spans to synthetic operators, childr
 issue = 85
 dependencies = []
 decision = "Span parity is a project contract distinct from JVM metadata."
-normal = []
-boundary = []
-error = []
+normal = ["a.source_mapping.synthetic_spans_normal"]
+boundary = ["a.source_mapping.synthetic_spans_boundary"]
+error = ["a.source_mapping.synthetic_spans_error"]

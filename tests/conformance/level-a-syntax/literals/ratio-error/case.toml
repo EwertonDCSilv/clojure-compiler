@@ -1,0 +1,11 @@
+id = "a.literals.ratio_error"
+level = "A"
+area = "syntax/literals"
+status = "pending"
+class = "unsupported"
+target = "build-error"
+oracle = "not-applicable"
+timeout_ms = 10000
+gc_stress = false
+reason = "Pending: reader support for capability literal.ratio (error scenario) is not yet implemented; fixture provides executable traceability."
+tracking = "specs/conformance/clojure-1.12.5-reader.toml"
