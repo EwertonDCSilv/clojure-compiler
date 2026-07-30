@@ -13,6 +13,11 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Added
+- Add `clojure.core` `ex-info` and `ex-message` (issue #154): `ex-info` builds a
+  tagged exception value whose data and message are read back by `ex-data`/
+  `ex-message`, while directly-thrown data maps keep map-identity `ex-data` (the
+  `cljn.io` `:kind` contract is unchanged). The native `slurp` open failure now
+  reports operation `:open-reader`, promoting 5 exception/lifecycle fixtures.
 - Add the `clojure.core` printing functions `pr`, `prn`, and `newline` (issue #152):
   variadic `pr`/`prn` write their arguments to the current `*out*` (native output
   does not quote strings, a deliberate reader-syntax divergence from the JVM), and

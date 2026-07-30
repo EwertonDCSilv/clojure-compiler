@@ -1,8 +1,8 @@
 id = "b.io_exceptions.finally_runs"
 level = "B"
 area = "semantics/io/exceptions"
-status = "xfail"
-class = "unsupported"
+status = "active"
+class = "official"
 target = "build-run"
 oracle = "equal"
 timeout_ms = 10000
