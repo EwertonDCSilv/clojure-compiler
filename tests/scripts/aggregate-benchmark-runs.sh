@@ -28,7 +28,10 @@ output="$fixture_root/median.csv"
 "$repo_root/scripts/aggregate-benchmark-runs.sh" "$output" "${inputs[@]}"
 
 test "$(sed -n '1p' "$output")" = "$header"
-awk -F, '
+# LC_ALL=C: under a locale with a comma decimal separator, awk's numeric string
+# coercion (e.g. `$3 + 0`) can stop at the dot in "5.500000" and yield 5 instead
+# of 5.5, so this assertion must not depend on the host's locale.
+LC_ALL=C awk -F, '
   NR == 2 {
     if ($1 != "case.clj" || $2 != 25 || $10 != "1.12.5" ||
         $18 != "native-ok" || $19 != "clojure-ok" || $23 != "OK")
