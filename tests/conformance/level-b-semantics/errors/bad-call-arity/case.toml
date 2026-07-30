@@ -8,4 +8,4 @@ oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = false
 reason = "The analyzer must reject the invalid program with a stable category."
-tracking = "crates/clojure-analyzer/src/lib.rs"
+tracking = "src/compiler/clojure-analyzer/src/lib.rs"

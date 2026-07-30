@@ -8,5 +8,5 @@ oracle = "not-applicable"
 timeout_ms = 10000
 gc_stress = false
 reason = "JVM oracle cannot evaluate the native count-if function; verified natively and excluded from the JVM oracle (ADR-0016)."
-tracking = "crates/clojure-native-cli/src/core_compiled.clj"
+tracking = "src/compiler/clojure-native-cli/src/core_compiled.clj"
 namespace = "clojure.core"

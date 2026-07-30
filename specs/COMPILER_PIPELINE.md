@@ -12,9 +12,9 @@ This page indexes the implemented stages. The optional optimization IR specified
 
 ## 1. Reader
 
-[`clojure-reader`](../crates/clojure-reader/src/lib.rs) accepts UTF-8 text and
-produces [`clojure-syntax`](../crates/clojure-syntax/src/lib.rs) forms carrying
-byte spans into a [`SourceMap`](../crates/clojure-span/src/lib.rs).
+[`clojure-reader`](../src/compiler/clojure-reader/src/lib.rs) accepts UTF-8 text and
+produces [`clojure-syntax`](../src/compiler/clojure-syntax/src/lib.rs) forms carrying
+byte spans into a [`SourceMap`](../src/compiler/clojure-span/src/lib.rs).
 
 - Whitespace, commas, comments, and a leading shebang are trivia.
 - Literals cover nil, booleans, integers, floats, strings, symbols, and keywords.
@@ -41,7 +41,7 @@ execution are tracked by [ADR-0004](adr/0004-macro-execution.md).
 
 ## 3. Analyzer
 
-[`clojure-analyzer`](../crates/clojure-analyzer/src/lib.rs):
+[`clojure-analyzer`](../src/compiler/clojure-analyzer/src/lib.rs):
 
 - resolves local slots and direct or transitive lexical captures;
 - validates fixed, multiple, and variadic arities;
@@ -67,7 +67,7 @@ remain **Planned** under
 
 ## 4. Code generation
 
-[`clojure-codegen`](../crates/clojure-codegen/src/lib.rs) lowers analyzed
+[`clojure-codegen`](../src/compiler/clojure-codegen/src/lib.rs) lowers analyzed
 functions to Cranelift IR and emits one host object.
 
 - Every function has the `(self, argc, argv)` ABI.
@@ -89,11 +89,11 @@ default to `none`; benchmark methodology records them explicitly.
 ## 5. Runtime and link
 
 The fragments in
-[`crates/clojure-codegen/runtime/`](../crates/clojure-codegen/runtime/) are
+[`src/compiler/clojure-codegen/runtime/`](../src/compiler/clojure-codegen/runtime/) are
 amalgamated in the order documented by
-[`runtime_all.c`](../crates/clojure-codegen/runtime/runtime_all.c). The C driver
+[`runtime_all.c`](../src/compiler/clojure-codegen/runtime/runtime_all.c). The C driver
 selected by `CC` (or `cc`) compiles that translation unit and links it with the
-Cranelift object. [`runtime.c`](../crates/clojure-codegen/runtime.c) exposes the
+Cranelift object. [`runtime.c`](../src/compiler/clojure-codegen/runtime.c) exposes the
 same amalgamation to direct C runtime tests.
 
 The runtime implements:
@@ -115,7 +115,7 @@ authoritative cross-language contracts. The final executable contains no JVM or
 ## 6. Compiled core
 
 Before user code, the CLI loads
-[`core_compiled.clj`](../crates/clojure-native-cli/src/core_compiled.clj).
+[`core_compiled.clj`](../src/compiler/clojure-native-cli/src/core_compiled.clj).
 Its 26 documented functions use only the subset accepted by this pipeline.
 Collection transforms are eager rather than Clojure/JVM lazy sequences, and
 their docstrings state current arity and semantic limits.
@@ -124,7 +124,7 @@ their docstrings state current arity and semantic limits.
 
 The reader and analyzer use source spans to render file, line, and display
 column through
-[`clojure-diagnostics`](../crates/clojure-diagnostics/src/lib.rs). Build errors
+[`clojure-diagnostics`](../src/compiler/clojure-diagnostics/src/lib.rs). Build errors
 include malformed forms, unavailable symbols or primitives, invalid `recur`,
 and host linker failures. CLI-visible messages remain Portuguese.
 

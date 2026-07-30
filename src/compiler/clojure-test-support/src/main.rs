@@ -149,7 +149,7 @@ struct ReaderCoverageOptions {
 }
 
 fn parse_reader_coverage(args: &[String]) -> Result<ReaderCoverageOptions, String> {
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut options = ReaderCoverageOptions {
         root: repository.join("tests/conformance"),
         catalog: repository.join("specs/conformance/clojure-1.12.5-reader.toml"),
@@ -179,7 +179,7 @@ fn parse_reader_coverage(args: &[String]) -> Result<ReaderCoverageOptions, Strin
 }
 
 fn parse_common(args: &[String]) -> Result<Common, String> {
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut common = Common {
         root: repository.join("tests/conformance"),
         report_directory: repository.join("target/conformance"),

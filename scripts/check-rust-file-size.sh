@@ -43,6 +43,6 @@ while IFS= read -r -d '' absolute; do
       failed=1
     fi
   fi
-done < <(find "$root/crates" -type f -name '*.rs' -print0)
+done < <(find "$root/src/compiler" -type f -name '*.rs' -print0)
 
 if ((failed)); then exit 1; fi

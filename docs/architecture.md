@@ -13,16 +13,16 @@ and in the native runtime source.
 
 | Crate | Responsibility and internal reference |
 | --- | --- |
-| `clojure-span` | [UTF-8 source storage, byte spans, and display locations](../crates/clojure-span/src/lib.rs) |
-| `clojure-diagnostics` | [Stable diagnostic codes and deterministic rendering](../crates/clojure-diagnostics/src/lib.rs) |
-| `clojure-syntax` | [Spanned reader forms and metadata representation](../crates/clojure-syntax/src/lib.rs) |
-| `clojure-reader` | [Tokenization, reader macros, and form parsing](../crates/clojure-reader/src/lib.rs) |
-| `clojure-value` | [Bootstrap-interpreter values](../crates/clojure-value/src/lib.rs) |
-| `clojure-interp` | [Bootstrap evaluation and its boundary from the native ABI](../crates/clojure-interp/src/lib.rs) |
-| `clojure-analyzer` | [Expansion, lexical resolution, captures, `recur`, dispatch, and transient analysis](../crates/clojure-analyzer/src/lib.rs) |
-| `clojure-codegen` | [Cranelift lowering, GC frames, ABI imports, and object emission](../crates/clojure-codegen/src/lib.rs) |
-| `clojure-native-cli` | [`read`, `eval`, `run`, and the AOT build orchestration](../crates/clojure-native-cli/src/main.rs) |
-| `clojure-test-support` | [Fixture schema, isolation, comparisons, checksums, oracle, and reports](../crates/clojure-test-support/src/lib.rs) |
+| `clojure-span` | [UTF-8 source storage, byte spans, and display locations](../src/compiler/clojure-span/src/lib.rs) |
+| `clojure-diagnostics` | [Stable diagnostic codes and deterministic rendering](../src/compiler/clojure-diagnostics/src/lib.rs) |
+| `clojure-syntax` | [Spanned reader forms and metadata representation](../src/compiler/clojure-syntax/src/lib.rs) |
+| `clojure-reader` | [Tokenization, reader macros, and form parsing](../src/compiler/clojure-reader/src/lib.rs) |
+| `clojure-value` | [Bootstrap-interpreter values](../src/compiler/clojure-value/src/lib.rs) |
+| `clojure-interp` | [Bootstrap evaluation and its boundary from the native ABI](../src/compiler/clojure-interp/src/lib.rs) |
+| `clojure-analyzer` | [Expansion, lexical resolution, captures, `recur`, dispatch, and transient analysis](../src/compiler/clojure-analyzer/src/lib.rs) |
+| `clojure-codegen` | [Cranelift lowering, GC frames, ABI imports, and object emission](../src/compiler/clojure-codegen/src/lib.rs) |
+| `clojure-native-cli` | [`read`, `eval`, `run`, and the AOT build orchestration](../src/compiler/clojure-native-cli/src/main.rs) |
+| `clojure-test-support` | [Fixture schema, isolation, comparisons, checksums, oracle, and reports](../src/compiler/clojure-test-support/src/lib.rs) |
 
 ## Compilation flow
 
@@ -43,7 +43,7 @@ system C driver + amalgamated runtime ------> native executable
 ```
 
 The CLI prepends the
-[compiled `clojure.core` subset](../crates/clojure-native-cli/src/core_compiled.clj)
+[compiled `clojure.core` subset](../src/compiler/clojure-native-cli/src/core_compiled.clj)
 and analyzes it together with user forms. It then writes a temporary object and
 runtime translation unit, invokes the C compiler driver selected by `CC`, and
 removes those temporary files after linking. The precise stage contracts are
@@ -66,7 +66,7 @@ Every compiled function uses `(self, argc, argv)`. That uniform convention
 supports fixed, multiple, and variadic arities, closures, indirect calls, and
 `apply`. `loop`/`recur` lowers to a native backedge without growing the C stack.
 The source of truth for tags and layouts is
-[`00_types.c`](../crates/clojure-codegen/runtime/00_types.c); matching Rust
+[`00_types.c`](../src/compiler/clojure-codegen/runtime/00_types.c); matching Rust
 declarations carry `ABI:` comments in the codegen module.
 
 ## Collections
@@ -90,8 +90,8 @@ applicable specifications and ADRs.
 The embedded C runtime implements allocation, strings, printing, functions,
 collections, records, transients, exceptions, multimethods, I/O, the runtime
 reader, and slow paths. It is split into ordered subsystem fragments under
-[`crates/clojure-codegen/runtime/`](../crates/clojure-codegen/runtime/).
-[`runtime_all.c`](../crates/clojure-codegen/runtime/runtime_all.c) documents the
+[`src/compiler/clojure-codegen/runtime/`](../src/compiler/clojure-codegen/runtime/).
+[`runtime_all.c`](../src/compiler/clojure-codegen/runtime/runtime_all.c) documents the
 amalgamation order. The fragments still compile as one translation unit and do
 not introduce separate libraries, states, or ABIs.
 
@@ -115,7 +115,7 @@ elements follow normal construction.
 
 ## Verification architecture
 
-[`clojure-test-support`](../crates/clojure-test-support/src/lib.rs) discovers
+[`clojure-test-support`](../src/compiler/clojure-test-support/src/lib.rs) discovers
 every case below [`tests/conformance/`](../tests/conformance), validates the
 strict manifest schema and fixture checksum, and then filters cases for
 execution. Executable cases run in isolated temporary directories with bounded

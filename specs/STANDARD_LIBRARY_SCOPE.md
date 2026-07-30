@@ -8,7 +8,7 @@ entra hoje em `clojure-native build` do alvo de compatibilidade.
 
 - **P — Forma/primitiva de compilador:** reconhecida pelo analyzer/codegen.
 - **R — Runtime C:** toca representação, GC, coleções ou IO.
-- **C — Core em Clojure:** definido em `crates/clojure-native-cli/src/core_compiled.clj`.
+- **C — Core em Clojure:** definido em `src/compiler/clojure-native-cli/src/core_compiled.clj`.
 - **M — Macro conhecida:** expandida antes da análise.
 - **A — Adiada:** planejada, não executável.
 - **X — Incompatível:** dependente da JVM.

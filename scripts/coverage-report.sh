@@ -49,9 +49,9 @@ summarize() {
       regions: percent(($files | map(.summary.regions.covered) | add // 0); ($files | map(.summary.regions.count) | add // 0))
     };
     [ .data[].files[]
-      | select(.filename | test("/crates/[^/]+/src/"))
-      | . + {path: (.filename | capture(".*/(?<path>crates/[^/]+/src/.*)$").path)}
-      | . + {crate: (.path | capture("^crates/(?<crate>[^/]+)/").crate)}
+      | select(.filename | test("/src/compiler/[^/]+/src/"))
+      | . + {path: (.filename | capture(".*/(?<path>src/compiler/[^/]+/src/.*)$").path)}
+      | . + {crate: (.path | capture("^src/compiler/(?<crate>[^/]+)/").crate)}
     ] as $files
     | {
         version: 1,
@@ -108,8 +108,8 @@ check_diff() {
     ($changed | split("\n") | map(select(length > 0) | split(":"))
       | map({path: .[0], line: (.[1] | tonumber)})) as $changed_lines
     | [ .data[].files[]
-        | select(.filename | test("/crates/[^/]+/src/"))
-        | . + {path: (.filename | capture(".*/(?<path>crates/[^/]+/src/.*)$").path)}
+        | select(.filename | test("/src/compiler/[^/]+/src/"))
+        | . + {path: (.filename | capture(".*/(?<path>src/compiler/[^/]+/src/.*)$").path)}
       ] as $files
     | [ $changed_lines[] as $changed_line
         | $files[] | select(.path == $changed_line.path)

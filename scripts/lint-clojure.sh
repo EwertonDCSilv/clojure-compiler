@@ -29,8 +29,8 @@ cd "${repo_root}"
 # The two bootstrap cores intentionally define the same clojure.core vars with
 # different supported arities. Isolated runs prevent one implementation from
 # contaminating the other's analysis.
-lint_scope crates/clojure-interp/src/core.clj
-lint_scope crates/clojure-native-cli/src/core_compiled.clj
+lint_scope src/compiler/clojure-interp/src/core.clj
+lint_scope src/compiler/clojure-native-cli/src/core_compiled.clj
 
 # Conformance case inputs include deliberate syntax errors and expected failures.
 # Only the maintained JVM oracle belongs in the lint gate.

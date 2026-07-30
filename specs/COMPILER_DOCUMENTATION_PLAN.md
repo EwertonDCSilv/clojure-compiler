@@ -10,7 +10,7 @@ current, and of separating documentation changes from functional changes:
 - [GCC Internals](https://gcc.gnu.org/onlinedocs/gccint/)
 
 The scope includes all ten Rust crates, the native C runtime,
-`crates/clojure-native-cli/src/core_compiled.clj`, the command-line interface, conformance support,
+`src/compiler/clojure-native-cli/src/core_compiled.clj`, the command-line interface, conformance support,
 generators, and tests. This initiative does not change behavior, APIs, names, or
 architecture.
 
@@ -32,7 +32,7 @@ architecture.
 - Use `INVARIANT:`, `SAFETY:`, `ABI:`, and `GC:` consistently for critical
   contracts.
 - Add docstrings to all 26 functions in
-  `crates/clojure-native-cli/src/core_compiled.clj`, recording
+  `src/compiler/clojure-native-cli/src/core_compiled.clj`, recording
   semantics, eager or lazy behavior, limits, and deliberate differences from
   Clojure/JVM.
 - Document only implemented behavior. Future capability must be labeled
@@ -84,7 +84,7 @@ Detailed templates and review criteria live in
 
 ### 5. Orchestration and infrastructure
 
-- Document the CLI, `crates/clojure-native-cli/src/core_compiled.clj`,
+- Document the CLI, `src/compiler/clojure-native-cli/src/core_compiled.clj`,
   `clojure-test-support`, fixture
   schema, isolated execution, comparisons, checksums, oracle, and reports.
 - Document generators and tests by intent and contract without adding repetitive
@@ -102,7 +102,7 @@ Create `scripts/check-docs.sh` and the `make docs-check` target. The gate:
 - verifies structurally that Rust modules have module documentation, each C
   runtime fragment has a subsystem header, every C ABI function named `cljn_*`
   has a contract comment, and every `defn` in
-  `crates/clojure-native-cli/src/core_compiled.clj` has a
+  `src/compiler/clojure-native-cli/src/core_compiled.clj` has a
   docstring.
 
 `docs-check` is part of `make quality`, so the existing CI quality job enforces it

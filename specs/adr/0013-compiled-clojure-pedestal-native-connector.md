@@ -189,7 +189,7 @@ returns.
 ### 5. HTTP provider and parser
 
 The first provider is an in-tree C subsystem under
-`crates/clojure-codegen/runtime/http/`, amalgamated through the existing runtime build.
+`src/compiler/clojure-codegen/runtime/http/`, amalgamated through the existing runtime build.
 It uses POSIX sockets and `poll` on Linux x86_64.
 
 Bind addresses are IPv4 literals plus the explicit alias `localhost`; P1 performs no
@@ -274,11 +274,11 @@ the compiler gains a static, offline module graph.
 Compiler-owned sources live under:
 
 ```text
-stdlib/cljn/http/request.clj
-stdlib/cljn/http/response.clj
-stdlib/cljn/pedestal/chain.clj
-stdlib/cljn/pedestal/connector.clj
-stdlib/cljn/pedestal/route.clj
+src/stdlib/cljn/http/request.clj
+src/stdlib/cljn/http/response.clj
+src/stdlib/cljn/pedestal/chain.clj
+src/stdlib/cljn/pedestal/connector.clj
+src/stdlib/cljn/pedestal/route.clj
 ```
 
 The CLI resolves namespaces from:

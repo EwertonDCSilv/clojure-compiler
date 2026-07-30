@@ -15,6 +15,24 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
+- Remove the `prototypes/` folder (the `p01-cranelift-exe` disposable spike that
+  validated ADR-0001's Cranelift-to-native-executable backend question) and the
+  now-unused workspace `exclude` entry for it; `specs/IMPLEMENTATION_PLAN.md` keeps
+  documenting the Fase 0.3 methodology as a historical record.
+- Untrack four compiled build artifacts accidentally committed to the repository
+  root during early native-codegen development (`factorial-native-bigger`,
+  `loop-benchmark-native`, `sieve-native` ELF executables, and
+  `sieve_native.asm`), and add `.gitignore` entries preventing their
+  reintroduction.
+- Remove `kw.clj`, a leftover ad-hoc debugging scratch file with no references
+  elsewhere in the repository.
+- Move the `native_http_server.clj` runnable example from the repository root to
+  `examples/`, alongside the other example programs.
+- Move the compiler crates to `src/compiler/` and the standard library to
+  `src/stdlib/`, updating workspace members, size/coverage baselines, lint and
+  coverage scripts, conformance `tracking` pointers, and documentation to the new
+  layout. Behavior-preserving; `include_str!` module paths are unchanged because
+  both trees moved one level deeper together.
 - Refresh the documentation site conformance banner to the current matrix totals
   (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
 

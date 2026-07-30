@@ -264,12 +264,12 @@ the other 104 have a versioned first-blocker classification.
 | Path | Purpose |
 | --- | --- |
 | [`Makefile`](Makefile) | Build, quality, tests, compatibility, benchmarks, and Linux installation |
-| `crates/clojure-reader` | Reader and parser |
-| `crates/clojure-interp` | Bootstrap interpreter |
-| `crates/clojure-analyzer` | Analysis, macro expansion, closures, records, and protocols |
-| `crates/clojure-codegen` | Cranelift code generation and embedded C runtime |
-| `crates/clojure-native-cli` | `read`, `eval`, `run`, and `build` commands |
-| `crates/clojure-test-support` | Conformance runner, schema, oracle, and reports |
+| `src/compiler/clojure-reader` | Reader and parser |
+| `src/compiler/clojure-interp` | Bootstrap interpreter |
+| `src/compiler/clojure-analyzer` | Analysis, macro expansion, closures, records, and protocols |
+| `src/compiler/clojure-codegen` | Cranelift code generation and embedded C runtime |
+| `src/compiler/clojure-native-cli` | `read`, `eval`, `run`, and `build` commands |
+| `src/compiler/clojure-test-support` | Conformance runner, schema, oracle, and reports |
 | [`tests/conformance`](tests/conformance) | Executable A–E compatibility fixtures |
 | `examples` | Clojure examples and performance workloads |
 | `specs` | Language scope, runtime model, plans, risks, and ADRs |

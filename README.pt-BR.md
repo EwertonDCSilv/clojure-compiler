@@ -265,12 +265,12 @@ possuem classificação versionada do primeiro bloqueador.
 | Caminho | Responsabilidade |
 | --- | --- |
 | [`Makefile`](Makefile) | Build, qualidade, testes, compatibilidade, benchmarks e instalação Linux |
-| `crates/clojure-reader` | Reader e parser |
-| `crates/clojure-interp` | Interpretador de bootstrap |
-| `crates/clojure-analyzer` | Análise, expansão de macros, closures, records e protocolos |
-| `crates/clojure-codegen` | Codegen Cranelift e runtime C embutido |
-| `crates/clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
-| `crates/clojure-test-support` | Runner, schema, oracle e relatórios de conformidade |
+| `src/compiler/clojure-reader` | Reader e parser |
+| `src/compiler/clojure-interp` | Interpretador de bootstrap |
+| `src/compiler/clojure-analyzer` | Análise, expansão de macros, closures, records e protocolos |
+| `src/compiler/clojure-codegen` | Codegen Cranelift e runtime C embutido |
+| `src/compiler/clojure-native-cli` | Comandos `read`, `eval`, `run` e `build` |
+| `src/compiler/clojure-test-support` | Runner, schema, oracle e relatórios de conformidade |
 | [`tests/conformance`](tests/conformance) | Fixtures executáveis de compatibilidade A–E |
 | `examples` | Exemplos Clojure e cargas de desempenho |
 | `specs` | Escopo, modelo de runtime, planos, riscos e ADRs |

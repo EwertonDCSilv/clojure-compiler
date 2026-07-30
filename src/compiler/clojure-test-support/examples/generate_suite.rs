@@ -87,7 +87,7 @@ const PEDESTAL_PROJECT_FILES: &[(&str, &str)] = &[
 ];
 
 fn main() {
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let root = repository.join("tests/conformance");
     for fixture in fixtures() {
         write_fixture(&root, &fixture);
@@ -362,7 +362,7 @@ fn diagnostic(slug: &'static str, input: &'static str, code: &'static str) -> Fi
         "not-applicable",
         false,
         "The reader must reject malformed input with a stable category.",
-        "crates/clojure-reader/src/lib.rs",
+        "src/compiler/clojure-reader/src/lib.rs",
         None,
         input,
         Expected::Stderr(code),
@@ -499,7 +499,7 @@ fn build_error(slug: &'static str, input: &'static str, code: &'static str) -> F
         "not-applicable",
         false,
         "The analyzer must reject the invalid program with a stable category.",
-        "crates/clojure-analyzer/src/lib.rs",
+        "src/compiler/clojure-analyzer/src/lib.rs",
         None,
         input,
         Expected::Stderr(code),
@@ -519,7 +519,7 @@ fn core(slug: &'static str, body: &'static str, expected: &'static str) -> Fixtu
         "equal",
         false,
         "The function is compiled from the current embedded clojure.core subset; the case has normal, boundary, and alternate-input scenarios.",
-        "crates/clojure-native-cli/src/core_compiled.clj",
+        "src/compiler/clojure-native-cli/src/core_compiled.clj",
         Some("clojure.core"),
         body,
         Expected::Stdout(expected),
@@ -542,7 +542,7 @@ fn core_invalid_arity(slug: &'static str, function: &'static str) -> Fixture {
         "not-applicable",
         false,
         "The active function group includes an invalid-arity scenario with a stable compiler diagnostic.",
-        "crates/clojure-native-cli/src/core_compiled.clj",
+        "src/compiler/clojure-native-cli/src/core_compiled.clj",
         Some("clojure.core"),
         leak(format!(
             "(ns c.invalid-arity)\n(defn -main [] (println ({function})))\n(-main)\n"
