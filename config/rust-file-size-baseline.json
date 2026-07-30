@@ -8,29 +8,29 @@
   },
   "allowlist": {
     "src/compiler/clojure-analyzer/src/lib.rs": {
-      "lines": 2861,
+      "lines": 2789,
       "owner": "#109",
-      "reason": "planned cohesive extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
+      "reason": "cljn.io byte/stream/symlink/path primitives (#103); unit tests moved to tests/unit (#165); cohesive extraction still planned"
     },
     "src/compiler/clojure-codegen/src/ir_adapter.rs": {
-      "lines": 1366,
+      "lines": 1113,
       "owner": "#109",
-      "reason": "planned pass extraction"
+      "reason": "unit tests moved to tests/unit (#165); pass extraction still planned"
     },
     "src/compiler/clojure-codegen/src/lib.rs": {
-      "lines": 4137,
+      "lines": 3819,
       "owner": "#109",
-      "reason": "planned codegen extraction; grew with cljn.io byte/stream/symlink/path primitives (#103)"
+      "reason": "cljn.io byte/stream/symlink/path primitives (#103); unit tests moved to tests/unit (#165); codegen extraction still planned"
     },
     "src/compiler/clojure-interp/src/lib.rs": {
-      "lines": 889,
-      "owner": "#109",
-      "reason": "planned interpreter extraction"
+      "lines": 890,
+      "owner": "#165",
+      "reason": "external unit-test module declaration pending interpreter extraction"
     },
     "src/compiler/clojure-native-cli/src/main.rs": {
-      "lines": 610,
+      "lines": 583,
       "owner": "#109",
-      "reason": "planned CLI extraction"
+      "reason": "unit tests moved to tests/unit (#165); CLI extraction still planned"
     },
     "src/compiler/clojure-native-cli/tests/e2e.rs": {
       "lines": 1986,
@@ -48,9 +48,9 @@
       "reason": "planned fixture inventory split"
     },
     "src/compiler/clojure-test-support/src/lib.rs": {
-      "lines": 2726,
+      "lines": 1977,
       "owner": "#109",
-      "reason": "planned runner extraction"
+      "reason": "unit tests moved to tests/unit (#165); runner extraction still planned"
     },
     "src/compiler/clojure-value/src/lib.rs": {
       "lines": 614,

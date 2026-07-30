@@ -36,7 +36,7 @@ EXERCISM_COMPARISON_CSV ?= $(BENCHMARK_OUTPUT_DIR)/exercism-comparison.csv
 	help all ci quality docs-check pre-commit pre-push hooks-install agent-feature-guard \
 	build release check \
 	fmt fmt-check lint lint-files lint-rust lint-c lint-clojure \
-	test test-runtime test-runtime-sanitize test-agent-guard test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh coverage \
+	test test-runtime test-runtime-sanitize test-agent-guard test-unit-test-layout test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh coverage \
 	compatibility reader-syntax-coverage compatibility-list compatibility-oracle \
 	exercism-compatibility \
 	benchmarks benchmarks-cracking benchmarks-cormen benchmarks-cormen-ir benchmarks-exercism benchmarks-list \
@@ -164,11 +164,14 @@ lint-c:
 lint-clojure:
 	scripts/lint-clojure.sh
 
-test: test-agent-guard test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh
+test: test-agent-guard test-unit-test-layout test-benchmark-aggregation test-benchmark-charts test-ir-ab-analyzer test-rust-file-size test-cormen-build-gate test-coverage-report test-benchmark-page-refresh
 	$(CARGO) test --workspace
 
 test-agent-guard:
 	tests/scripts/check-agent-story-points.sh
+
+test-unit-test-layout:
+	tests/scripts/check-unit-test-layout.sh
 
 test-runtime:
 	scripts/test-runtime-c.sh

@@ -91,7 +91,8 @@ adapters (Cranelift, processo, filesystem, CLI)
   reexports para ocultar o ciclo.
 - Reexports preservam caminhos públicos existentes durante a migração. Mudança pública
   incompatível exige decisão própria e não é parte desta ADR.
-- Test helpers não entram em produção; ficam sob `#[cfg(test)]` ou em suporte de testes.
+- Test helpers não entram em produção; ficam em
+  `src/compiler/<crate>/tests/unit/<módulo>/mod.rs` ou no suporte compartilhado de testes.
 
 ### Limites de tamanho
 
