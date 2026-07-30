@@ -12,6 +12,10 @@ tags.
 
 - Release temporary GC roots when a function with no local root slots returns.
 
+### Changed
+- Refresh the documentation site conformance banner to the current matrix totals
+  (528 A–E cases, 372 active), replacing the earlier 460/186 snapshot.
+
 ### Added
 - Add the always-available `clojure.edn` namespace (issue #160) with native `read`
   and `read-string` over the runtime EDN reader (sets, catchable `:invalid-input`
