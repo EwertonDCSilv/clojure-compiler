@@ -8,6 +8,10 @@ Cargo.lock.orig
 *.obj
 /examples/*.out
 /hello
+/factorial-native-bigger
+/loop-benchmark-native
+/sieve-native
+/sieve_native.asm
 src/compiler/clojure-codegen/fuzz-corpus/
 # Clojure CLI classpath cache generated when resolving the HTTP benchmark deps.
 .cpcache/

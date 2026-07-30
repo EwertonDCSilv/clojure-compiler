@@ -15,6 +15,11 @@ tags.
 - Release temporary GC roots when a function with no local root slots returns.
 
 ### Changed
+- Untrack four compiled build artifacts accidentally committed to the repository
+  root during early native-codegen development (`factorial-native-bigger`,
+  `loop-benchmark-native`, `sieve-native` ELF executables, and
+  `sieve_native.asm`), and add `.gitignore` entries preventing their
+  reintroduction.
 - Remove `kw.clj`, a leftover ad-hoc debugging scratch file with no references
   elsewhere in the repository.
 - Move the `native_http_server.clj` runnable example from the repository root to
