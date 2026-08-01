@@ -7,10 +7,10 @@
     "generator": 1200
   },
   "allowlist": {
-    "src/compiler/clojure-analyzer/src/lib.rs": {
-      "lines": 2789,
-      "owner": "#109",
-      "reason": "cljn.io byte/stream/symlink/path primitives (#103); unit tests moved to tests/unit (#165); cohesive extraction still planned"
+    "src/compiler/clojure-analyzer/src/analysis.rs": {
+      "lines": 887,
+      "owner": "#112",
+      "reason": "Frame/Analyzer expression analyzer (scopes, captures, dispatch); deliberately kept as one cohesive unit rather than split artificially across private-field boundaries"
     },
     "src/compiler/clojure-codegen/src/ir_adapter.rs": {
       "lines": 1113,

@@ -21,6 +21,17 @@ tags.
   standard-library reorganization.
 
 ### Changed
+- Split `clojure-analyzer`'s 2789-line `lib.rs` into `ast` (backend AST and
+  primitive table), `top_level` (`def`/`defn`/`defrecord`/`defprotocol`/
+  `extend-type`/`defmulti`/`defmethod` recognition), `analysis` (the `Frame`/
+  `Analyzer` scope, capture, and expression-analysis core, kept as one
+  cohesive module), `optimizations` (the transient-accumulator rewrite), and
+  `primitives` (primitive name table and arity checks) (issue #112).
+  `lib.rs` is now a 37-line facade. No behavior change: 12/12 unit tests,
+  `make compatibility` (385 active, 0 failed, 0 unexpected), and a full
+  Cormen A/B gate (7 repetitions, scale 25, 30 cases) confirm identical
+  checksums across all cases and a median wall-time ratio of 1.03x, within
+  measurement noise for these short-running benchmarks.
 - Add 19 characterization tests for the bootstrap interpreter's `var` and
   `apply` special forms, user-function arity errors (fixed and variadic),
   malformed `let`/`loop` binding vectors, unbound-symbol resolution, `def`
