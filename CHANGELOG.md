@@ -8,6 +8,19 @@ tags.
 
 ## [Unreleased]
 
+### Changed
+- Split `clojure-codegen`'s 1113-line `ir_adapter.rs` into `escape` (functions
+  taken as a value), `facts` (the interprocedural fixed point proving which
+  method parameters are always fixnum), `scalar_lowering` (constant folding
+  of pure scalar islands through `clojure-ir`), and `specialization`
+  (fixnum-representation inference and AST specialization) (issue #118).
+  `ir_adapter.rs` is now a 93-line facade documenting pass order and
+  dependencies. No behavior change: 20/20 codegen unit tests, `make
+  compatibility` (385 active, 0 failed, 0 unexpected), and a full Cormen A/B
+  gate (7 repetitions, scale 25, 30 cases) confirm identical checksums
+  across all cases and a median wall-time ratio of 1.00x (0.94x-1.10x per
+  case, within measurement noise for these short-running benchmarks).
+
 ### Fixed
 
 - Force the C locale (`LC_ALL=C`) in `scripts/aggregate-benchmark-runs.sh` and its

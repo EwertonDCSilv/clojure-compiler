@@ -168,6 +168,23 @@ src/
 As constantes que precisam casar com `runtime.c` ficam numa única fronteira, com testes
 de contrato. Detalhes Cranelift não vazam para o analyzer.
 
+#### `ir_adapter` — extraído (issue #118)
+
+```text
+src/ir_adapter/
+├── (mod.rs = src/ir_adapter.rs)  # optimize_program: orquestra as 4 etapas
+├── escape.rs         # funções tomadas por valor (FnRef/MakeFn)
+├── facts.rs           # ponto fixo interprocedural de fatos de fixnum
+├── scalar_lowering.rs  # dobra constante de ilhas escalares via clojure-ir
+└── specialization.rs   # infer_representation e especialização de Ast
+```
+
+`facts` depende de `escape` (função escapada é tratada de forma conservadora) e de
+`specialization::infer_representation`/`loop_representations`. `scalar_lowering` e
+`specialization` são independentes entre si e de `facts`/`escape`. A ordem de passes
+em `optimize_program` (dobra escalar → fatos → especialização) é fixa e documentada no
+`//!` do módulo-fachada.
+
 ### `clojure-test-support`
 
 ```text
@@ -240,6 +257,9 @@ tratamento de erro deixa de ser “somente modularização” e recebe teste e c
 4. Extrair AST, formas de topo e auto-transient de `clojure-analyzer`. **Feito**
    (issue #112): `ast`/`top_level`/`analysis`/`optimizations`/`primitives`.
 5. Extrair opções, ABI, valores/rooting e lowering de `clojure-codegen`.
+   **Feito em parte** (issue #118): `ir_adapter` dividido em `escape`/`facts`/
+   `scalar_lowering`/`specialization`. `options`/`value`/`runtime_abi`/`module`/
+   `function`/`expression`/`roots`/`primitives`/`constants` seguem pendentes.
 6. Reavaliar `reader`, `interp` e testes E2E usando métricas após as primeiras etapas.
 7. Ativar o gate de tamanho com os baselines restantes na allowlist.
 
