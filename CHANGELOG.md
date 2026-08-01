@@ -14,6 +14,11 @@ tags.
   failures on `pt_BR.UTF-8` machines.
 
 ### Added
+- ADR-0018 D1: `gc_sp` register cache in `FnGen`. The shadow-stack pointer is now held
+  in a Cranelift `Variable` (register-allocated) and flushed to the global only once per
+  call site instead of once per `gc_push_val`/`gc_popn` call. `gc_leave` is also exempt
+  from the flush because it unconditionally overwrites `gc_sp` itself. Tracked by the new
+  `gc_sp_global_stores` counter in `OptimizationStats` (issue #181).
 - ADR-0018: shadow-stack micro-optimizations identified by OSACA 0.7.1 and llvm-mca 19
   (znver4) analysis of the `mark-multiples` inner loop. Finds AGU saturation (~15 cy),
   49% RAT stalls from integer PRF exhaustion, and proposes five decisions (D1–D5)

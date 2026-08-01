@@ -362,6 +362,7 @@ fn cmd_build(args: &[String]) -> ExitCode {
     }
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let status = std::process::Command::new(&cc)
+        .arg("-O3")
         .arg(&obj_path)
         .arg(&rt_path)
         .arg("-o")

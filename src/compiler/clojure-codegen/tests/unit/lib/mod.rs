@@ -312,6 +312,47 @@ fn default_optimization_remains_unoptimized_until_the_speed_gate_passes() {
 }
 
 #[test]
+fn adr18_d1_gc_sp_flushed_once_per_call_not_per_push() {
+    // Without D1 each gc_push_val stores gc_sp to the global, so 3 pushes
+    // before a call produce ≥ 3 stores.  With D1 a single flush before each
+    // call site reduces stores to at most 1 per call regardless of push count.
+    let function_name = "test/three-arg-assoc".to_string();
+    let program = Program {
+        functions: vec![clojure_analyzer::Function {
+            name: function_name.clone(),
+            methods: vec![FnMethod {
+                params: vec!["coll".into(), "k".into(), "v".into()],
+                rest: None,
+                body: Ast::Call {
+                    callee: Callee::Prim(Prim::Assoc),
+                    args: vec![Ast::Local(0), Ast::Local(1), Ast::Local(2)],
+                },
+                optimization: Default::default(),
+            }],
+            local_count: 3,
+            is_lambda: false,
+            dispatch: Dispatch::None,
+        }],
+        main_body: vec![Ast::Call {
+            callee: Callee::Fn(function_name),
+            args: vec![Ast::Str("key".into()), Ast::Int(1), Ast::Int(2)],
+        }],
+        main_local_count: 0,
+        global_count: 0,
+    };
+    let (_, stats) = compile_object_with_options_and_stats(&program, CodegenOptions::default())
+        .expect("should compile");
+    // D1: each call site flushes at most once; 3 consecutive pushes must not
+    // each store gc_sp separately.  Budget: at most 1 flush per call site
+    // across both the main body and the method body.
+    assert!(
+        stats.gc_sp_global_stores <= 4,
+        "D1 (ADR-0018): at most one gc_sp flush per call site; got {}",
+        stats.gc_sp_global_stores
+    );
+}
+
+#[test]
 fn codegen_diagnostics_use_stable_code() {
     let one = single("failure");
     assert_eq!(one.items[0].code, "E0120");
