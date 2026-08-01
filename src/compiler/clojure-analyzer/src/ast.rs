@@ -1,3 +1,7 @@
+//! Backend-oriented AST, primitive table, and closure-related structures
+//! produced by [`crate::analyze`]. Contains no source spans; user-facing
+//! diagnostics are emitted while `analysis` still owns the spanned forms.
+
 /// Backend-oriented expression in the compilable subset.
 ///
 /// Local and capture names have already been resolved to numeric slots. The AST

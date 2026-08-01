@@ -1,3 +1,7 @@
+//! Top-level form recognition: `def`, `defn`, `defrecord`, `defprotocol`,
+//! `extend-type`, `defmulti`, and `defmethod`, plus the `analyze`/
+//! `analyze_expanded` entry points that drive per-form analysis.
+
 use crate::analysis::*;
 use crate::ast::*;
 use crate::optimizations::*;

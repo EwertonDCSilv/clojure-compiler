@@ -19,6 +19,9 @@ tags.
 - Update the `tests/scripts/check-rust-file-size.sh` fixture to the `src/compiler/`
   layout (previously `crates/`), which the size gate now scans after the
   standard-library reorganization.
+- Add missing `//!` module documentation to the `clojure-analyzer` submodules
+  (`ast`, `top_level`, `analysis`, `optimizations`, `primitives`) introduced
+  by the issue #112 split, required by `scripts/check-docs.sh`.
 
 ### Changed
 - Split `clojure-analyzer`'s 2789-line `lib.rs` into `ast` (backend AST and

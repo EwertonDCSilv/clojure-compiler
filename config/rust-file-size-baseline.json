@@ -8,7 +8,7 @@
   },
   "allowlist": {
     "src/compiler/clojure-analyzer/src/analysis.rs": {
-      "lines": 887,
+      "lines": 892,
       "owner": "#112",
       "reason": "Frame/Analyzer expression analyzer (scopes, captures, dispatch); deliberately kept as one cohesive unit rather than split artificially across private-field boundaries"
     },

@@ -1,3 +1,6 @@
+//! Primitive name table and arity checks for the fixed set of backend
+//! primitives recognized directly by the analyzer.
+
 use crate::ast::*;
 use clojure_diagnostics::Diagnostic;
 use clojure_span::Span;

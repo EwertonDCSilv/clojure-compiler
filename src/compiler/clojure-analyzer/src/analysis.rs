@@ -1,3 +1,8 @@
+//! Scope, capture, and expression analysis: the `Frame`/`Analyzer` core
+//! that resolves lexical locals and captures, assigns closure-conversion
+//! frame slots, and validates call/`recur` arities. Kept as one cohesive
+//! module rather than split further across private-field boundaries.
+
 use crate::ast::*;
 use crate::primitives::*;
 use crate::top_level::*;

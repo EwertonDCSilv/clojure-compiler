@@ -1,3 +1,6 @@
+//! Transient-accumulator auto-optimization: rewrites eligible persistent
+//! accumulation loops into transient/`conj!`-based ones (ADR-0009/0010).
+
 use crate::ast::*;
 use std::collections::HashMap;
 
