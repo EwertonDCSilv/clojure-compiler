@@ -8,6 +8,22 @@ tags.
 
 ## [Unreleased]
 
+### Changed
+- Split `clojure-codegen`'s cold surface out of `lib.rs` into `options`
+  (`OptimizationLevel`/`IrOptimizationMode`/`IrExperiment`/`CodegenOptions`),
+  `stats` (`OptimizationStats`), `value` (`Flow`/`VKind`/`prim_fixnum_result`/
+  `prim_imm_result`), `runtime_abi` (`Runtime` and `declare_runtime`),
+  `constants` (ABI tag constants and `collect_strings`), and `diagnostics`
+  (`single`/`single_d`) (issue #113). `lib.rs` re-exports the previous public
+  API unchanged; no signature, symbol, layout, or ABI changed. `FnGen` (the
+  hot-path lowering, ~2.6k lines) is untouched and stays in `lib.rs`,
+  tracked by issue #114. No behavior change: 25/25 codegen unit/integration
+  tests, `make compatibility` (385 active, 0 failed, 0 unexpected), `make
+  test-runtime-sanitize`, `make docs-check`, and a full Cormen A/B gate (7
+  repetitions, scale 25, 30 cases) confirm identical checksums across all
+  cases and a median wall-time ratio of 1.00x (0.89x-1.06x per case,
+  noise-level for these short-running benchmarks).
+
 ### Fixed
 
 - Force the C locale (`LC_ALL=C`) in `scripts/aggregate-benchmark-runs.sh` and its

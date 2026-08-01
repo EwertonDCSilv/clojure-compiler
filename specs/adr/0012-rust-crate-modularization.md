@@ -168,6 +168,18 @@ src/
 As constantes que precisam casar com `runtime.c` ficam numa única fronteira, com testes
 de contrato. Detalhes Cranelift não vazam para o analyzer.
 
+#### Superfície fria e ABI — extraído (issue #113)
+
+`options.rs` (`OptimizationLevel`/`IrOptimizationMode`/`IrExperiment`/`CodegenOptions`),
+`stats.rs` (`OptimizationStats`), `value.rs` (`Flow`/`VKind`/`prim_fixnum_result`/
+`prim_imm_result`), `runtime_abi.rs` (`Runtime` e `declare_runtime`), `constants.rs`
+(tags ABI e `collect_strings`) e `diagnostics.rs` (`single`/`single_d`) já existem como
+módulos independentes, seguindo exatamente a proposta acima. `lib.rs` reexporta a API
+pública anterior (`CodegenOptions`, `OptimizationStats`, `OptimizationLevel`,
+`IrOptimizationMode`, `IrExperiment`) e mantém `FnGen` (o hot path de lowering, ~2.6k
+linhas) intacto — sua divisão em `module`/`function`/`expression`/`roots`/`primitives`
+é o escopo da issue #114.
+
 ### `clojure-test-support`
 
 ```text
@@ -240,6 +252,9 @@ tratamento de erro deixa de ser “somente modularização” e recebe teste e c
 4. Extrair AST, formas de topo e auto-transient de `clojure-analyzer`. **Feito**
    (issue #112): `ast`/`top_level`/`analysis`/`optimizations`/`primitives`.
 5. Extrair opções, ABI, valores/rooting e lowering de `clojure-codegen`.
+   **Feito em parte** (issue #113): `options`/`stats`/`value`/`runtime_abi`/
+   `constants`/`diagnostics`. `FnGen` (rooting e lowering, hot path) segue
+   pendente (issue #114).
 6. Reavaliar `reader`, `interp` e testes E2E usando métricas após as primeiras etapas.
 7. Ativar o gate de tamanho com os baselines restantes na allowlist.
 
