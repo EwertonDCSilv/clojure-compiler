@@ -128,24 +128,26 @@ responsabilidades e frequência de mudança antes de exigir divisão.
 Os nomes abaixo orientam a primeira extração; podem ser refinados sem alterar os
 princípios desta ADR.
 
-### `clojure-analyzer`
+### `clojure-analyzer` — extraído (issue #112)
 
 ```text
 src/
-├── lib.rs              # fachada: analyze e reexports
-├── ast.rs              # Ast, Prim, Function, Program e Dispatch
-├── top_level.rs        # defn, defrecord, protocol, multimethod e ns
-├── analyzer.rs         # Frame, slots, capturas e análise de expressões
-├── arity.rs            # parâmetros, aridades e validação de chamadas
-├── primitives.rs       # resolução e aridade das primitivas
-├── optimizations/
-│   ├── mod.rs
-│   └── transients.rs   # análise linear e auto-transient
-└── expand.rs           # expansão já isolada
+├── lib.rs              # fachada: analyze, reexports e imports de teste
+├── ast.rs               # Ast, Callee, Prim, Function, Program e Dispatch
+├── top_level.rs          # defn, defrecord, protocol, multimethod e ns
+├── analysis.rs            # Frame, Analyzer, arity_accepts: escopos, capturas e
+│                           #   análise de expressões (núcleo coeso, não fatiado
+│                           #   mais — campos privados o tornariam artificial)
+├── primitives.rs           # prim_of, prim_value_arity, check_prim_arity
+├── optimizations.rs         # análise linear e auto-transient de acumuladores
+└── expand.rs                # expansão já isolada
 ```
 
 O modelo da AST não depende do analyzer. Otimizações consomem e produzem AST, mas não
-participam do reconhecimento das formas de topo.
+participam do reconhecimento das formas de topo. Não há `arity.rs` separado: a
+validação de aridade de chamadas de usuário (`arity_accepts`) está acoplada aos
+frames/escopos de `analysis.rs`; separá-la exigiria tornar campos de `Analyzer`
+públicos ao crate sem um ganho de coesão correspondente.
 
 ### `clojure-codegen`
 
@@ -235,7 +237,8 @@ tratamento de erro deixa de ser “somente modularização” e recebe teste e c
 2. Separar a DSL e os níveis do gerador da conformidade; é o maior arquivo e tem
    fronteiras declarativas claras.
 3. Separar schema, execução, comparação e oracle de `clojure-test-support`.
-4. Extrair AST, formas de topo e auto-transient de `clojure-analyzer`.
+4. Extrair AST, formas de topo e auto-transient de `clojure-analyzer`. **Feito**
+   (issue #112): `ast`/`top_level`/`analysis`/`optimizations`/`primitives`.
 5. Extrair opções, ABI, valores/rooting e lowering de `clojure-codegen`.
 6. Reavaliar `reader`, `interp` e testes E2E usando métricas após as primeiras etapas.
 7. Ativar o gate de tamanho com os baselines restantes na allowlist.
