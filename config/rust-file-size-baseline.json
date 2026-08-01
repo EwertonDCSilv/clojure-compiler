@@ -18,9 +18,9 @@
       "reason": "unit tests moved to tests/unit (#165); pass extraction still planned"
     },
     "src/compiler/clojure-codegen/src/lib.rs": {
-      "lines": 3819,
-      "owner": "#109",
-      "reason": "cljn.io byte/stream/symlink/path primitives (#103); unit tests moved to tests/unit (#165); codegen extraction still planned"
+      "lines": 2977,
+      "owner": "#113",
+      "reason": "options/stats/value/runtime_abi/constants/diagnostics extracted; FnGen hot-path lowering remains (#114)"
     },
     "src/compiler/clojure-interp/src/lib.rs": {
       "lines": 890,
