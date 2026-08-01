@@ -8,6 +8,12 @@ tags.
 
 ## [Unreleased]
 
+### Added
+- ADR-0018: shadow-stack micro-optimizations identified by OSACA 0.7.1 and llvm-mca 19
+  (znver4) analysis of the `mark-multiples` inner loop. Finds AGU saturation (~15 cy),
+  49% RAT stalls from integer PRF exhaustion, and proposes five decisions (D1–D5)
+  targeting `gc_sp` register caching as the primary lever (issue #181).
+
 ### Changed
 - Split `clojure-codegen`'s cold surface out of `lib.rs` into `options`
   (`OptimizationLevel`/`IrOptimizationMode`/`IrExperiment`/`CodegenOptions`),
