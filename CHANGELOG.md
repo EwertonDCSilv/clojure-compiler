@@ -8,6 +8,11 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+- `scripts/render-benchmark-page-data.sh`: pin `LC_NUMERIC=C` so awk uses `.` as the
+  decimal separator regardless of the system locale; fixes `test-benchmark-page-refresh`
+  failures on `pt_BR.UTF-8` machines.
+
 ### Added
 - ADR-0018: shadow-stack micro-optimizations identified by OSACA 0.7.1 and llvm-mca 19
   (znver4) analysis of the `mark-multiples` inner loop. Finds AGU saturation (~15 cy),

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Render the benchmark values consumed by docs/index.html from comparison CSVs.
 set -euo pipefail
+export LC_NUMERIC=C
 
 if [[ "$#" -ne 4 ]]; then
   printf '%s\n' \
