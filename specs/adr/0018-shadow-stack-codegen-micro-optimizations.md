@@ -327,3 +327,31 @@ This decision is implemented when:
 4. all 30 Cormen checksums remain unchanged;
 5. the Cormen paired gate does not show an aggregate regression; and
 6. ADR-0009 is updated with a new snapshot section covering the post-D1–D5 run.
+
+## 11. Lessons (issue #181, D1 regression)
+
+D1's first landing (`ac41991`) initialized the cached `gc_sp` `Variable` lazily, on
+the first `read_sp`/`write_sp` reached while emitting a function body. For a body
+shaped like `(if p base (f (dec n) (cons n acc)))`, that first use fell inside the
+recursive arm only; the "load `gc_sp` from the global" instruction existed on that
+Cranelift block alone. A `flush_sp()` reachable from the sibling arm read an
+undefined/stale value there and overwrote the global with it, desynchronizing it
+from the real root-stack depth. Under `CLJN_GC_STRESS=1` this let the collector free
+live roots, corrupting the heap into a self-referencing structure and hanging in an
+infinite loop.
+
+§9's acceptance list named `make test-runtime-sanitize` as the `CLJN_GC_STRESS=1`
+gate for D1, but that target only runs the C-side harness in
+`src/compiler/clojure-codegen/tests/c/` — it never compiles or runs a Clojure
+program, so it cannot observe a codegen-side rooting bug. The actual gate that
+catches this class of bug is `cargo test -p clojure-native-cli`
+(`gc_correctness_under_stress`, `native_connector_bodies_and_gc_stress`), which was
+not run before `ac41991` merged. Fixed in a follow-up commit by calling
+`ensure_sp_var()` unconditionally in `enter_planned_frame`, which runs in every
+function's entry block and therefore dominates every later use.
+
+Any future decision that caches runtime-visible state (`gc_sp` or otherwise) in a
+`Variable` must initialize it in the function's entry block, before any branch, not
+lazily on first use. See
+[CODEGEN_GC_SAFETY_GATES.md](../CODEGEN_GC_SAFETY_GATES.md) for the full gate
+proposal this incident produced.

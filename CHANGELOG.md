@@ -39,6 +39,13 @@ tags.
   fix are now correctly active.
 
 ### Added
+- `specs/CODEGEN_GC_SAFETY_GATES.md`: gate proposal produced by the #181 D1
+  `gc_sp` regression investigation — an explicit E2E/`CLJN_GC_STRESS=1` gate
+  requirement for rooting-adjacent codegen changes, a characterization test
+  covering the exact conditional-branch shape that hid the bug, a
+  `ulimit -v`/`timeout` wrapper script for manual GC-stress reproduction, and a
+  future structural (CLIF-dominance) test. ADR-0018 gets a matching "Lessons"
+  section (§11).
 - ADR-0018 D1: `gc_sp` register cache in `FnGen`. The shadow-stack pointer is now held
   in a Cranelift `Variable` (register-allocated) and flushed to the global only once per
   call site instead of once per `gc_push_val`/`gc_popn` call. `gc_leave` is also exempt
