@@ -21,6 +21,22 @@ tags.
 - `scripts/render-benchmark-page-data.sh`: pin `LC_NUMERIC=C` so awk uses `.` as the
   decimal separator regardless of the system locale; fixes `test-benchmark-page-refresh`
   failures on `pt_BR.UTF-8` machines.
+- ADR-0018 D1's `gc_sp` Cranelift-`Variable` cache: `ensure_sp_var` initialized the
+  cache lazily, on the first `read_sp`/`write_sp` encountered while emitting a
+  function body. When that first use fell inside one arm of a conditional (a
+  common shape: `(if p base (f (dec n) (cons n acc)))`), the "load `gc_sp` from
+  the global" instruction existed only on that arm's path; a `flush_sp()` reached
+  from a sibling arm read an undefined/stale value and overwrote the global with
+  it, desynchronizing it from the real root-stack depth. Under `CLJN_GC_STRESS=1`
+  (collect on every allocation) this let the collector free roots the program
+  still depended on, corrupting the heap and hanging in an infinite loop on the
+  corrupted structure. Fixed by calling `ensure_sp_var` unconditionally in
+  `enter_planned_frame`, which runs in every function's entry block and so
+  dominates every later use. Caught by `gc_correctness_under_stress` and
+  `native_connector_bodies_and_gc_stress` in `clojure-native-cli`'s E2E suite
+  (both green after the fix); `adr18_d1_gc_sp_flushed_once_per_call_not_per_push`'s
+  budget was raised (4→8) since flush sites that were silently no-ops before the
+  fix are now correctly active.
 
 ### Added
 - ADR-0018 D1: `gc_sp` register cache in `FnGen`. The shadow-stack pointer is now held

@@ -942,7 +942,18 @@ impl<'a> FnGen<'a> {
     }
 
     /// GC: enters a frame unless zero fixed slots and a balanced result prove it redundant.
+    ///
+    /// D1 (ADR-0018): initializes the cached `gc_sp` variable unconditionally here,
+    /// in the function's entry block, which every other block is dominated by.
+    /// `ensure_sp_var` is otherwise lazy (first `read_sp`/`write_sp` wins), and a
+    /// lazy first use inside one arm of a conditional does not dominate uses in a
+    /// sibling arm or after the merge; Cranelift's SSA construction then resolves
+    /// those undominated uses to a stale or zero value, silently desynchronizing
+    /// the global `gc_sp` from actual root-stack depth (GC: this was reachable
+    /// with `CLJN_GC_STRESS=1`, which collects on a live stack whose reported
+    /// depth is wrong, freeing depended-upon roots and corrupting the heap).
     fn enter_planned_frame(&mut self, result_rooted: bool) {
+        self.ensure_sp_var();
         if !gc_frame::needs_gc_frame(self.root_slots.len(), result_rooted) {
             return;
         }
