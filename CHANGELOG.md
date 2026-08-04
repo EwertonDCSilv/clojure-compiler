@@ -8,6 +8,23 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+- `benchmarks/cracking/run.sh` and `benchmarks/cracking/compare-clojure.sh` (shared
+  by `benchmarks/cormen/` and `benchmarks/exercism/` via `exec`): pin `LC_ALL=C` so
+  `/usr/bin/time` and `awk` emit `.` as the decimal separator regardless of the host
+  locale. Under `pt_BR.UTF-8`, both emitted `,` instead, corrupting the
+  comma-separated CSV columns they write to (`extreme.csv`) and cascading into
+  `60 comparação(ões) falharam` from the aggregator's column-count check. This is
+  the root-cause fix for the same class of bug already patched downstream in
+  `scripts/aggregate-benchmark-runs.sh` and `scripts/render-benchmark-page-data.sh`;
+  those measure/render already-corrupted input, they don't produce it.
+
+### Changed
+- Refresh `benchmarks/*/results/extreme.csv`, their charts, and
+  `docs/assets/benchmarks/` from a clean 10-round run (native `-O3` link +
+  D1 `gc_sp` fix): the published dashboard now reflects the current
+  compiler on all three suites (cracking, Cormen/CLRS, exercism).
+
 ### Performance
 - Link the generated object against the embedded C runtime with `-O3`
   (`clojure-native-cli`'s `cc` invocation previously passed no optimization

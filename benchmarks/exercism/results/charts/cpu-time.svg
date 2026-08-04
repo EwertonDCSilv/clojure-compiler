@@ -14,7 +14,7 @@
   <rect width="1500" height="442" rx="16" fill="#0f172a"/>
   <text x="24" y="42" class="title">Exercism · n=8 · CPU</text>
   <text x="24" y="70" class="subtitle">ratio = JVM / CLJN · log₂</text>
-  <text x="24" y="101" class="summary">Σ CLJN 35.00 s · JVM 12.47 s · W CLJN/JVM/= 3/5/0</text>
+  <text x="24" y="101" class="summary">Σ CLJN 18.58 s · JVM 12.68 s · W CLJN/JVM/= 4/4/0</text>
   <rect x="24" y="122" width="14" height="14" rx="3" fill="#34d399"/>
 <text x="46" y="134" class="subtitle">CLJN</text>
 <rect x="132" y="122" width="14" height="14" rx="3" fill="#fb923c"/>
@@ -44,42 +44,42 @@
   <rect x="12" y="196" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="196" x2="1488" y2="196" stroke="#1e293b"/>
   <text x="24" y="208.0" class="label" dominant-baseline="middle">01-practice/01-accumulate.clj</text>
-  <rect x="930.0" y="202.0" width="24.2" height="12" rx="4" fill="#34d399"><title>01-practice/01-accumulate.clj: CLJN 0.90 s; JVM 1.19 s; CLJN 1.32×</title></rect>
-  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 1.32×</text>
+  <rect x="930.0" y="202.0" width="62.6" height="12" rx="4" fill="#34d399"><title>01-practice/01-accumulate.clj: CLJN 0.58 s; JVM 1.21 s; CLJN 2.06×</title></rect>
+  <text x="1310" y="208.0" class="value" dominant-baseline="middle">CLJN 2.06×</text>
   <rect x="12" y="220" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="220" x2="1488" y2="220" stroke="#1e293b"/>
   <text x="24" y="232.0" class="label" dominant-baseline="middle">01-practice/02-binary-search.clj</text>
-  <rect x="930.0" y="226.0" width="36.1" height="12" rx="4" fill="#34d399"><title>01-practice/02-binary-search.clj: CLJN 0.58 s; JVM 0.88 s; CLJN 1.52×</title></rect>
-  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 1.52×</text>
+  <rect x="930.0" y="226.0" width="107.1" height="12" rx="4" fill="#34d399"><title>01-practice/02-binary-search.clj: CLJN 0.27 s; JVM 0.93 s; CLJN 3.44×</title></rect>
+  <text x="1310" y="232.0" class="value" dominant-baseline="middle">CLJN 3.44×</text>
   <rect x="12" y="244" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="244" x2="1488" y2="244" stroke="#1e293b"/>
   <text x="24" y="256.0" class="label" dominant-baseline="middle">01-practice/03-hello-world.clj</text>
-  <rect x="921.4" y="250.0" width="8.6" height="12" rx="4" fill="#fb923c"><title>01-practice/03-hello-world.clj: CLJN 0.79 s; JVM 0.71 s; JVM 1.10×</title></rect>
-  <text x="1310" y="256.0" class="value" dominant-baseline="middle">JVM 1.10×</text>
+  <rect x="930.0" y="250.0" width="43.1" height="12" rx="4" fill="#34d399"><title>01-practice/03-hello-world.clj: CLJN 0.47 s; JVM 0.77 s; CLJN 1.65×</title></rect>
+  <text x="1310" y="256.0" class="value" dominant-baseline="middle">CLJN 1.65×</text>
   <rect x="12" y="268" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="268" x2="1488" y2="268" stroke="#1e293b"/>
   <text x="24" y="280.0" class="label" dominant-baseline="middle">01-practice/04-knapsack.clj</text>
-  <rect x="837.0" y="274.0" width="93.0" height="12" rx="4" fill="#fb923c"><title>01-practice/04-knapsack.clj: CLJN 5.25 s; JVM 1.79 s; JVM 2.93×</title></rect>
-  <text x="1310" y="280.0" class="value" dominant-baseline="middle">JVM 2.93×</text>
+  <rect x="874.2" y="274.0" width="55.8" height="12" rx="4" fill="#fb923c"><title>01-practice/04-knapsack.clj: CLJN 3.38 s; JVM 1.77 s; JVM 1.90×</title></rect>
+  <text x="1310" y="280.0" class="value" dominant-baseline="middle">JVM 1.90×</text>
   <rect x="12" y="292" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="292" x2="1488" y2="292" stroke="#1e293b"/>
   <text x="24" y="304.0" class="label" dominant-baseline="middle">01-practice/05-prime-factors.clj</text>
-  <rect x="795.8" y="298.0" width="134.2" height="12" rx="4" fill="#fb923c"><title>01-practice/05-prime-factors.clj: CLJN 18.82 s; JVM 4.00 s; JVM 4.71×</title></rect>
-  <text x="1310" y="304.0" class="value" dominant-baseline="middle">JVM 4.71×</text>
+  <rect x="861.0" y="298.0" width="69.0" height="12" rx="4" fill="#fb923c"><title>01-practice/05-prime-factors.clj: CLJN 8.97 s; JVM 4.04 s; JVM 2.22×</title></rect>
+  <text x="1310" y="304.0" class="value" dominant-baseline="middle">JVM 2.22×</text>
   <rect x="12" y="316" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="316" x2="1488" y2="316" stroke="#1e293b"/>
   <text x="24" y="328.0" class="label" dominant-baseline="middle">01-practice/06-square-root.clj</text>
-  <rect x="930.0" y="322.0" width="105.2" height="12" rx="4" fill="#34d399"><title>01-practice/06-square-root.clj: CLJN 0.23 s; JVM 0.78 s; CLJN 3.37×</title></rect>
-  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 3.37×</text>
+  <rect x="930.0" y="322.0" width="128.6" height="12" rx="4" fill="#34d399"><title>01-practice/06-square-root.clj: CLJN 0.18 s; JVM 0.80 s; CLJN 4.42×</title></rect>
+  <text x="1310" y="328.0" class="value" dominant-baseline="middle">CLJN 4.42×</text>
   <rect x="12" y="340" width="1476" height="24" fill="#111c2e"/>
   <line x1="12" y1="340" x2="1488" y2="340" stroke="#1e293b"/>
   <text x="24" y="352.0" class="label" dominant-baseline="middle">01-practice/07-two-fer.clj</text>
-  <rect x="864.4" y="346.0" width="65.6" height="12" rx="4" fill="#fb923c"><title>01-practice/07-two-fer.clj: CLJN 2.86 s; JVM 1.34 s; JVM 2.13×</title></rect>
-  <text x="1310" y="352.0" class="value" dominant-baseline="middle">JVM 2.13×</text>
+  <rect x="904.1" y="346.0" width="25.9" height="12" rx="4" fill="#fb923c"><title>01-practice/07-two-fer.clj: CLJN 1.80 s; JVM 1.33 s; JVM 1.35×</title></rect>
+  <text x="1310" y="352.0" class="value" dominant-baseline="middle">JVM 1.35×</text>
   <rect x="12" y="364" width="1476" height="24" fill="#0f172a"/>
   <line x1="12" y1="364" x2="1488" y2="364" stroke="#1e293b"/>
   <text x="24" y="376.0" class="label" dominant-baseline="middle">02-concept/01-annalyns-infiltration.clj</text>
-  <rect x="831.6" y="370.0" width="98.4" height="12" rx="4" fill="#fb923c"><title>02-concept/01-annalyns-infiltration.clj: CLJN 5.57 s; JVM 1.78 s; JVM 3.12×</title></rect>
-  <text x="1310" y="376.0" class="value" dominant-baseline="middle">JVM 3.12×</text>
+  <rect x="889.5" y="370.0" width="40.5" height="12" rx="4" fill="#fb923c"><title>02-concept/01-annalyns-infiltration.clj: CLJN 2.93 s; JVM 1.83 s; JVM 1.60×</title></rect>
+  <text x="1310" y="376.0" class="value" dominant-baseline="middle">JVM 1.60×</text>
   <text x="24" y="422" class="footer">log₂ · ratio = JVM / CLJN · * CLJN &lt; 0.01 s</text>
 </svg>
