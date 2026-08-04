@@ -8,6 +8,71 @@ tags.
 
 ## [Unreleased]
 
+### Fixed
+- `benchmarks/cracking/run.sh` and `benchmarks/cracking/compare-clojure.sh` (shared
+  by `benchmarks/cormen/` and `benchmarks/exercism/` via `exec`): pin `LC_ALL=C` so
+  `/usr/bin/time` and `awk` emit `.` as the decimal separator regardless of the host
+  locale. Under `pt_BR.UTF-8`, both emitted `,` instead, corrupting the
+  comma-separated CSV columns they write to (`extreme.csv`) and cascading into
+  `60 comparação(ões) falharam` from the aggregator's column-count check. This is
+  the root-cause fix for the same class of bug already patched downstream in
+  `scripts/aggregate-benchmark-runs.sh` and `scripts/render-benchmark-page-data.sh`;
+  those measure/render already-corrupted input, they don't produce it.
+
+### Changed
+- Refresh `benchmarks/*/results/extreme.csv`, their charts, and
+  `docs/assets/benchmarks/` from a clean 10-round run (native `-O3` link +
+  D1 `gc_sp` fix): the published dashboard now reflects the current
+  compiler on all three suites (cracking, Cormen/CLRS, exercism).
+
+### Performance
+- Link the generated object against the embedded C runtime with `-O3`
+  (`clojure-native-cli`'s `cc` invocation previously passed no optimization
+  flag at all, so `RUNTIME_C` — GC, collections, arithmetic, dispatch, I/O —
+  always built at the compiler's default `-O0`). A full Cormen A/B gate (7
+  repetitions, scale 25, 30 cases, otherwise identical binaries) shows a
+  median wall-time ratio of 0.77x (23% faster), ranging 0.56x-0.93x per
+  case, with 0 checksum mismatches.
+
+### Fixed
+- `scripts/render-benchmark-page-data.sh`: pin `LC_NUMERIC=C` so awk uses `.` as the
+  decimal separator regardless of the system locale; fixes `test-benchmark-page-refresh`
+  failures on `pt_BR.UTF-8` machines.
+- ADR-0018 D1's `gc_sp` Cranelift-`Variable` cache: `ensure_sp_var` initialized the
+  cache lazily, on the first `read_sp`/`write_sp` encountered while emitting a
+  function body. When that first use fell inside one arm of a conditional (a
+  common shape: `(if p base (f (dec n) (cons n acc)))`), the "load `gc_sp` from
+  the global" instruction existed only on that arm's path; a `flush_sp()` reached
+  from a sibling arm read an undefined/stale value and overwrote the global with
+  it, desynchronizing it from the real root-stack depth. Under `CLJN_GC_STRESS=1`
+  (collect on every allocation) this let the collector free roots the program
+  still depended on, corrupting the heap and hanging in an infinite loop on the
+  corrupted structure. Fixed by calling `ensure_sp_var` unconditionally in
+  `enter_planned_frame`, which runs in every function's entry block and so
+  dominates every later use. Caught by `gc_correctness_under_stress` and
+  `native_connector_bodies_and_gc_stress` in `clojure-native-cli`'s E2E suite
+  (both green after the fix); `adr18_d1_gc_sp_flushed_once_per_call_not_per_push`'s
+  budget was raised (4→8) since flush sites that were silently no-ops before the
+  fix are now correctly active.
+
+### Added
+- `specs/CODEGEN_GC_SAFETY_GATES.md`: gate proposal produced by the #181 D1
+  `gc_sp` regression investigation — an explicit E2E/`CLJN_GC_STRESS=1` gate
+  requirement for rooting-adjacent codegen changes, a characterization test
+  covering the exact conditional-branch shape that hid the bug, a
+  `ulimit -v`/`timeout` wrapper script for manual GC-stress reproduction, and a
+  future structural (CLIF-dominance) test. ADR-0018 gets a matching "Lessons"
+  section (§11).
+- ADR-0018 D1: `gc_sp` register cache in `FnGen`. The shadow-stack pointer is now held
+  in a Cranelift `Variable` (register-allocated) and flushed to the global only once per
+  call site instead of once per `gc_push_val`/`gc_popn` call. `gc_leave` is also exempt
+  from the flush because it unconditionally overwrites `gc_sp` itself. Tracked by the new
+  `gc_sp_global_stores` counter in `OptimizationStats` (issue #181).
+- ADR-0018: shadow-stack micro-optimizations identified by OSACA 0.7.1 and llvm-mca 19
+  (znver4) analysis of the `mark-multiples` inner loop. Finds AGU saturation (~15 cy),
+  49% RAT stalls from integer PRF exhaustion, and proposes five decisions (D1–D5)
+  targeting `gc_sp` register caching as the primary lever (issue #181).
+
 ### Changed
 - Split `clojure-codegen`'s cold surface out of `lib.rs` into `options`
   (`OptimizationLevel`/`IrOptimizationMode`/`IrExperiment`/`CodegenOptions`),

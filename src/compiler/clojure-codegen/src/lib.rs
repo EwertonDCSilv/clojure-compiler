@@ -404,6 +404,11 @@ struct FnGen<'a> {
     recur_targets: Vec<RecurTarget>,
     /// Raw shadow-stack frame base established at function entry.
     frame_base: Option<Variable>,
+    /// Cached `gc_sp` value (D1, ADR-0018): loaded once per function from the
+    /// global and updated locally on each push/pop.  Flushed to the global
+    /// before every call that may trigger GC; reloaded after calls that modify
+    /// the global (e.g. `cljn_spread_args`).
+    gc_sp_var: Option<Variable>,
     /// Compact source-local to shadow-stack slot mapping.
     root_slots: HashMap<u32, u32>,
     /// Current closure `self`, used to read capture slots.
@@ -444,6 +449,7 @@ impl<'a> FnGen<'a> {
             raw_fixnum_slots: HashSet::new(),
             recur_targets: Vec::new(),
             frame_base: None,
+            gc_sp_var: None,
             root_slots: HashMap::new(),
             self_var: None,
             next_const,
@@ -800,6 +806,53 @@ impl<'a> FnGen<'a> {
         Ok(v)
     }
 
+    // -- D1 (ADR-0018): cached gc_sp register ---------------------------------
+    /// Returns the Cranelift variable that caches `gc_sp`, initializing it on
+    /// first use by loading from the global.
+    fn ensure_sp_var(&mut self) -> Variable {
+        if let Some(v) = self.gc_sp_var {
+            return v;
+        }
+        let v = self.builder.declare_var(types::I64);
+        let sp_addr = self.addr_gc_sp();
+        let sp = self
+            .builder
+            .ins()
+            .load(types::I64, M::trusted(), sp_addr, 0);
+        self.builder.def_var(v, sp);
+        self.gc_sp_var = Some(v);
+        v
+    }
+    fn read_sp(&mut self) -> CValue {
+        let v = self.ensure_sp_var();
+        self.builder.use_var(v)
+    }
+    fn write_sp(&mut self, val: CValue) {
+        let v = self.ensure_sp_var();
+        self.builder.def_var(v, val);
+    }
+    /// Stores the cached `gc_sp` to the global so that GC or callee functions
+    /// see the current root depth.  Called before every runtime call.
+    fn flush_sp(&mut self) {
+        if let Some(v) = self.gc_sp_var {
+            let sp_addr = self.addr_gc_sp();
+            let sp = self.builder.use_var(v);
+            self.builder.ins().store(M::trusted(), sp, sp_addr, 0);
+            self.stats.borrow_mut().gc_sp_global_stores += 1;
+        }
+    }
+    /// Reloads `gc_sp` from the global into the cache.  Called after calls
+    /// that may modify the global (e.g. `cljn_spread_args`).
+    fn sync_sp(&mut self) {
+        if let Some(v) = self.gc_sp_var {
+            let sp_addr = self.addr_gc_sp();
+            let sp = self
+                .builder
+                .ins()
+                .load(types::I64, M::trusted(), sp_addr, 0);
+            self.builder.def_var(v, sp);
+        }
+    }
     // -- Direct shadow-stack root stores (ADR-0006 phase 3) ---------------
     fn addr_gc_sp(&mut self) -> CValue {
         let gv = self
@@ -819,38 +872,27 @@ impl<'a> FnGen<'a> {
         let off = self.builder.ins().imul_imm_s(idx, 8);
         self.builder.ins().iadd(stack, off)
     }
-    /// Pushes one root with the direct store `gc_stack[gc_sp++] = v`.
+    /// Pushes one root: stores `v` at `gc_stack[gc_sp]` and increments the
+    /// cached sp.  The global is not written until the next `flush_sp`.
     fn gc_push_val(&mut self, v: CValue) {
-        let sp_addr = self.addr_gc_sp();
-        let sp = self
-            .builder
-            .ins()
-            .load(types::I64, M::trusted(), sp_addr, 0);
+        let sp = self.read_sp();
         let elem = self.slot_addr(sp);
         self.builder.ins().store(M::trusted(), v, elem, 0);
         let sp1 = self.builder.ins().iadd_imm_s(sp, 1);
-        self.builder.ins().store(M::trusted(), sp1, sp_addr, 0);
+        self.write_sp(sp1);
     }
     fn gc_popn(&mut self, n: usize) {
         if n > 0 {
-            let sp_addr = self.addr_gc_sp();
-            let sp = self
-                .builder
-                .ins()
-                .load(types::I64, M::trusted(), sp_addr, 0);
+            let sp = self.read_sp();
             let sp2 = self.builder.ins().iadd_imm_s(sp, -(n as i64));
-            self.builder.ins().store(M::trusted(), sp2, sp_addr, 0);
+            self.write_sp(sp2);
         }
     }
     /// Pops a root count computed at runtime.
     fn gc_popn_val(&mut self, n: CValue) {
-        let sp_addr = self.addr_gc_sp();
-        let sp = self
-            .builder
-            .ins()
-            .load(types::I64, M::trusted(), sp_addr, 0);
+        let sp = self.read_sp();
         let sp2 = self.builder.ins().isub(sp, n);
-        self.builder.ins().store(M::trusted(), sp2, sp_addr, 0);
+        self.write_sp(sp2);
     }
     /// Writes a local root slot as `gc_stack[base + slot] = v`.
     fn gc_set_local(&mut self, slot: u32, v: CValue) {
@@ -900,7 +942,18 @@ impl<'a> FnGen<'a> {
     }
 
     /// GC: enters a frame unless zero fixed slots and a balanced result prove it redundant.
+    ///
+    /// D1 (ADR-0018): initializes the cached `gc_sp` variable unconditionally here,
+    /// in the function's entry block, which every other block is dominated by.
+    /// `ensure_sp_var` is otherwise lazy (first `read_sp`/`write_sp` wins), and a
+    /// lazy first use inside one arm of a conditional does not dominate uses in a
+    /// sibling arm or after the merge; Cranelift's SSA construction then resolves
+    /// those undominated uses to a stale or zero value, silently desynchronizing
+    /// the global `gc_sp` from actual root-stack depth (GC: this was reachable
+    /// with `CLJN_GC_STRESS=1`, which collects on a live stack whose reported
+    /// depth is wrong, freeing depended-upon roots and corrupting the heap).
     fn enter_planned_frame(&mut self, result_rooted: bool) {
+        self.ensure_sp_var();
         if !gc_frame::needs_gc_frame(self.root_slots.len(), result_rooted) {
             return;
         }
@@ -918,7 +971,14 @@ impl<'a> FnGen<'a> {
             return;
         };
         let base = self.builder.use_var(base_var);
-        self.call_void(self.rt.gc_leave, &[base]);
+        // D1 (ADR-0018): gc_leave(base) sets gc_sp = base unconditionally and
+        // never reads gc_sp, so no flush is needed before the call.  All
+        // call-sites return immediately after, so no sync is needed either.
+        self.stats.borrow_mut().runtime_abi_calls += 1;
+        let fref = self
+            .module
+            .declare_func_in_func(self.rt.gc_leave, self.builder.func);
+        self.builder.ins().call(fref, &[base]);
     }
     fn build_entry(
         mut self,
@@ -1087,10 +1147,12 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr));
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
+        self.flush_sp();
         let call = self
             .builder
             .ins()
             .call_indirect(sig_ref, code, &[impl_v, argc_v, argv_v]);
+        self.sync_sp();
         let r = self.builder.inst_results(call)[0];
         self.builder.ins().return_(&[r]);
     }
@@ -1173,37 +1235,49 @@ impl<'a> FnGen<'a> {
 
     fn call1(&mut self, id: FuncId, a: CValue) -> CValue {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[a]);
+        self.sync_sp();
         self.builder.inst_results(c)[0]
     }
     fn call2(&mut self, id: FuncId, a: CValue, b: CValue) -> CValue {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[a, b]);
+        self.sync_sp();
         self.builder.inst_results(c)[0]
     }
     fn call0(&mut self, id: FuncId) -> CValue {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let c = self.builder.ins().call(r, &[]);
+        self.sync_sp();
         self.builder.inst_results(c)[0]
     }
     fn call3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) -> CValue {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         let call = self.builder.ins().call(r, &[a, b, c]);
+        self.sync_sp();
         self.builder.inst_results(call)[0]
     }
     fn call_void3(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue) {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c]);
+        self.sync_sp();
     }
     fn call_void4(&mut self, id: FuncId, a: CValue, b: CValue, c: CValue, d: CValue) {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, &[a, b, c, d]);
+        self.sync_sp();
     }
     /// Materializes the code address of a declared function.
     fn func_addr(&mut self, id: FuncId) -> CValue {
@@ -1212,8 +1286,10 @@ impl<'a> FnGen<'a> {
     }
     fn call_void(&mut self, id: FuncId, args: &[CValue]) {
         self.stats.borrow_mut().runtime_abi_calls += 1;
+        self.flush_sp();
         let r = self.module.declare_func_in_func(id, self.builder.func);
         self.builder.ins().call(r, args);
+        self.sync_sp();
     }
 
     /// Evaluates an expression in a non-diverging operand position.
@@ -1803,10 +1879,12 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr)); // argv
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
+        self.flush_sp();
         let call = self
             .builder
             .ins()
             .call_indirect(sig_ref, code, &[f_val, argc_v, argv_ptr]);
+        self.sync_sp();
         let r = self.builder.inst_results(call)[0];
         self.gc_popn(1 + args.len());
         Ok(r)
@@ -1833,10 +1911,12 @@ impl<'a> FnGen<'a> {
         sig.params.push(AbiParam::new(self.ptr));
         sig.returns.push(AbiParam::new(types::I64));
         let sig_ref = self.builder.import_signature(sig);
+        self.flush_sp();
         let call = self
             .builder
             .ins()
             .call_indirect(sig_ref, code, &[f_val, total, argv_ptr]);
+        self.sync_sp();
         let r = self.builder.inst_results(call)[0];
         // Pop callable, fixed arguments, and spread elements.
         let one = self.builder.ins().iconst(types::I64, 1);
@@ -2013,7 +2093,9 @@ impl<'a> FnGen<'a> {
                     let function = self
                         .module
                         .declare_func_in_func(specialized, self.builder.func);
+                    self.flush_sp();
                     let call = self.builder.ins().call(function, &raw_arguments);
+                    self.sync_sp();
                     let raw_result = self.builder.inst_results(call)[0];
                     self.gc_popn(pushed);
                     return Ok(self.fix_retag(raw_result));
@@ -2032,7 +2114,9 @@ impl<'a> FnGen<'a> {
                 let argv_ptr = self.call1(self.rt.argv, argc_v);
                 let nil = self.konst(NIL); // Top-level functions have no captures.
                 let fref = self.module.declare_func_in_func(id, self.builder.func);
+                self.flush_sp();
                 let call = self.builder.ins().call(fref, &[nil, argc_v, argv_ptr]);
+                self.sync_sp();
                 let r = self.builder.inst_results(call)[0];
                 self.gc_popn(args.len());
                 Ok(r)

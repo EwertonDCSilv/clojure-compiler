@@ -114,6 +114,8 @@ Ordem sugerida:
     comportamentais para agentes de IA.
 17. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — fases incrementais.
 18. [RISK_REGISTER.md](RISK_REGISTER.md) — riscos e mitigações.
+19. [CODEGEN_GC_SAFETY_GATES.md](CODEGEN_GC_SAFETY_GATES.md) — gates propostos para
+    mudanças de rooting/GC no codegen, a partir do incidente da issue #181.
 
 Documentos operacionais:
 

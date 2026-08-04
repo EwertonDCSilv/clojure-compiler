@@ -15,3 +15,5 @@ Cargo.lock.orig
 src/compiler/clojure-codegen/fuzz-corpus/
 # Clojure CLI classpath cache generated when resolving the HTTP benchmark deps.
 .cpcache/
+
+osaca-analysis/

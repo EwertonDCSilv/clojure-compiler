@@ -18,9 +18,9 @@
       "reason": "unit tests moved to tests/unit (#165); pass extraction still planned"
     },
     "src/compiler/clojure-codegen/src/lib.rs": {
-      "lines": 2977,
-      "owner": "#113",
-      "reason": "options/stats/value/runtime_abi/constants/diagnostics extracted; FnGen hot-path lowering remains (#114)"
+      "lines": 3061,
+      "owner": "#181",
+      "reason": "D1 (ADR-0018): gc_sp Variable cache + flush_sp/sync_sp helpers added to FnGen; ensure_sp_var forced at entry-block dominance to fix a stale-gc_sp GC_STRESS regression; extraction to gc_sp module planned (#114)"
     },
     "src/compiler/clojure-interp/src/lib.rs": {
       "lines": 890,

@@ -25,6 +25,12 @@ pub struct OptimizationStats {
     pub raw_fixnum_bindings: u64,
     /// Calls emitted to imported C runtime symbols.
     pub runtime_abi_calls: u64,
+    /// Stores to the `gc_sp` global emitted by the codegen.
+    ///
+    /// With D1 (ADR-0018) this equals the number of call sites that flushed
+    /// the cached pointer before entering a runtime function, not the number
+    /// of individual push/pop operations.
+    pub gc_sp_global_stores: u64,
 }
 
 impl OptimizationStats {
@@ -43,7 +49,8 @@ impl OptimizationStats {
                 "  \"root_frame_entries\": {},\n",
                 "  \"root_stores\": {},\n",
                 "  \"raw_fixnum_bindings\": {},\n",
-                "  \"runtime_abi_calls\": {}\n",
+                "  \"runtime_abi_calls\": {},\n",
+                "  \"gc_sp_global_stores\": {}\n",
                 "}}\n"
             ),
             self.generic_entries,
@@ -56,6 +63,7 @@ impl OptimizationStats {
             self.root_stores,
             self.raw_fixnum_bindings,
             self.runtime_abi_calls,
+            self.gc_sp_global_stores,
         )
     }
 }

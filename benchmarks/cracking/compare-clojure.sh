@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -u
 
+# Force the C locale so /usr/bin/time and awk emit `.` as the decimal
+# separator regardless of the host locale (e.g. pt_BR.UTF-8 uses `,`),
+# which would otherwise corrupt the comma-separated CSV columns below.
+export LC_ALL=C
+
 default_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script_dir="${CLJN_BENCHMARK_SUITE_DIR:-$default_script_dir}"
 repo_root="$(cd "$script_dir/../.." && pwd)"
