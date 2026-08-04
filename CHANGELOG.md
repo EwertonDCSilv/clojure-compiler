@@ -8,6 +8,15 @@ tags.
 
 ## [Unreleased]
 
+### Performance
+- Link the generated object against the embedded C runtime with `-O3`
+  (`clojure-native-cli`'s `cc` invocation previously passed no optimization
+  flag at all, so `RUNTIME_C` — GC, collections, arithmetic, dispatch, I/O —
+  always built at the compiler's default `-O0`). A full Cormen A/B gate (7
+  repetitions, scale 25, 30 cases, otherwise identical binaries) shows a
+  median wall-time ratio of 0.77x (23% faster), ranging 0.56x-0.93x per
+  case, with 0 checksum mismatches.
+
 ### Fixed
 - `scripts/render-benchmark-page-data.sh`: pin `LC_NUMERIC=C` so awk uses `.` as the
   decimal separator regardless of the system locale; fixes `test-benchmark-page-refresh`
